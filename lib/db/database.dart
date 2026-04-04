@@ -113,7 +113,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   // ========================================
-  // タグ CRUD（Phase 2で拡張）
+  // タグ CRUD
   // ========================================
 
   /// 全タグ取得（sortOrder順）
@@ -131,6 +131,19 @@ class AppDatabase extends _$AppDatabase {
         .watch();
   }
 
+  /// 子タグ取得（特定の親タグ配下）
+  Stream<List<Tag>> watchChildTags(String parentId) {
+    return (select(tags)
+          ..where((t) => t.parentTagId.equals(parentId))
+          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+        .watch();
+  }
+
+  /// タグを1件取得
+  Future<Tag?> getTagById(String id) {
+    return (select(tags)..where((t) => t.id.equals(id))).getSingleOrNull();
+  }
+
   /// タグを新規作成
   Future<Tag> createTag({
     required String name,
@@ -139,16 +152,89 @@ class AppDatabase extends _$AppDatabase {
     bool isSystem = false,
   }) async {
     final id = _uuid.v4();
+    // 末尾にsortOrderを設定
+    final maxSort = await _maxTagSortOrder(parentTagId);
     final companion = TagsCompanion.insert(
       id: id,
       name: Value(name),
       colorIndex: Value(colorIndex),
       parentTagId: Value(parentTagId),
       isSystem: Value(isSystem),
+      sortOrder: Value(maxSort + 1),
     );
     await into(tags).insert(companion);
-    return (await (select(tags)..where((t) => t.id.equals(id)))
-        .getSingleOrNull())!;
+    return (await getTagById(id))!;
+  }
+
+  /// タグを更新
+  Future<void> updateTag({
+    required String id,
+    String? name,
+    int? colorIndex,
+    int? gridSize,
+    String? parentTagId,
+    int? sortOrder,
+  }) {
+    return (update(tags)..where((t) => t.id.equals(id))).write(
+      TagsCompanion(
+        name: name != null ? Value(name) : const Value.absent(),
+        colorIndex:
+            colorIndex != null ? Value(colorIndex) : const Value.absent(),
+        gridSize: gridSize != null ? Value(gridSize) : const Value.absent(),
+        parentTagId:
+            parentTagId != null ? Value(parentTagId) : const Value.absent(),
+        sortOrder:
+            sortOrder != null ? Value(sortOrder) : const Value.absent(),
+      ),
+    );
+  }
+
+  /// タグを削除（紐づく中間テーブルも削除）
+  Future<void> deleteTag(String id) async {
+    await (delete(memoTags)..where((t) => t.tagId.equals(id))).go();
+    await (delete(todoItemTags)..where((t) => t.tagId.equals(id))).go();
+    await (delete(todoListTags)..where((t) => t.tagId.equals(id))).go();
+    // 子タグも削除
+    final children =
+        await (select(tags)..where((t) => t.parentTagId.equals(id))).get();
+    for (final child in children) {
+      await deleteTag(child.id);
+    }
+    await (delete(tags)..where((t) => t.id.equals(id))).go();
+  }
+
+  /// 同階層内の最大sortOrder取得
+  Future<int> _maxTagSortOrder(String? parentTagId) async {
+    final query = parentTagId == null
+        ? (select(tags)..where((t) => t.parentTagId.isNull()))
+        : (select(tags)..where((t) => t.parentTagId.equals(parentTagId)));
+    final all = await query.get();
+    if (all.isEmpty) return -1;
+    return all.map((t) => t.sortOrder).reduce((a, b) => a > b ? a : b);
+  }
+
+  /// タグなしメモを取得（リアルタイム）
+  Stream<List<Memo>> watchUntaggedMemos() {
+    // memoTagsに存在しないメモを取得
+    return customSelect(
+      'SELECT * FROM memos WHERE id NOT IN (SELECT DISTINCT memo_id FROM memo_tags) '
+      'ORDER BY is_pinned DESC, created_at DESC',
+      readsFrom: {memos, memoTags},
+    ).watch().map((rows) => rows.map((row) {
+          return Memo(
+            id: row.read<String>('id'),
+            content: row.read<String>('content'),
+            title: row.read<String>('title'),
+            isMarkdown: row.read<bool>('is_markdown'),
+            createdAt: row.read<DateTime>('created_at'),
+            updatedAt: row.read<DateTime>('updated_at'),
+            isPinned: row.read<bool>('is_pinned'),
+            manualSortOrder: row.read<int>('manual_sort_order'),
+            viewCount: row.read<int>('view_count'),
+            lastViewedAt: row.readNullable<DateTime>('last_viewed_at'),
+            isLocked: row.read<bool>('is_locked'),
+          );
+        }).toList());
   }
 
   // ========================================
