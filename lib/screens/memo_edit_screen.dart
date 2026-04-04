@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../widgets/markdown_toolbar.dart';
 
-/// メモ編集画面（自動保存 + タグ付け）
+/// メモ編集画面（自動保存 + タグ付け + マークダウン対応）
 class MemoEditScreen extends ConsumerStatefulWidget {
   final String memoId;
 
@@ -19,6 +21,8 @@ class _MemoEditScreenState extends ConsumerState<MemoEditScreen> {
   late TextEditingController _titleController;
   late TextEditingController _contentController;
   bool _isLoading = true;
+  bool _isMarkdown = false;
+  bool _showPreview = false; // マークダウンプレビュー表示
   List<Tag> _attachedTags = [];
 
   @override
@@ -35,6 +39,7 @@ class _MemoEditScreenState extends ConsumerState<MemoEditScreen> {
     if (memo != null && mounted) {
       _titleController.text = memo.title;
       _contentController.text = memo.content;
+      _isMarkdown = memo.isMarkdown;
       _attachedTags = await db.getTagsForMemo(widget.memoId);
       db.incrementViewCount(widget.memoId);
       setState(() => _isLoading = false);
@@ -49,6 +54,15 @@ class _MemoEditScreenState extends ConsumerState<MemoEditScreen> {
       title: _titleController.text,
       content: _contentController.text,
     );
+  }
+
+  void _toggleMarkdown() {
+    final db = ref.read(databaseProvider);
+    setState(() {
+      _isMarkdown = !_isMarkdown;
+      if (!_isMarkdown) _showPreview = false;
+    });
+    db.updateMemo(id: widget.memoId, isMarkdown: _isMarkdown);
   }
 
   @override
@@ -77,6 +91,16 @@ class _MemoEditScreenState extends ConsumerState<MemoEditScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
+          // マークダウンプレビュートグル（マークダウンモード時のみ）
+          if (_isMarkdown)
+            IconButton(
+              icon: Icon(
+                _showPreview ? Icons.edit : Icons.visibility,
+                color: Colors.purple,
+              ),
+              onPressed: () => setState(() => _showPreview = !_showPreview),
+              tooltip: _showPreview ? '編集' : 'プレビュー',
+            ),
           // タグ付けボタン
           IconButton(
             icon: const Icon(Icons.label_outline),
@@ -94,49 +118,119 @@ class _MemoEditScreenState extends ConsumerState<MemoEditScreen> {
           children: [
             // 付与済みタグ表示
             if (_attachedTags.isNotEmpty) _buildAttachedTags(),
-            // エディタ
+            // エディタ or プレビュー
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: _titleController,
-                      onChanged: (_) => _onChanged(),
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      decoration: const InputDecoration(
-                        hintText: 'タイトル',
-                        border: InputBorder.none,
-                        hintStyle: TextStyle(color: Colors.grey),
-                      ),
-                      maxLines: 1,
-                    ),
-                    const Divider(height: 1),
-                    Expanded(
-                      child: TextField(
-                        controller: _contentController,
-                        onChanged: (_) => _onChanged(),
-                        style: const TextStyle(fontSize: 16, height: 1.6),
-                        decoration: const InputDecoration(
-                          hintText: 'メモを入力...',
-                          border: InputBorder.none,
-                          hintStyle: TextStyle(color: Colors.grey),
-                        ),
-                        maxLines: null,
-                        expands: true,
-                        textAlignVertical: TextAlignVertical.top,
-                        keyboardType: TextInputType.multiline,
-                      ),
-                    ),
-                  ],
+              child: _showPreview
+                  ? _buildMarkdownPreview()
+                  : _buildEditor(),
+            ),
+            // マークダウンツールバー（マークダウンモード＆編集中のみ）
+            if (_isMarkdown && !_showPreview)
+              MarkdownToolbar(
+                controller: _contentController,
+                onChanged: _onChanged,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 通常エディタ
+  Widget _buildEditor() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        children: [
+          TextField(
+            controller: _titleController,
+            onChanged: (_) => _onChanged(),
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
+            decoration: const InputDecoration(
+              hintText: 'タイトル',
+              border: InputBorder.none,
+              hintStyle: TextStyle(color: Colors.grey),
+            ),
+            maxLines: 1,
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: TextField(
+              controller: _contentController,
+              onChanged: (_) => _onChanged(),
+              style: const TextStyle(fontSize: 16, height: 1.6),
+              decoration: const InputDecoration(
+                hintText: 'メモを入力...',
+                border: InputBorder.none,
+                hintStyle: TextStyle(color: Colors.grey),
+              ),
+              maxLines: null,
+              expands: true,
+              textAlignVertical: TextAlignVertical.top,
+              keyboardType: TextInputType.multiline,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// マークダウンプレビュー
+  Widget _buildMarkdownPreview() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // タイトル（読み取り専用）
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              _titleController.text.isEmpty
+                  ? 'タイトルなし'
+                  : _titleController.text,
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: _titleController.text.isEmpty
+                    ? Colors.grey
+                    : Colors.black87,
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          // マークダウンプレビュー
+          Expanded(
+            child: Markdown(
+              data: _contentController.text,
+              selectable: true,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              styleSheet: MarkdownStyleSheet(
+                h1: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                h2: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                h3: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                p: const TextStyle(fontSize: 16, height: 1.6),
+                code: TextStyle(
+                  backgroundColor: Colors.grey[100],
+                  fontSize: 14,
+                  fontFamily: 'monospace',
+                ),
+                codeblockDecoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                blockquoteDecoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(color: Colors.grey[400]!, width: 3),
+                  ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -160,14 +254,14 @@ class _MemoEditScreenState extends ConsumerState<MemoEditScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  tag.name,
-                  style: const TextStyle(fontSize: 12, color: Colors.black87),
-                ),
+                Text(tag.name,
+                    style:
+                        const TextStyle(fontSize: 12, color: Colors.black87)),
                 const SizedBox(width: 4),
                 GestureDetector(
                   onTap: () => _removeTag(tag),
-                  child: const Icon(Icons.close, size: 14, color: Colors.black54),
+                  child: const Icon(Icons.close,
+                      size: 14, color: Colors.black54),
                 ),
               ],
             ),
@@ -177,11 +271,8 @@ class _MemoEditScreenState extends ConsumerState<MemoEditScreen> {
     );
   }
 
-  /// タグセレクター（全タグ一覧からトグル選択）
   void _showTagSelector(BuildContext context) {
-    // ダイアログ表示前にキーボードを閉じる（バグ#20対策）
     FocusScope.of(context).unfocus();
-
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -216,6 +307,18 @@ class _MemoEditScreenState extends ConsumerState<MemoEditScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // マークダウン切替
+            ListTile(
+              leading: Icon(
+                Icons.code,
+                color: _isMarkdown ? Colors.purple : null,
+              ),
+              title: Text(_isMarkdown ? 'マークダウンOFF' : 'マークダウンON'),
+              onTap: () {
+                Navigator.pop(context);
+                _toggleMarkdown();
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.share_outlined),
               title: const Text('共有'),
@@ -270,7 +373,6 @@ class _TagSelectorSheetState extends ConsumerState<_TagSelectorSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ヘッダ
           Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
@@ -287,7 +389,6 @@ class _TagSelectorSheetState extends ConsumerState<_TagSelectorSheet> {
             ),
           ),
           const Divider(height: 1),
-          // タグ一覧
           Flexible(
             child: allTagsAsync.when(
               data: (allTags) => allTags.isEmpty
@@ -345,7 +446,6 @@ class _TagSelectorSheetState extends ConsumerState<_TagSelectorSheet> {
       await db.addTagToMemo(widget.memoId, tag.id);
       _selectedIds.add(tag.id);
     }
-    // 最新のタグリストを取得して親に通知
     final updatedTags = await db.getTagsForMemo(widget.memoId);
     widget.onChanged(updatedTags);
     setState(() {});
