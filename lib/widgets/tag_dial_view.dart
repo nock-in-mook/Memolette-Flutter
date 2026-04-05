@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -44,6 +45,9 @@ class _TagDialViewState extends State<TagDialView>
   bool _childDragging = false;
   bool _parentSettling = false;
   bool _childSettling = false;
+
+  // ドラッグ開始時に確定したターゲット（途中で切り替えない）
+  bool? _dragTargetIsChild;
 
   @override
   void initState() {
@@ -206,21 +210,21 @@ class _TagDialViewState extends State<TagDialView>
     final canvasWidth = max(neededWidth, 100.0);
 
     return GestureDetector(
-      onVerticalDragUpdate: (d) {
+      onVerticalDragStart: (d) {
         if (!widget.isOpen) return;
-        // タッチX位置で親/子を判定
+        // ドラッグ開始時にターゲットを確定（途中で切り替えない）
         final touchX = d.localPosition.dx;
         final borderX = cx - parentInnerR;
-        _onDragUpdate(d, showChild && touchX > canvasWidth - borderX);
+        _dragTargetIsChild = showChild && touchX > canvasWidth - borderX;
+      },
+      onVerticalDragUpdate: (d) {
+        if (!widget.isOpen || _dragTargetIsChild == null) return;
+        _onDragUpdate(d, _dragTargetIsChild!);
       },
       onVerticalDragEnd: (d) {
-        if (!widget.isOpen) return;
-        // 最後のドラッグ対象に対してスナップ
-        if (_childDragging) {
-          _onDragEnd(d, true);
-        } else {
-          _onDragEnd(d, false);
-        }
+        if (!widget.isOpen || _dragTargetIsChild == null) return;
+        _onDragEnd(d, _dragTargetIsChild!);
+        _dragTargetIsChild = null;
       },
       child: ClipRect(
         child: SizedBox(
@@ -297,11 +301,11 @@ class _TagDialPainter extends CustomPainter {
     // ポインター（選択インジケーター）
     _drawPointer(canvas);
 
-    // リング境界線
-    _drawEdgeArc(canvas, parentOuterR, 3.0);
-    _drawEdgeArc(canvas, parentInnerR, 1.5);
+    // リング境界線（Swift版準拠のグラデーション）
+    _drawEdgeArc(canvas, parentOuterR, 3.0, brightness: (0.35, 0.5, 0.35));
+    _drawEdgeArc(canvas, parentInnerR, 1.5, brightness: (0.3, 0.45, 0.3));
     if (childOptions.isNotEmpty) {
-      _drawEdgeArc(canvas, childInnerR, 1.5);
+      _drawEdgeArc(canvas, childInnerR, 1.5, brightness: (0.3, 0.45, 0.3));
     }
   }
 
@@ -313,9 +317,6 @@ class _TagDialPainter extends CustomPainter {
     required double innerR,
     required bool isParent,
   }) {
-    final maxFont = isParent ? 20.0 : 14.0;
-    final minFont = isParent ? 13.0 : 11.0;
-
     for (int offset = -12; offset <= 12; offset++) {
       final baseIndex = (rotation / itemAngle).round();
       final rawIndex = baseIndex + offset;
@@ -352,7 +353,7 @@ class _TagDialPainter extends CustomPainter {
       );
       sectorPath.close();
 
-      // 塗りつぶし
+      // 塗りつぶし（Swift版準拠: セクター自体は不透明、fadeはテキスト・線のみ）
       Color fillColor;
       if (!isOpen) {
         fillColor = const Color.fromRGBO(235, 235, 235, 1);
@@ -363,22 +364,33 @@ class _TagDialPainter extends CustomPainter {
       }
 
       final fillPaint = Paint()
-        ..color = fillColor.withValues(alpha: fade)
+        ..color = fillColor
         ..style = PaintingStyle.fill;
       canvas.drawPath(sectorPath, fillPaint);
 
-      // 区切り線
+      // 仕切り線（Swift版準拠: Color(white: 0.35), opacity: fade * 0.5）
       final dividerPaint = Paint()
-        ..color = Color.fromRGBO(90, 90, 90, fade * 0.5)
+        ..color = Color.fromRGBO(89, 89, 89, fade * 0.5)
         ..strokeWidth = 1.5
         ..style = PaintingStyle.stroke;
 
-      final divAngle = (180 - displayAngle - itemAngle / 2) * pi / 180;
+      // 上端の仕切り線（cgEnd相当）
+      final divAngle = (180 - displayAngle + itemAngle / 2) * pi / 180;
       canvas.drawLine(
         Offset(cx + innerR * cos(divAngle), cy + innerR * sin(divAngle)),
         Offset(cx + outerR * cos(divAngle), cy + outerR * sin(divAngle)),
         dividerPaint,
       );
+
+      // 最後のセクターの下端仕切り線
+      if (rawIndex == options.length - 1) {
+        final bottomAngle = (180 - displayAngle - itemAngle / 2) * pi / 180;
+        canvas.drawLine(
+          Offset(cx + innerR * cos(bottomAngle), cy + innerR * sin(bottomAngle)),
+          Offset(cx + outerR * cos(bottomAngle), cy + outerR * sin(bottomAngle)),
+          dividerPaint,
+        );
+      }
 
       // テキスト描画
       if (isOpen && fade > 0.3) {
@@ -387,87 +399,168 @@ class _TagDialPainter extends CustomPainter {
         final textX = cx + midR * cos(midAngle);
         final textY = cy + midR * sin(midAngle);
 
-        // フォントサイズ決定
-        var fontSize = maxFont;
-        if (option.id == null) fontSize = isParent ? 14.0 : 12.0;
-        fontSize = fontSize.clamp(minFont, maxFont);
+        final isNoneTag = option.id == null;
+        // Swift版準拠: 文字数制限（半角幅換算: 親12、子10）
+        final displayName = _truncateText(option.name, isParent ? 12 : 10);
+        // Swift版準拠: セクター放射方向幅の90%に収まる最大フォントサイズを探す
+        final sectorWidth = (outerR - innerR) * 0.9;
+        final fMaxFont = isNoneTag ? (isParent ? 16.0 : 14.0) : (isParent ? 22.0 : 16.0);
+        final fMinFont = isParent ? 13.0 : 11.0;
+        final fontWeight = isSelected ? FontWeight.bold : FontWeight.w600;
+        final textColor = isNoneTag
+            ? Color.fromRGBO(140, 140, 140, fade)
+            : Color.fromRGBO(
+                isSelected ? 0 : 64,
+                isSelected ? 0 : 64,
+                isSelected ? 0 : 64,
+                fade,
+              );
 
-        final textPainter = TextPainter(
-          text: TextSpan(
-            text: _truncateText(option.name, isParent ? 10 : 7),
-            style: TextStyle(
-              fontSize: fontSize,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-              color: option.id == null
-                  ? Color.fromRGBO(140, 140, 140, fade)
-                  : Color.fromRGBO(
-                      isSelected ? 0 : 64,
-                      isSelected ? 0 : 64,
-                      isSelected ? 0 : 64,
-                      fade,
-                    ),
+        double fontSize = fMaxFont;
+        late TextPainter textPainter;
+        for (double fs = fMaxFont; fs >= fMinFont; fs -= 0.5) {
+          textPainter = TextPainter(
+            text: TextSpan(
+              text: displayName,
+              style: TextStyle(
+                fontSize: fs,
+                fontWeight: fontWeight,
+                color: textColor,
+              ),
             ),
-          ),
-          textDirection: TextDirection.ltr,
-          textAlign: TextAlign.center,
-        );
-        textPainter.layout();
+            textDirection: TextDirection.ltr,
+            textAlign: TextAlign.center,
+          );
+          textPainter.layout();
+          if (textPainter.width <= sectorWidth) {
+            fontSize = fs;
+            break;
+          }
+          fontSize = fs;
+        }
+        // ループで最終値が残っている場合、最小サイズで再レイアウト
+        if (fontSize <= fMinFont) {
+          textPainter = TextPainter(
+            text: TextSpan(
+              text: displayName,
+              style: TextStyle(
+                fontSize: fMinFont,
+                fontWeight: fontWeight,
+                color: textColor,
+              ),
+            ),
+            textDirection: TextDirection.ltr,
+            textAlign: TextAlign.center,
+          );
+          textPainter.layout();
+        }
 
         canvas.save();
         canvas.translate(textX, textY);
         canvas.rotate(-displayAngle * pi / 180);
-        textPainter.paint(
-          canvas,
-          Offset(-textPainter.width / 2, -textPainter.height / 2),
-        );
+        final textOffset = Offset(-textPainter.width / 2, -textPainter.height / 2);
+        // 選択中タグにドロップシャドウ（Swift版準拠）
+        if (isSelected && !isNoneTag) {
+          final shadowPainter = TextPainter(
+            text: TextSpan(
+              text: displayName,
+              style: TextStyle(
+                fontSize: fontSize,
+                fontWeight: fontWeight,
+                foreground: Paint()
+                  ..color = Colors.black.withValues(alpha: 0.4)
+                  ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.0),
+              ),
+            ),
+            textDirection: TextDirection.ltr,
+            textAlign: TextAlign.center,
+          );
+          shadowPainter.layout();
+          shadowPainter.paint(canvas, textOffset + const Offset(0.5, 0.5));
+        }
+        textPainter.paint(canvas, textOffset);
         canvas.restore();
       }
     }
   }
 
   void _drawPointer(Canvas canvas) {
-    // 選択ポインター（左端の三角形）
-    final pointerPath = Path();
-    final px = cx - parentOuterR - 2;
-    final py = cy;
-    pointerPath.moveTo(px, py - 8);
-    pointerPath.lineTo(px + 12, py);
-    pointerPath.lineTo(px, py + 8);
-    pointerPath.close();
+    // Swift版準拠: pw=10, ph=16, pLeft=-2
+    const pw = 10.0, ph = 16.0, pLeft = -2.0;
+
+    // 影（オフセット(1,1)のベタ影）
+    final shadowPath = Path()
+      ..moveTo(pLeft + 1, cy - ph / 2 + 1)
+      ..lineTo(pLeft + pw + 1, cy + 1)
+      ..lineTo(pLeft + 1, cy + ph / 2 + 1)
+      ..close();
+    canvas.drawPath(shadowPath, Paint()
+      ..color = Colors.black.withValues(alpha: 0.3)
+      ..style = PaintingStyle.fill);
+
+    // 本体（上→下のグラデーション）
+    final pointerPath = Path()
+      ..moveTo(pLeft, cy - ph / 2)
+      ..lineTo(pLeft + pw, cy)
+      ..lineTo(pLeft, cy + ph / 2)
+      ..close();
+
+    final colors = isOpen
+        ? [const Color.fromRGBO(230, 38, 25, 1), const Color.fromRGBO(179, 25, 20, 1)]
+        : [const Color.fromRGBO(140, 140, 140, 1), const Color.fromRGBO(115, 115, 115, 1)];
 
     final pointerPaint = Paint()
-      ..color = isOpen
-          ? const Color.fromRGBO(230, 38, 25, 1)
-          : const Color.fromRGBO(140, 140, 140, 1)
+      ..shader = ui.Gradient.linear(
+        Offset(0, cy - ph / 2),
+        Offset(0, cy + ph / 2),
+        colors,
+      )
       ..style = PaintingStyle.fill;
-
     canvas.drawPath(pointerPath, pointerPaint);
 
-    // ポインターの影
-    final shadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.3)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
-    canvas.drawPath(pointerPath.shift(const Offset(1, 1)), shadowPaint);
-    canvas.drawPath(pointerPath, pointerPaint);
+    // ハイライト線（上辺に白50%）
+    final hlPath = Path()
+      ..moveTo(pLeft + 1, cy - ph / 2 + 2)
+      ..lineTo(pLeft + pw - 3, cy);
+    canvas.drawPath(hlPath, Paint()
+      ..color = Colors.white.withValues(alpha: 0.5)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke);
   }
 
-  void _drawEdgeArc(Canvas canvas, double radius, double lineWidth) {
+  void _drawEdgeArc(Canvas canvas, double radius, double lineWidth,
+      {required (double, double, double) brightness}) {
     final halfHeight = cy;
     final maxSin = min(1.0, halfHeight / radius);
     final maxAngle = asin(maxSin);
 
+    // Swift版準拠: グラデーションで弧を描画
+    final rect = Rect.fromCircle(center: Offset(cx, cy), radius: radius);
+    final startAngle = pi - maxAngle;
+    final sweepAngle = maxAngle * 2;
+
+    Color _gray(double w) {
+      final v = (w * 255).round();
+      return Color.fromRGBO(v, v, v, 1);
+    }
+
+    final gradient = SweepGradient(
+      center: Alignment(
+        (cx - rect.center.dx) / (rect.width / 2),
+        (cy - rect.center.dy) / (rect.height / 2),
+      ),
+      startAngle: startAngle,
+      endAngle: startAngle + sweepAngle,
+      colors: [_gray(brightness.$1), _gray(brightness.$2), _gray(brightness.$3)],
+      stops: const [0.0, 0.5, 1.0],
+    );
+
     final edgePaint = Paint()
-      ..color = const Color.fromRGBO(90, 90, 90, 0.4)
+      ..shader = gradient.createShader(rect)
       ..strokeWidth = lineWidth
       ..style = PaintingStyle.stroke;
 
-    canvas.drawArc(
-      Rect.fromCircle(center: Offset(cx, cy), radius: radius),
-      pi - maxAngle,
-      maxAngle * 2,
-      false,
-      edgePaint,
-    );
+    canvas.drawArc(rect, startAngle, sweepAngle, false, edgePaint);
   }
 
   String _truncateText(String text, int maxHalfWidth) {

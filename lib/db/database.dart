@@ -314,6 +314,34 @@ class AppDatabase extends _$AppDatabase {
       }
     }
   }
+
+  // ========================================
+  // ダミーデータ挿入（開発用）
+  // ========================================
+
+  /// 親タグが0件のときだけダミータグを挿入
+  Future<void> seedDummyTags() async {
+    final existing = await (select(tags)
+          ..where((t) => t.parentTagId.isNull()))
+        .get();
+    if (existing.isNotEmpty) return;
+
+    // Swift版スクショに合わせたダミー親タグ
+    final dummyTags = [
+      ('日記', 5),       // 緑系
+      ('仕事', 15),      // ティール系
+      ('買い物', 25),    // オレンジ系
+      ('旅', 35),        // ラベンダー系
+      ('映画レビュー', 45), // ピンク系
+      ('バッジテスト', 55),  // 赤系
+      ('長文テスト', 60),    // ミント系
+      ('超重要タスク', 10),  // サーモン系
+    ];
+
+    for (final (name, colorIndex) in dummyTags) {
+      await createTag(name: name, colorIndex: colorIndex);
+    }
+  }
 }
 
 LazyDatabase _openConnection() {

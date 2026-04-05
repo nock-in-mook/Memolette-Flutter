@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'db/database.dart';
 import 'screens/home_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // ダミータグ挿入（タグ0件のときだけ）
+  final db = AppDatabase();
+  await db.seedDummyTags();
+  await db.close();
+
   runApp(
     const ProviderScope(
       child: MemolettApp(),

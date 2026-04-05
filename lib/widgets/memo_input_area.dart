@@ -187,7 +187,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
         : <Tag>[];
     // 子タグがなくても常に内側リングを表示（「なし」のみ）
     final childOptions = [
-      const TagDialOption(id: null, name: 'なし', color: Colors.white),
+      const TagDialOption(id: null, name: '子タグなし', color: Colors.white),
       ...childTags.map((t) => TagDialOption(
             id: t.id,
             name: t.name,
@@ -195,100 +195,146 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
           )),
     ];
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-      width: _rouletteOpen ? 240 : 28,
-      child: GestureDetector(
-        onTap: () {
-          if (!_rouletteOpen) {
-            setState(() => _rouletteOpen = true);
-          }
-        },
-        child: ClipRRect(
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(10),
-            bottomLeft: Radius.circular(10),
-          ),
-          child: Container(
-            // グレートレー背景
-            color: const Color.fromRGBO(230, 230, 230, 1),
-            child: Column(
-              children: [
-                // 上部ラベル（親タグ / 子タグ）
-                if (_rouletteOpen)
-                  Container(
-                    height: 22,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Row(
-                      children: [
-                        // 閉じるボタン
-                        GestureDetector(
-                          onTap: () =>
-                              setState(() => _rouletteOpen = false),
-                          child: const Icon(Icons.play_arrow,
-                              size: 14, color: Colors.grey),
-                        ),
-                        const Spacer(),
-                        Text('親タグ',
-                            style: TextStyle(
-                                fontSize: 11, color: Colors.grey[600])),
-                        const SizedBox(width: 24),
-                        Text('子タグ',
-                            style: TextStyle(
-                                fontSize: 11, color: Colors.grey[600])),
-                        const Spacer(),
-                      ],
-                    ),
+    // トレー幅（ルーレットはみ出し分は含まない）
+    final trayWidth = _rouletteOpen ? 300.0 : 28.0;
+    // ルーレットの左はみ出し量（Swift版準拠: 開き時-27pt）
+    const dialOverhang = 60.0;
+
+    return SizedBox(
+      width: trayWidth + (_rouletteOpen ? dialOverhang : 0),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // トレー背景（右寄せ、ClipRRectはトレーだけに適用）
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+              width: trayWidth,
+              child: GestureDetector(
+                onTap: () {
+                  if (!_rouletteOpen) {
+                    setState(() => _rouletteOpen = true);
+                  }
+                },
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(10),
+                    bottomLeft: Radius.circular(10),
                   ),
-                // ルーレット本体
-                Expanded(
-                  child: OverflowBox(
-                    maxWidth: 240,
-                    alignment: Alignment.centerRight,
-                    child: TagDialView(
-                      height: _rouletteOpen ? 211 : 260,
-                      parentOptions: parentOptions,
-                      childOptions: childOptions,
-                      selectedParentId: parentId,
-                      isOpen: _rouletteOpen,
-                      onParentSelected: (id) =>
-                          _onTagSelected(id, false),
-                      onChildSelected: (id) =>
-                          _onTagSelected(id, true),
+                  child: Container(
+                    color: const Color.fromRGBO(230, 230, 230, 1),
+                    child: Column(
+                      children: [
+                        // 上部ラベル
+                        if (_rouletteOpen)
+                          Container(
+                            height: 22,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: () =>
+                                      setState(() => _rouletteOpen = false),
+                                  child: const Icon(Icons.play_arrow,
+                                      size: 14, color: Colors.grey),
+                                ),
+                                const Spacer(),
+                                Text('親タグ',
+                                    style: TextStyle(
+                                        fontSize: 11, color: Colors.grey[600])),
+                                const SizedBox(width: 24),
+                                Text('子タグ',
+                                    style: TextStyle(
+                                        fontSize: 11, color: Colors.grey[600])),
+                                const Spacer(),
+                              ],
+                            ),
+                          ),
+                        // トレー中央（ルーレットが上に重なる）
+                        const Expanded(child: SizedBox()),
+                        // 下部ボタン
+                        if (_rouletteOpen)
+                          Container(
+                            height: 28,
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 8),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.add_circle_outline,
+                                    size: 14, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Text('親タグ追加',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600])),
+                                const SizedBox(width: 12),
+                                const Icon(Icons.add_circle_outline,
+                                    size: 14, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Text('子タグ追加',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600])),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
-                // 下部ボタン（親タグ追加 / 子タグ追加）
-                if (_rouletteOpen)
-                  Container(
-                    height: 28,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.add_circle_outline,
-                            size: 14, color: Colors.grey),
-                        const SizedBox(width: 4),
-                        Text('親タグ追加',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey[600])),
-                        const SizedBox(width: 12),
-                        const Icon(Icons.add_circle_outline,
-                            size: 14, color: Colors.grey),
-                        const SizedBox(width: 4),
-                        Text('子タグ追加',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey[600])),
-                      ],
-                    ),
-                  ),
-              ],
+              ),
             ),
           ),
-        ),
+          // ルーレット本体（トレーから左にはみ出す、クリップなし）
+          if (_rouletteOpen)
+            Positioned(
+              right: 0,
+              top: 22,   // ラベル分
+              bottom: 28, // ボタン分
+              width: trayWidth + dialOverhang,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Transform.translate(
+                  offset: const Offset(-dialOverhang, 0),
+                  child: TagDialView(
+                    height: 211,
+                    parentOptions: parentOptions,
+                    childOptions: childOptions,
+                    selectedParentId: parentId,
+                    isOpen: true,
+                    onParentSelected: (id) =>
+                        _onTagSelected(id, false),
+                    onChildSelected: (id) =>
+                        _onTagSelected(id, true),
+                  ),
+                ),
+              ),
+            )
+          else
+            Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: trayWidth,
+              child: IgnorePointer(
+                child: TagDialView(
+                  height: 260,
+                  parentOptions: parentOptions,
+                  childOptions: childOptions,
+                  selectedParentId: parentId,
+                  isOpen: false,
+                  onParentSelected: (id) =>
+                      _onTagSelected(id, false),
+                  onChildSelected: (id) =>
+                      _onTagSelected(id, true),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
