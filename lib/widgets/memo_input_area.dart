@@ -496,50 +496,56 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 _titleController.clear();
                 _onChanged();
               },
-              child: const Icon(Icons.close, size: 16, color: Colors.grey),
+              child: Icon(Icons.close, size: 16,
+                  color: Colors.grey.withValues(alpha: 0.5)),
             ),
-          if (_attachedTags.isNotEmpty)
-            Container(
-              width: 1,
-              height: 24,
-              margin: const EdgeInsets.symmetric(horizontal: 6),
-              color: Colors.grey.withValues(alpha: 0.3),
+          // \u7E26\u7DDA\u30BB\u30D1\u30EC\u30FC\u30BF\uFF08\u5E38\u6642\u8868\u793A\uFF09
+          Container(
+            width: 1,
+            height: 24,
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+            color: Colors.grey.withValues(alpha: 0.3),
+          ),
+          // \u30BF\u30B0\u30A8\u30EA\u30A2
+          if (_attachedTags.isEmpty)
+            GestureDetector(
+              onTap: () {
+                // TODO: \u30C8\u30EC\u30FC\u3092\u958B\u304F
+              },
+              child: Icon(Icons.sell_outlined, size: 16,
+                  color: Colors.grey.withValues(alpha: 0.3)),
+            )
+          else ...[
+            ..._attachedTags.take(2).map((tag) => Container(
+                  margin: const EdgeInsets.only(right: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: TagColors.getColor(tag.colorIndex),
+                    borderRadius: BorderRadius.circular(CornerRadius.parentTag),
+                  ),
+                  child: Text(
+                    tag.name.length > 5
+                        ? '${tag.name.substring(0, 5)}...'
+                        : tag.name,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                )),
+            GestureDetector(
+              onTap: () async {
+                if (widget.editingMemoId != null) {
+                  final db = ref.read(databaseProvider);
+                  for (final tag in _attachedTags) {
+                    await db.removeTagFromMemo(widget.editingMemoId!, tag.id);
+                  }
+                  _attachedTags = await db.getTagsForMemo(widget.editingMemoId!);
+                  setState(() {});
+                }
+              },
+              child: Icon(Icons.close, size: 14,
+                  color: Colors.grey.withValues(alpha: 0.5)),
             ),
-          ..._attachedTags.take(2).map((tag) => Container(
-                margin: const EdgeInsets.only(right: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: TagColors.getColor(tag.colorIndex),
-                  borderRadius: BorderRadius.circular(CornerRadius.childTag),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      tag.name.length > 5
-                          ? '${tag.name.substring(0, 5)}...'
-                          : tag.name,
-                      style: const TextStyle(
-                          fontSize: 11, fontWeight: FontWeight.w500),
-                    ),
-                    const SizedBox(width: 2),
-                    GestureDetector(
-                      onTap: () async {
-                        if (widget.editingMemoId != null) {
-                          final db = ref.read(databaseProvider);
-                          await db.removeTagFromMemo(
-                              widget.editingMemoId!, tag.id);
-                          _attachedTags = await db
-                              .getTagsForMemo(widget.editingMemoId!);
-                          setState(() {});
-                        }
-                      },
-                      child: const Icon(Icons.close,
-                          size: 12, color: Colors.black54),
-                    ),
-                  ],
-                ),
-              )),
+          ],
         ],
       ),
     );
