@@ -323,7 +323,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 ),
               ),
             ),
-          // ルーレット本体（トレーから左にはみ出す、クリップなし）
+          // ルーレット本体 + 影（同じPositioned内でStackに重ねる）
           if (_rouletteOpen)
             Positioned(
               right: 0,
@@ -334,16 +334,30 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 alignment: Alignment.centerRight,
                 child: Transform.translate(
                   offset: const Offset(-dialOverhang, -5),
-                  child: TagDialView(
-                    height: 211,
-                    parentOptions: parentOptions,
-                    childOptions: childOptions,
-                    selectedParentId: parentId,
-                    isOpen: true,
-                    onParentSelected: (id) =>
-                        _onTagSelected(id, false),
-                    onChildSelected: (id) =>
-                        _onTagSelected(id, true),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      // 影（TagDialViewと同じサイズ、クリップなし）
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: CustomPaint(
+                            painter: _DialArcShadowPainter(dialHeight: 211),
+                          ),
+                        ),
+                      ),
+                      // ルーレット本体
+                      TagDialView(
+                        height: 211,
+                        parentOptions: parentOptions,
+                        childOptions: childOptions,
+                        selectedParentId: parentId,
+                        isOpen: true,
+                        onParentSelected: (id) =>
+                            _onTagSelected(id, false),
+                        onChildSelected: (id) =>
+                            _onTagSelected(id, true),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -666,3 +680,43 @@ class _TrayWithTabPainter extends CustomPainter {
   bool shouldRepaint(covariant _TrayWithTabPainter old) =>
       old.color != color;
 }
+
+/// ルーレット外周弧と同じ位置に透明な円弧を描き、影だけ付ける
+class _DialArcShadowPainter extends CustomPainter {
+  final double dialHeight;
+  static const double radius = 350;
+
+  _DialArcShadowPainter({required this.dialHeight});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = radius + 2; // TagDialViewと同じ = 352
+    final cy = dialHeight / 2;
+    final maxSin = min(1.0, cy / radius);
+    final maxAngle = asin(maxSin);
+
+    // 外周弧と同じパス
+    final arcPath = Path()
+      ..addArc(
+        Rect.fromCircle(center: Offset(cx, cy), radius: radius),
+        pi - maxAngle,
+        maxAngle * 2,
+      )
+      ..close();
+
+    // 影だけ描画（x: -2にオフセット、Swift版準拠: black 50%, radius 3）
+    canvas.save();
+    canvas.translate(-2, 0);
+    canvas.drawPath(
+      arcPath,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.5)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _DialArcShadowPainter old) => false;
+}
+
