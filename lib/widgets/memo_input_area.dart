@@ -196,7 +196,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
     const double tabW = 19.0;
     const double trayTotalWidth = trayBodyWidth + tabW;
     // ルーレットはみ出し量: 開き時27pt, 閉じ時42pt（Swift版準拠）
-    final double dialOverhang = _rouletteOpen ? 27.0 : 55.0;
+    final double dialOverhang = _rouletteOpen ? 60.0 : 55.0;
     // チラ見せ量（閉じ時にボディ左辺が覗く）
     const double peekAmount = 5.0;
     // 閉じ時: タブだけ見える位置までスライド
@@ -236,38 +236,57 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                         // ラベル帯
                         SizedBox(
                           height: 22,
-                          child: Padding(
-                            padding: const EdgeInsets.only(left: 4, right: 8),
-                            child: Row(
-                              children: [
-                                Text(
-                                  _rouletteOpen ? '\u25B6' : '\u25C0',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.white.withValues(alpha: 0.8),
+                          child: Stack(
+                            children: [
+                              // 三角マーク（左端）
+                              Positioned(
+                                left: 4,
+                                top: 0,
+                                bottom: 0,
+                                child: Center(
+                                  child: Text(
+                                    _rouletteOpen ? '\u25B6' : '\u25C0',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.white.withValues(alpha: 0.8),
+                                    ),
                                   ),
                                 ),
-                                if (_rouletteOpen) ...[
-                                  const Spacer(),
-                                  Text(
-                                    '\u89AAタグ',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.white.withValues(alpha: 0.7),
+                              ),
+                              // 親タグ・子タグラベル（右端からの距離で配置）
+                              if (_rouletteOpen) ...[
+                                Positioned(
+                                  right: 221,
+                                  top: 0,
+                                  bottom: 0,
+                                  child: Center(
+                                    child: Text(
+                                      '\u89AAタグ',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.white.withValues(alpha: 0.75),
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(width: 24),
-                                  Text(
-                                    '\u5B50タグ',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.white.withValues(alpha: 0.7),
+                                ),
+                                Positioned(
+                                  right: 104,
+                                  top: 0,
+                                  bottom: 0,
+                                  child: Center(
+                                    child: Text(
+                                      '\u5B50タグ',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.white.withValues(alpha: 0.75),
+                                      ),
                                     ),
                                   ),
-                                  const Spacer(),
-                                ],
+                                ),
                               ],
-                            ),
+                            ],
                           ),
                         ),
                         // 収納ボタン
@@ -299,24 +318,83 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                                 )
                               : const SizedBox(),
                         ),
-                        // 下部ボタン
-                        Container(
+                        // 下部ボタン（Swift版準拠: trailing揃え）
+                        SizedBox(
                           height: 20,
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Row(
+                          child: Stack(
+                            clipBehavior: Clip.none,
                             children: [
-                              const Icon(Icons.add_circle_outline, size: 14, color: Colors.grey),
-                              const SizedBox(width: 4),
-                              Text(
-                                '\u89AAタグ\u8FFD\u52A0',
-                                style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                              // 親タグ追加（上にオフセット）
+                              Positioned(
+                                right: 191,
+                                top: -17,
+                                child: GestureDetector(
+                                  onTap: () {},
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.add_circle, size: 14,
+                                          color: Colors.white.withValues(alpha: 0.9)),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        '\u89AAタグ\u8FFD\u52A0',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.white.withValues(alpha: 0.9),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                              const SizedBox(width: 12),
-                              const Icon(Icons.add_circle_outline, size: 14, color: Colors.grey),
-                              const SizedBox(width: 4),
-                              Text(
-                                '\u5B50タグ\u8FFD\u52A0',
-                                style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                              // 子タグ追加（上にオフセット）
+                              Positioned(
+                                right: 78,
+                                top: -17,
+                                child: GestureDetector(
+                                  onTap: () {},
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.add_circle_outline, size: 13,
+                                          color: Colors.white.withValues(alpha: 0.8)),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        '\u5B50タグ\u8FFD\u52A0',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.white.withValues(alpha: 0.8),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              // 履歴ボタン（タグ追加より少し下）
+                              Positioned(
+                                right: 8,
+                                top: -8,
+                                child: GestureDetector(
+                                  onTap: () {},
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.chevron_right, size: 12,
+                                          color: Colors.white.withValues(alpha: 0.8)),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        '\u5C65\u6B74',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.white.withValues(alpha: 0.8),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -625,7 +703,7 @@ class _TrayWithTabPainter extends CustomPainter {
       path,
       Paint()
         ..color = Colors.black.withValues(alpha: 0.2)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
     );
     canvas.restore();
 
@@ -664,7 +742,7 @@ class _DialArcShadowPainter extends CustomPainter {
       arcPath,
       Paint()
         ..color = Colors.black.withValues(alpha: 0.5)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
     );
     canvas.restore();
   }
