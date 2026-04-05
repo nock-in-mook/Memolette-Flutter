@@ -133,10 +133,10 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
               border: Border.all(
                 color: _hasMemo
                     ? Colors.blueAccent.withValues(alpha: 0.5)
-                    : const Color.fromRGBO(142, 142, 147, 0.25),
+                    : const Color.fromRGBO(142, 142, 147, 0.4),
                 width: _hasMemo ? 2 : 1,
               ),
-              boxShadow: [AppShadows.card()],
+              // \u30B7\u30E3\u30C9\u30A6\u306A\u3057\uFF08Swift\u7248\u6E96\u62E0\uFF09
             ),
             child: Column(
               children: [
@@ -505,7 +505,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
             width: 1,
             height: 24,
             margin: const EdgeInsets.symmetric(horizontal: 8),
-            color: const Color.fromRGBO(142, 142, 147, 0.18),
+            color: const Color.fromRGBO(142, 142, 147, 0.35),
           ),
           // \u30BF\u30B0\u30A8\u30EA\u30A2
           if (_attachedTags.isEmpty)
@@ -514,7 +514,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 // TODO: \u30C8\u30EC\u30FC\u3092\u958B\u304F
               },
               child: const Icon(Icons.sell_outlined, size: 16,
-                  color: Color.fromRGBO(142, 142, 147, 0.3)),
+                  color: Color.fromRGBO(142, 142, 147, 0.45)),
             )
           else ...[
             ..._attachedTags.take(2).map((tag) => Container(
