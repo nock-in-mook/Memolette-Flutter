@@ -5,10 +5,16 @@ import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../widgets/memo_card.dart';
+import '../widgets/memo_input_area.dart';
 import '../widgets/tag_edit_dialog.dart';
 import 'memo_edit_screen.dart';
+import 'quick_sort_screen.dart';
+import 'todo_lists_screen.dart';
 
-/// ホーム画面: タブ付きメモ一覧（バッグ表示）
+/// ホーム画面（Swift版レイアウト準拠）
+/// 上: メモ入力エリア常駐
+/// 中: 機能バー + 親タグタブ + 子タグドロワー
+/// 下: メモグリッド + ボトムバー
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -16,11 +22,16 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen>
-    with SingleTickerProviderStateMixin {
-  // 現在選択中のタブインデックス
-  // 0=すべて, 1=タグなし, 2以降=親タグ
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  // タブ: 0=すべて, 1=タグなし, 2+=親タグ
   int _selectedTabIndex = 0;
+  // 子タグドロワー
+  bool _childDrawerOpen = false;
+  String? _selectedChildTagId;
+  // グリッドサイズ: 2 or 3列
+  int _gridColumns = 2;
+  // 入力エリア用
+  String? _editingMemoId;
 
   @override
   Widget build(BuildContext context) {
@@ -28,109 +39,205 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        title: const Text('Memolette'),
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        actions: [
-          // タグ追加ボタン
-          IconButton(
-            icon: const Icon(Icons.label_outline),
-            onPressed: () => _showCreateTagDialog(context),
-            tooltip: 'タグを追加',
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // タブバー
-          parentTagsAsync.when(
-            data: (parentTags) => _buildTabBar(parentTags),
-            loading: () => const SizedBox(height: 48),
-            error: (_, _) => const SizedBox(height: 48),
-          ),
-          // メモ一覧
-          Expanded(
-            child: parentTagsAsync.when(
-              data: (parentTags) => _buildMemoList(parentTags),
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('エラー: $e')),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // 1. 検索バー
+            _buildSearchBar(),
+            // 2. メモ入力エリア（常駐）
+            MemoInputArea(
+              editingMemoId: _editingMemoId,
+              onMemoCreated: (id) => setState(() => _editingMemoId = id),
+              onClosed: () => setState(() => _editingMemoId = null),
+              selectedParentTagId: _currentParentTagId(
+                  parentTagsAsync.valueOrNull ?? []),
+              selectedChildTagId: _selectedChildTagId,
             ),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _createNewMemo(context),
-        backgroundColor: Colors.blueAccent,
-        child: const Icon(Icons.add, color: Colors.white),
+            // 3. 機能バー（爆速・ToDo・ドロワーハンドル）
+            _buildFunctionBar(),
+            // 4. 親タグタブ
+            parentTagsAsync.when(
+              data: (tags) => _buildTabBar(tags),
+              loading: () => const SizedBox(height: 40),
+              error: (_, _) => const SizedBox(height: 40),
+            ),
+            // 5. 子タグドロワー（選択中の親タグがある場合のみ）
+            if (_childDrawerOpen)
+              parentTagsAsync.when(
+                data: (tags) => _buildChildTagDrawer(tags),
+                loading: () => const SizedBox(),
+                error: (_, _) => const SizedBox(),
+              ),
+            // 6. 件数 + 子タグトグル
+            parentTagsAsync.when(
+              data: (tags) => _buildCountBar(tags),
+              loading: () => const SizedBox(),
+              error: (_, _) => const SizedBox(),
+            ),
+            // 7. メモグリッド
+            Expanded(
+              child: parentTagsAsync.when(
+                data: (tags) => _buildMemoGrid(tags),
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(child: Text('エラー: $e')),
+              ),
+            ),
+            // 8. ボトムバー
+            parentTagsAsync.when(
+              data: (tags) => _buildBottomBar(tags),
+              loading: () => const SizedBox(),
+              error: (_, _) => const SizedBox(),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  /// タブバー（すべて・タグなし・親タグ群）
-  Widget _buildTabBar(List<Tag> parentTags) {
-    // タブ上限チェック: selectedIndexが範囲外にならないように
-    final maxIndex = 1 + parentTags.length; // 0=すべて, 1=タグなし, 2+
-    if (_selectedTabIndex > maxIndex) {
-      _selectedTabIndex = 0;
-    }
+  String? _currentParentTagId(List<Tag> parentTags) {
+    if (_selectedTabIndex < 2) return null;
+    final idx = _selectedTabIndex - 2;
+    if (idx >= parentTags.length) return null;
+    return parentTags[idx].id;
+  }
 
-    return Container(
-      color: Colors.white,
-      height: 44,
+  // ========================================
+  // 1. 検索バー
+  // ========================================
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        children: [
+          // ＋ボタン（新規メモ）
+          GestureDetector(
+            onTap: _createNewMemo,
+            child: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.blueAccent, width: 1.5),
+              ),
+              child: const Icon(Icons.add, size: 20, color: Colors.blueAccent),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // 検索バー
+          Expanded(
+            child: Container(
+              height: 36,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.search, size: 18, color: Colors.grey[500]),
+                  const SizedBox(width: 6),
+                  Text('メモを探す',
+                      style:
+                          TextStyle(fontSize: 14, color: Colors.grey[500])),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // 設定ギア
+          GestureDetector(
+            onTap: () {},
+            child: Icon(Icons.settings, size: 24, color: Colors.grey[600]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ========================================
+  // 3. 機能バー
+  // ========================================
+  Widget _buildFunctionBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: Row(
+        children: [
+          // 爆速モード
+          GestureDetector(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const QuickSortScreen()),
+            ),
+            child: const Icon(Icons.bolt, size: 22, color: Colors.orange),
+          ),
+          const SizedBox(width: 12),
+          // ToDoリスト
+          GestureDetector(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const TodoListsScreen()),
+            ),
+            child: const Icon(Icons.checklist, size: 22, color: Colors.green),
+          ),
+          const Spacer(),
+          // ドロワーハンドル（上下のシェブロン）
+          const Icon(Icons.expand_less, size: 20, color: Colors.grey),
+        ],
+      ),
+    );
+  }
+
+  // ========================================
+  // 4. 親タグタブ
+  // ========================================
+  Widget _buildTabBar(List<Tag> parentTags) {
+    final maxIndex = 1 + parentTags.length;
+    if (_selectedTabIndex > maxIndex) _selectedTabIndex = 0;
+
+    return SizedBox(
+      height: 40,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8),
         children: [
-          // 「すべて」タブ
+          // 「すべて」
           _buildTab(
             label: 'すべて',
             color: TagColors.allTabColor,
             isSelected: _selectedTabIndex == 0,
-            onTap: () => setState(() => _selectedTabIndex = 0),
+            onTap: () => setState(() {
+              _selectedTabIndex = 0;
+              _childDrawerOpen = false;
+              _selectedChildTagId = null;
+            }),
           ),
-          // 「タグなし」タブ
+          // 「タグなし」
           _buildTab(
             label: 'タグなし',
             color: TagColors.palette[0],
             isSelected: _selectedTabIndex == 1,
-            onTap: () => setState(() => _selectedTabIndex = 1),
+            onTap: () => setState(() {
+              _selectedTabIndex = 1;
+              _childDrawerOpen = false;
+              _selectedChildTagId = null;
+            }),
           ),
-          // 親タグタブ
+          // 親タグ
           for (int i = 0; i < parentTags.length; i++)
             _buildTab(
               label: parentTags[i].name,
               color: TagColors.getColor(parentTags[i].colorIndex),
               isSelected: _selectedTabIndex == i + 2,
-              onTap: () => setState(() => _selectedTabIndex = i + 2),
-              onLongPress: () =>
-                  _showTagActions(context, parentTags[i]),
+              onTap: () => setState(() {
+                _selectedTabIndex = i + 2;
+                _selectedChildTagId = null;
+              }),
+              onLongPress: () => _showTagActions(parentTags[i]),
             ),
-          // 「+」追加ボタン
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-            child: GestureDetector(
-              onTap: () => _showCreateTagDialog(context),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius:
-                      BorderRadius.circular(CornerRadius.parentTag),
-                ),
-                alignment: Alignment.center,
-                child: const Icon(Icons.add, size: 18, color: Colors.grey),
-              ),
-            ),
-          ),
         ],
       ),
     );
   }
 
-  /// 個別タブウィジェット
   Widget _buildTab({
     required String label,
     required Color color,
@@ -138,25 +245,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     required VoidCallback onTap,
     VoidCallback? onLongPress,
   }) {
+    // タグ名を最大5文字に
+    final displayLabel =
+        label.length > 5 ? '${label.substring(0, 5)}...' : label;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
       child: GestureDetector(
         onTap: onTap,
         onLongPress: onLongPress,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+        child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
-            color: isSelected ? color : color.withValues(alpha: 0.4),
-            borderRadius: BorderRadius.circular(CornerRadius.parentTag),
+            color: isSelected ? color : color.withValues(alpha: 0.35),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(8),
+              topRight: Radius.circular(8),
+              bottomLeft: Radius.circular(2),
+              bottomRight: Radius.circular(2),
+            ),
             boxShadow: isSelected ? [AppShadows.light()] : null,
           ),
           alignment: Alignment.center,
           child: Text(
-            label,
+            displayLabel,
             style: TextStyle(
               fontSize: 13,
-              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
               color: Colors.black87,
             ),
           ),
@@ -165,44 +280,284 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  /// タブに応じたメモ一覧
-  Widget _buildMemoList(List<Tag> parentTags) {
+  // ========================================
+  // 5. 子タグドロワー
+  // ========================================
+  Widget _buildChildTagDrawer(List<Tag> parentTags) {
+    final parentId = _currentParentTagId(parentTags);
+    if (parentId == null) return const SizedBox();
+
+    final childTagsAsync = ref.watch(childTagsProvider(parentId));
+
+    return childTagsAsync.when(
+      data: (children) {
+        if (children.isEmpty) return const SizedBox();
+        return Container(
+          height: 36,
+          color: Colors.grey[100],
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            children: [
+              // ▶ 閉じるボタン
+              GestureDetector(
+                onTap: () =>
+                    setState(() => _childDrawerOpen = false),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                  child: Icon(Icons.play_arrow, size: 16, color: Colors.grey),
+                ),
+              ),
+              // 「すべて」子タグフィルター解除
+              _buildChildTab('すべて', null, children),
+              // 子タグ
+              for (final child in children)
+                _buildChildTab(child.name, child.id, children,
+                    color: TagColors.getColor(child.colorIndex)),
+              // 子タグ追加ボタン
+              GestureDetector(
+                onTap: () => _addChildTag(parentId),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: const Icon(Icons.add, size: 16, color: Colors.grey),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+      loading: () => const SizedBox(height: 36),
+      error: (_, _) => const SizedBox(),
+    );
+  }
+
+  Widget _buildChildTab(String label, String? childId, List<Tag> children,
+      {Color? color}) {
+    final isSelected = _selectedChildTagId == childId;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedChildTagId = childId),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (color ?? Colors.white)
+              : (color?.withValues(alpha: 0.3) ?? Colors.white),
+          borderRadius: BorderRadius.circular(12),
+          border: isSelected
+              ? Border.all(color: Colors.blueAccent, width: 1.5)
+              : Border.all(color: Colors.grey.shade300),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            color: Colors.black87,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ========================================
+  // 6. 件数バー
+  // ========================================
+  Widget _buildCountBar(List<Tag> parentTags) {
+    final parentId = _currentParentTagId(parentTags);
+    final hasChildren = parentId != null;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      child: Row(
+        children: [
+          // 件数はStreamで取得（簡易表示）
+          _MemoCountText(
+            tabIndex: _selectedTabIndex,
+            parentTags: parentTags,
+            childTagId: _selectedChildTagId,
+          ),
+          const Spacer(),
+          // 子タグドロワートグル
+          if (hasChildren)
+            GestureDetector(
+              onTap: () =>
+                  setState(() => _childDrawerOpen = !_childDrawerOpen),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _childDrawerOpen
+                          ? Icons.arrow_left
+                          : Icons.arrow_right,
+                      size: 14,
+                      color: Colors.grey[600],
+                    ),
+                    Text('子タグ',
+                        style: TextStyle(
+                            fontSize: 11, color: Colors.grey[600])),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ========================================
+  // 7. メモグリッド
+  // ========================================
+  Widget _buildMemoGrid(List<Tag> parentTags) {
     if (_selectedTabIndex == 0) {
-      // すべて
-      return _AllMemosGrid(
-        onTapMemo: _openMemo,
-        onLongPressMemo: (m) => _showMemoActions(context, m),
+      return _MemoGridView(
+        stream: ref.watch(allMemosProvider),
+        gridColumns: _gridColumns,
+        onTap: _openMemo,
+        onLongPress: (m) => _showMemoActions(m),
       );
     } else if (_selectedTabIndex == 1) {
-      // タグなし
-      return _UntaggedMemosGrid(
-        onTapMemo: _openMemo,
-        onLongPressMemo: (m) => _showMemoActions(context, m),
+      return _MemoGridView(
+        stream: ref.watch(untaggedMemosProvider),
+        gridColumns: _gridColumns,
+        onTap: _openMemo,
+        onLongPress: (m) => _showMemoActions(m),
       );
     } else {
-      // タグ別
-      final tagIndex = _selectedTabIndex - 2;
-      if (tagIndex >= parentTags.length) return const SizedBox();
-      final tag = parentTags[tagIndex];
-      return _TagMemosGrid(
-        tagId: tag.id,
-        onTapMemo: _openMemo,
-        onLongPressMemo: (m) => _showMemoActions(context, m),
+      final parentId = _currentParentTagId(parentTags);
+      if (parentId == null) return const SizedBox();
+      // 子タグフィルタリング
+      final tagId = _selectedChildTagId ?? parentId;
+      return _MemoGridView(
+        stream: ref.watch(memosForTagProvider(tagId)),
+        gridColumns: _gridColumns,
+        onTap: _openMemo,
+        onLongPress: (m) => _showMemoActions(m),
       );
     }
   }
 
-  Future<void> _createNewMemo(BuildContext context) async {
+  // ========================================
+  // 8. ボトムバー
+  // ========================================
+  Widget _buildBottomBar(List<Tag> parentTags) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 4,
+            offset: const Offset(0, -1),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // 左: 選択削除・移動
+          IconButton(
+            icon: const Icon(Icons.delete_outline, size: 20),
+            onPressed: () {},
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36),
+            color: Colors.grey[600],
+          ),
+          IconButton(
+            icon: const Icon(Icons.vertical_align_top, size: 20),
+            onPressed: () {},
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36),
+            color: Colors.grey[600],
+          ),
+          const Spacer(),
+          // 中央: このフォルダにメモ作成
+          GestureDetector(
+            onTap: () => _createMemoInFolder(parentTags),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.blueAccent.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add_circle_outline,
+                      size: 16, color: Colors.blueAccent),
+                  SizedBox(width: 4),
+                  Text('このフォルダに\nメモ作成',
+                      style: TextStyle(
+                          fontSize: 11, color: Colors.blueAccent),
+                      textAlign: TextAlign.center),
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
+          // 右: グリッドサイズ切替
+          GestureDetector(
+            onTap: () => setState(() {
+              _gridColumns = _gridColumns == 2 ? 3 : (_gridColumns == 3 ? 1 : 2);
+            }),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade400),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                _gridColumns == 1
+                    ? '1列'
+                    : '$_gridColumns×${_gridColumns + 1}',
+                style:
+                    TextStyle(fontSize: 12, color: Colors.grey[700]),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ========================================
+  // アクション
+  // ========================================
+
+  Future<void> _createNewMemo() async {
     final db = ref.read(databaseProvider);
-    final nav = Navigator.of(context);
     final memo = await db.createMemo();
-    if (mounted) {
-      nav.push(
-        MaterialPageRoute(
-          builder: (_) => MemoEditScreen(memoId: memo.id),
-        ),
-      );
+    setState(() => _editingMemoId = memo.id);
+  }
+
+  Future<void> _createMemoInFolder(List<Tag> parentTags) async {
+    final db = ref.read(databaseProvider);
+    final memo = await db.createMemo();
+    // 現在のタブのタグを自動付与
+    final parentId = _currentParentTagId(parentTags);
+    if (parentId != null) {
+      await db.addTagToMemo(memo.id, parentId);
     }
+    if (_selectedChildTagId != null) {
+      await db.addTagToMemo(memo.id, _selectedChildTagId!);
+    }
+    setState(() => _editingMemoId = memo.id);
   }
 
   void _openMemo(Memo memo) {
@@ -213,24 +568,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  /// タグ作成ダイアログ
-  Future<void> _showCreateTagDialog(BuildContext context) async {
-    final result = await showDialog<TagEditResult>(
-      context: context,
-      builder: (_) => const TagEditDialog(),
-    );
-    if (result != null) {
-      final db = ref.read(databaseProvider);
-      await db.createTag(
-        name: result.name,
-        colorIndex: result.colorIndex,
-        parentTagId: result.parentTagId,
-      );
-    }
-  }
-
-  /// タグ長押しメニュー
-  void _showTagActions(BuildContext context, Tag tag) {
+  void _showTagActions(Tag tag) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -243,7 +581,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ヘッダ
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
@@ -264,7 +601,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
             ),
             const Divider(height: 1),
-            // 編集
             ListTile(
               leading: const Icon(Icons.edit_outlined),
               title: const Text('編集'),
@@ -273,16 +609,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 _editTag(tag);
               },
             ),
-            // 子タグ追加
             ListTile(
               leading: const Icon(Icons.subdirectory_arrow_right),
               title: const Text('子タグを追加'),
               onTap: () {
                 Navigator.pop(context);
-                _addChildTag(tag);
+                _addChildTag(tag.id);
               },
             ),
-            // 削除
             ListTile(
               leading: const Icon(Icons.delete_outline, color: Colors.red),
               title: const Text('削除', style: TextStyle(color: Colors.red)),
@@ -313,17 +647,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
   }
 
-  Future<void> _addChildTag(Tag parentTag) async {
+  Future<void> _addChildTag(String parentId) async {
     final result = await showDialog<TagEditResult>(
       context: context,
-      builder: (_) => TagEditDialog(parentTagId: parentTag.id),
+      builder: (_) => TagEditDialog(parentTagId: parentId),
     );
     if (result != null) {
       final db = ref.read(databaseProvider);
       await db.createTag(
         name: result.name,
         colorIndex: result.colorIndex,
-        parentTagId: parentTag.id,
+        parentTagId: parentId,
       );
     }
   }
@@ -364,10 +698,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () {
-                      final db = ref.read(databaseProvider);
-                      db.deleteTag(tag.id);
+                      ref.read(databaseProvider).deleteTag(tag.id);
                       Navigator.pop(context);
-                      // タブをリセット
                       setState(() => _selectedTabIndex = 0);
                     },
                     style: ElevatedButton.styleFrom(
@@ -384,8 +716,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  /// メモ長押しメニュー
-  void _showMemoActions(BuildContext context, Memo memo) {
+  void _showMemoActions(Memo memo) {
     final db = ref.read(databaseProvider);
     showModalBottomSheet(
       context: context,
@@ -427,10 +758,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   const Text('削除', style: TextStyle(color: Colors.red)),
               onTap: () {
                 Navigator.pop(context);
-                if (memo.isLocked) {
-                  _showLockedWarning();
-                } else {
-                  _confirmDeleteMemo(db, memo);
+                if (!memo.isLocked) {
+                  db.deleteMemo(memo.id);
                 }
               },
             ),
@@ -440,249 +769,102 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ),
     );
   }
+}
 
-  void _showLockedWarning() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(CornerRadius.dialog),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.lock, size: 48, color: Colors.orange),
-            const SizedBox(height: 12),
-            const Text('このメモはロックされています',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
+// ========================================
+// メモ件数テキスト
+// ========================================
+class _MemoCountText extends ConsumerWidget {
+  final int tabIndex;
+  final List<Tag> parentTags;
+  final String? childTagId;
+
+  const _MemoCountText({
+    required this.tabIndex,
+    required this.parentTags,
+    this.childTagId,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    AsyncValue<List<Memo>> memosAsync;
+    if (tabIndex == 0) {
+      memosAsync = ref.watch(allMemosProvider);
+    } else if (tabIndex == 1) {
+      memosAsync = ref.watch(untaggedMemosProvider);
+    } else {
+      final idx = tabIndex - 2;
+      if (idx >= parentTags.length) return const SizedBox();
+      final tagId = childTagId ?? parentTags[idx].id;
+      memosAsync = ref.watch(memosForTagProvider(tagId));
+    }
+
+    return memosAsync.when(
+      data: (memos) => Text(
+        '${memos.length}件',
+        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+      ),
+      loading: () => const SizedBox(),
+      error: (_, _) => const SizedBox(),
+    );
+  }
+}
+
+// ========================================
+// メモグリッドビュー（共通）
+// ========================================
+class _MemoGridView extends StatelessWidget {
+  final AsyncValue<List<Memo>> stream;
+  final int gridColumns;
+  final void Function(Memo) onTap;
+  final void Function(Memo) onLongPress;
+
+  const _MemoGridView({
+    required this.stream,
+    required this.gridColumns,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return stream.when(
+      data: (memos) => memos.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.note_add_outlined,
+                      size: 60, color: Colors.grey[300]),
+                  const SizedBox(height: 12),
+                  Text('メモがありません',
+                      style:
+                          TextStyle(fontSize: 16, color: Colors.grey[500])),
+                ],
+              ),
+            )
+          : Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: GridView.builder(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: gridColumns,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  childAspectRatio: gridColumns == 1 ? 3.0 : 1.0,
+                ),
+                itemCount: memos.length,
+                itemBuilder: (_, index) {
+                  final memo = memos[index];
+                  return MemoCard(
+                    memo: memo,
+                    onTap: () => onTap(memo),
+                    onLongPress: () => onLongPress(memo),
+                  );
+                },
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _confirmDeleteMemo(AppDatabase db, Memo memo) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(CornerRadius.dialog),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.delete_forever, size: 48, color: Colors.red),
-            const SizedBox(height: 12),
-            const Text('メモを削除しますか？',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('キャンセル'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () {
-                      db.deleteMemo(memo.id);
-                      Navigator.pop(context);
-                    },
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red),
-                    child: const Text('削除',
-                        style: TextStyle(color: Colors.white)),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ========================================
-// メモグリッド: 全メモ
-// ========================================
-class _AllMemosGrid extends ConsumerWidget {
-  final void Function(Memo) onTapMemo;
-  final void Function(Memo) onLongPressMemo;
-
-  const _AllMemosGrid({
-    required this.onTapMemo,
-    required this.onLongPressMemo,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final memosAsync = ref.watch(allMemosProvider);
-    return memosAsync.when(
-      data: (memos) => memos.isEmpty
-          ? _emptyState('メモがありません', '＋ボタンで最初のメモを作成しましょう')
-          : _grid(memos),
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('エラー: $e')),
     );
   }
-
-  Widget _grid(List<Memo> memos) {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: GridView.builder(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-          childAspectRatio: 1.0,
-        ),
-        itemCount: memos.length,
-        itemBuilder: (_, index) {
-          final memo = memos[index];
-          return MemoCard(
-            memo: memo,
-            onTap: () => onTapMemo(memo),
-            onLongPress: () => onLongPressMemo(memo),
-          );
-        },
-      ),
-    );
-  }
-}
-
-// ========================================
-// メモグリッド: タグなし
-// ========================================
-class _UntaggedMemosGrid extends ConsumerWidget {
-  final void Function(Memo) onTapMemo;
-  final void Function(Memo) onLongPressMemo;
-
-  const _UntaggedMemosGrid({
-    required this.onTapMemo,
-    required this.onLongPressMemo,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final memosAsync = ref.watch(untaggedMemosProvider);
-    return memosAsync.when(
-      data: (memos) => memos.isEmpty
-          ? _emptyState('タグなしメモはありません', '')
-          : _grid(memos),
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('エラー: $e')),
-    );
-  }
-
-  Widget _grid(List<Memo> memos) {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: GridView.builder(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-          childAspectRatio: 1.0,
-        ),
-        itemCount: memos.length,
-        itemBuilder: (_, index) {
-          final memo = memos[index];
-          return MemoCard(
-            memo: memo,
-            onTap: () => onTapMemo(memo),
-            onLongPress: () => onLongPressMemo(memo),
-          );
-        },
-      ),
-    );
-  }
-}
-
-// ========================================
-// メモグリッド: タグ別
-// ========================================
-class _TagMemosGrid extends ConsumerWidget {
-  final String tagId;
-  final void Function(Memo) onTapMemo;
-  final void Function(Memo) onLongPressMemo;
-
-  const _TagMemosGrid({
-    required this.tagId,
-    required this.onTapMemo,
-    required this.onLongPressMemo,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final memosAsync = ref.watch(memosForTagProvider(tagId));
-    return memosAsync.when(
-      data: (memos) => memos.isEmpty
-          ? _emptyState('このタグのメモはありません', '')
-          : _grid(memos),
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('エラー: $e')),
-    );
-  }
-
-  Widget _grid(List<Memo> memos) {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: GridView.builder(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-          childAspectRatio: 1.0,
-        ),
-        itemCount: memos.length,
-        itemBuilder: (_, index) {
-          final memo = memos[index];
-          return MemoCard(
-            memo: memo,
-            onTap: () => onTapMemo(memo),
-            onLongPress: () => onLongPressMemo(memo),
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// 共通の空状態ウィジェット
-Widget _emptyState(String title, String subtitle) {
-  return Center(
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(Icons.note_add_outlined, size: 80, color: Colors.grey[300]),
-        const SizedBox(height: 16),
-        Text(title, style: TextStyle(fontSize: 18, color: Colors.grey[500])),
-        if (subtitle.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(subtitle,
-              style: TextStyle(fontSize: 14, color: Colors.grey[400])),
-        ],
-      ],
-    ),
-  );
 }
