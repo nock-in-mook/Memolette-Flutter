@@ -133,7 +133,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
               border: Border.all(
                 color: _hasMemo
                     ? Colors.blueAccent.withValues(alpha: 0.5)
-                    : Colors.grey.shade300,
+                    : const Color.fromRGBO(142, 142, 147, 0.25),
                 width: _hasMemo ? 2 : 1,
               ),
               boxShadow: [AppShadows.card()],
@@ -490,21 +490,22 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
               maxLines: 1,
             ),
           ),
+          // \u30BF\u30A4\u30C8\u30EB\u00D7\u30DC\u30BF\u30F3
           if (_titleController.text.isNotEmpty)
             GestureDetector(
               onTap: () {
                 _titleController.clear();
                 _onChanged();
               },
-              child: Icon(Icons.close, size: 16,
-                  color: Colors.grey.withValues(alpha: 0.5)),
+              child: const Icon(Icons.close, size: 16,
+                  color: Color.fromRGBO(142, 142, 147, 0.3)),
             ),
           // \u7E26\u7DDA\u30BB\u30D1\u30EC\u30FC\u30BF\uFF08\u5E38\u6642\u8868\u793A\uFF09
           Container(
             width: 1,
             height: 24,
             margin: const EdgeInsets.symmetric(horizontal: 8),
-            color: Colors.grey.withValues(alpha: 0.3),
+            color: const Color.fromRGBO(142, 142, 147, 0.18),
           ),
           // \u30BF\u30B0\u30A8\u30EA\u30A2
           if (_attachedTags.isEmpty)
@@ -512,8 +513,8 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
               onTap: () {
                 // TODO: \u30C8\u30EC\u30FC\u3092\u958B\u304F
               },
-              child: Icon(Icons.sell_outlined, size: 16,
-                  color: Colors.grey.withValues(alpha: 0.3)),
+              child: const Icon(Icons.sell_outlined, size: 16,
+                  color: Color.fromRGBO(142, 142, 147, 0.3)),
             )
           else ...[
             ..._attachedTags.take(2).map((tag) => Container(
@@ -542,8 +543,8 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                   setState(() {});
                 }
               },
-              child: Icon(Icons.close, size: 14,
-                  color: Colors.grey.withValues(alpha: 0.5)),
+              child: const Icon(Icons.close, size: 14,
+                  color: Color.fromRGBO(142, 142, 147, 0.3)),
             ),
           ],
         ],
