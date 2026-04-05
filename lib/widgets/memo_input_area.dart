@@ -134,15 +134,24 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 color: _hasMemo
                     ? Colors.blueAccent.withValues(alpha: 0.5)
                     : const Color.fromRGBO(142, 142, 147, 0.4),
-                width: _hasMemo ? 2 : 1,
+                width: _hasMemo ? 2.5 : 1.5,
               ),
               // \u30B7\u30E3\u30C9\u30A6\u306A\u3057\uFF08Swift\u7248\u6E96\u62E0\uFF09
             ),
             child: Column(
               children: [
                 _buildHeader(),
-                Container(height: 2, color: Colors.grey.withValues(alpha: 0.1)),
+                Container(
+                  height: 1,
+                  margin: const EdgeInsets.symmetric(horizontal: 10),
+                  color: const Color.fromRGBO(142, 142, 147, 0.35),
+                ),
                 _buildContent(),
+                Container(
+                  height: 1,
+                  margin: const EdgeInsets.symmetric(horizontal: 10),
+                  color: const Color.fromRGBO(142, 142, 147, 0.35),
+                ),
                 _buildToolbar(),
               ],
             ),
@@ -576,8 +585,8 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
   Widget _buildToolbar() {
     return Container(
-      height: 28,
-      padding: const EdgeInsets.fromLTRB(10, 5, 10, 5),
+      height: 34,
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
       child: Row(
         children: [
           GestureDetector(
