@@ -363,8 +363,8 @@ class _TagDialPainter extends CustomPainter {
       _drawEdgeArc(canvas, childInnerR, 1.5, brightness: (0.3, 0.45, 0.3));
     }
 
-    // ポインター（最前面に描画）
-    _drawPointer(canvas);
+    // ポインター（最前面に描画、開き時のみ）
+    if (isOpen) _drawPointer(canvas);
 
     // インナーシャドウ（上・下・右の三辺、Swift版準拠）
     _drawInnerShadows(canvas, size);
