@@ -276,6 +276,11 @@ class _TagDialPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // 外周弧の左端に沿ったドロップシャドウ（Swift版準拠: black 50%, radius 3, x -2）
+    if (isOpen) {
+      _drawEdgeShadow(canvas, size);
+    }
+
     // 親リング描画
     _drawRing(
       canvas,
@@ -351,6 +356,36 @@ class _TagDialPainter extends CustomPainter {
           [Colors.black.withValues(alpha: 0.1), Colors.transparent],
         ),
     );
+  }
+
+  /// 外周弧の左端に沿ったドロップシャドウ（Swift版 DialEdgeArcShape + shadow）
+  void _drawEdgeShadow(Canvas canvas, Size size) {
+    final halfHeight = cy;
+    final maxSin = min(1.0, halfHeight / parentOuterR);
+    final maxAngle = asin(maxSin);
+
+    // 弧の形のパスを作成
+    final arcPath = Path()
+      ..arcTo(
+        Rect.fromCircle(center: Offset(cx, cy), radius: parentOuterR),
+        pi - maxAngle,
+        maxAngle * 2,
+        false,
+      )
+      ..close();
+
+    // 影を描画（x: -2にオフセット）
+    canvas.save();
+    canvas.translate(-2, 0);
+    canvas.drawPath(
+      arcPath,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.5)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+    canvas.restore();
   }
 
   void _drawRing(

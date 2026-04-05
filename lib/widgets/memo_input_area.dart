@@ -646,6 +646,19 @@ class _TrayWithTabPainter extends CustomPainter {
 
     // 8. 閉じる
     path.close();
+
+    // ドロップシャドウ（Swift版準拠: black 20%, radius 3, x -2, y 0）
+    canvas.save();
+    canvas.translate(-2, 0);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+    canvas.restore();
+
+    // 本体
     canvas.drawPath(path, Paint()..color = color);
   }
 
