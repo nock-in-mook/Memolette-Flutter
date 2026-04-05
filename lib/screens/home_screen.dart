@@ -124,9 +124,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               height: 24,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.blueAccent, width: 2.0),
+                border: Border.all(color: const Color(0xFF007AFF), width: 1.5),
               ),
-              child: const Icon(Icons.add, size: 14, color: Colors.blueAccent),
+              child: const Icon(Icons.add, size: 14, color: Color(0xFF007AFF)),
             ),
           ),
           const Spacer(),
@@ -154,8 +154,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // 設定ギア（線画細め、サイズ統一）
           GestureDetector(
             onTap: () {},
-            child: Icon(Icons.settings_outlined,
-                size: 26, color: Colors.blueAccent.withValues(alpha: 0.8)),
+            child: const Icon(Icons.settings_outlined,
+                size: 22, color: Color(0xFF007AFF)),
           ),
         ],
       ),

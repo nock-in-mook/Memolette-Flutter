@@ -143,13 +143,11 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 _buildHeader(),
                 Container(
                   height: 1,
-                  margin: const EdgeInsets.symmetric(horizontal: 10),
                   color: const Color.fromRGBO(142, 142, 147, 0.35),
                 ),
                 _buildContent(),
                 Container(
                   height: 1,
-                  margin: const EdgeInsets.symmetric(horizontal: 10),
                   color: const Color.fromRGBO(142, 142, 147, 0.35),
                 ),
                 _buildToolbar(),
