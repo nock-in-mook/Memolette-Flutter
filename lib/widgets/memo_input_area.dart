@@ -154,7 +154,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
           // ルーレット（タイトル行の下端〜入力欄の下端）
           Positioned(
             right: 0,
-            top: 20, // タブがヘッダー横に出るように（42 - タブ高さ22）
+            top: 42, // タイトル(40) + 区切り線(2) = トレー上端をタイトル下端に一致
             bottom: 0,
             child: allTagsAsync.when(
               data: (allTags) => _buildRoulette(allTags),
@@ -296,7 +296,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                         // 下部ボタン
                         if (_rouletteOpen)
                           Container(
-                            height: 28,
+                            height: 20,
                             padding:
                                 const EdgeInsets.symmetric(horizontal: 8),
                             child: Row(
@@ -330,12 +330,12 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
             Positioned(
               right: 0,
               top: 22,   // ラベル分
-              bottom: 28, // ボタン分
+              bottom: 20, // ボタン分
               width: trayWidth + dialOverhang,
               child: Align(
-                alignment: Alignment.centerRight,
+                alignment: Alignment.topRight,
                 child: Transform.translate(
-                  offset: const Offset(-dialOverhang, -5),
+                  offset: const Offset(-dialOverhang, 0),
                   child: Stack(
                     clipBehavior: Clip.none,
                     children: [
