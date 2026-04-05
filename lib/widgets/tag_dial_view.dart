@@ -151,15 +151,64 @@ class _TagDialViewState extends State<TagDialView>
     }
   }
 
-  /// バウンスアニメーションでスナップ
-  void _animateTo(double target, {required bool isChild}) {
+  /// タップ位置からセクターを特定してスナップ
+  void _onTapAtPosition(Offset pos, double canvasWidth, bool showChild) {
+    final cx = 350.0 + 2;
+    final cy = widget.height / 2;
+
+    // タッチ位置から中心への角度（atan2）
+    final dx = pos.dx - cx;
+    final dy = pos.dy - cy;
+    var angleRad = atan2(dy, dx); // Canvas座標系: 右=0, 下=pi/2, 左=±pi, 上=-pi/2
+    // セクター中央の描画角度 = (180 - displayAngle) * pi / 180
+    // 逆算: displayAngle = 180 - angleRad * 180 / pi
+    // 上側(dy<0)ではangleRadが-pi近くになり、displayAngleが大きくなりすぎるので
+    // angleRadをpi中心（左方向）に正規化
+    if (angleRad < 0) angleRad += 2 * pi; // 0〜2piに正規化
+    // 左方向(pi)が中心、上はpi+α、下はpi-α
+    final displayAngle = (pi - angleRad) * 180 / pi;
+
+    // タッチX位置で親/子を判定
+    final borderX = cx - parentInnerR;
+    final isChild = showChild && pos.dx > canvasWidth - borderX;
+
+    final rotation = isChild ? _childRotation : _parentRotation;
+    final options = isChild ? widget.childOptions : widget.parentOptions;
+    // displayAngle = rawIndex * itemAngle - rotation
+    // rawIndex = (displayAngle + rotation) / itemAngle
+    final tappedIndex = ((displayAngle + rotation) / itemAngle).round();
+
+    // 範囲外チェック
+    if (tappedIndex < 0 || tappedIndex >= options.length) return;
+
+    // 目標回転角度
+    final target = tappedIndex * itemAngle;
+    if ((target - rotation).abs() < 0.1) return;
+
+    // rawRotationも更新
+    if (isChild) {
+      _childRawRotation = target;
+      _childSettling = true;
+    } else {
+      _parentRawRotation = target;
+      _parentSettling = true;
+    }
+
+    // アニメーション: セクター数に応じた長さ（Swift版準拠: 1タグ6コマ×12ms≒72ms/タグ）
+    final sectorCount = ((target - rotation).abs() / itemAngle).round();
+    final duration = Duration(milliseconds: max(200, min(600, sectorCount * 60)));
+    _animateTo(target, isChild: isChild, duration: duration, curve: Curves.easeInOutCubic);
+  }
+
+  /// アニメーションでスナップ
+  void _animateTo(double target, {required bool isChild, Duration? duration, Curve? curve}) {
     final from = isChild ? _childRotation : _parentRotation;
     final controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 250),
+      duration: duration ?? const Duration(milliseconds: 250),
     );
     final animation = Tween<double>(begin: from, end: target).animate(
-      CurvedAnimation(parent: controller, curve: Curves.easeOutBack),
+      CurvedAnimation(parent: controller, curve: curve ?? Curves.easeOutBack),
     );
     animation.addListener(() {
       setState(() {
@@ -210,6 +259,12 @@ class _TagDialViewState extends State<TagDialView>
     final canvasWidth = max(neededWidth, 100.0);
 
     return GestureDetector(
+      onTapUp: (d) {
+        if (!widget.isOpen) return;
+        if (_parentDragging || _childDragging) return;
+        if (_parentSettling || _childSettling) return;
+        _onTapAtPosition(d.localPosition, canvasWidth, showChild);
+      },
       onVerticalDragStart: (d) {
         if (!widget.isOpen) return;
         // ドラッグ開始時にターゲットを確定（途中で切り替えない）
