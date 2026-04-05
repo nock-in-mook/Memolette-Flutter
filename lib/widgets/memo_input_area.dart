@@ -480,11 +480,12 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 fontSize: 17,
                 fontWeight: FontWeight.w600,
               ),
-              decoration: const InputDecoration(
-                hintText: 'タイトル（任意）',
+              decoration: InputDecoration(
+                hintText: '\u30BF\u30A4\u30C8\u30EB\uFF08\u4EFB\u610F\uFF09',
+                hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.4)),
                 border: InputBorder.none,
                 isDense: true,
-                contentPadding: EdgeInsets.symmetric(vertical: 4),
+                contentPadding: const EdgeInsets.symmetric(vertical: 4),
               ),
               maxLines: 1,
             ),
