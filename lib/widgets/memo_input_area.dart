@@ -122,13 +122,14 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
     // Swift版準拠: ヘッダー40 + 区切り2 + 本文 + フッター28 + マージン
     return Container(
-      margin: const EdgeInsets.fromLTRB(10, 6, 10, 2),
+      margin: const EdgeInsets.fromLTRB(10, 6, 0, 2), // 右マージンなし（トレーがはみ出すため）
       height: 316,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           // メイン入力エリア
           Container(
+            margin: const EdgeInsets.only(right: 10), // Stack内で右に余白
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(CornerRadius.card),
@@ -152,8 +153,8 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
           ),
           // ルーレット（タイトル行の下端〜入力欄の下端）
           Positioned(
-            right: -4,
-            top: 42, // ヘッダー40pt + 区切り2pt
+            right: 0,
+            top: 20, // タブがヘッダー横に出るように（42 - タブ高さ22）
             bottom: 0,
             child: allTagsAsync.when(
               data: (allTags) => _buildRoulette(allTags),
@@ -240,7 +241,8 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                             padding: const EdgeInsets.only(left: 4, right: 8),
                             child: Row(
                               children: [
-                                Icon(Icons.play_arrow,
+                                Icon(
+                                    _rouletteOpen ? Icons.play_arrow : Icons.arrow_left,
                                     size: 14,
                                     color: Colors.white.withValues(alpha: 0.7)),
                                 if (_rouletteOpen) ...[
@@ -365,7 +367,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
           else
             Positioned(
               right: 0,
-              top: 0,
+              top: 22, // ラベル帯の下から
               bottom: 0,
               width: trayWidth,
               child: IgnorePointer(
