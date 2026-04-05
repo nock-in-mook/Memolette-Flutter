@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import 'tag_dial_view.dart';
 
 /// メモ入力エリア（ホーム画面上部に常駐）
 /// Swift版の MemoInputView に対応
@@ -32,6 +33,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
   final _contentController = TextEditingController();
   List<Tag> _attachedTags = [];
   bool _hasMemo = false;
+  bool _rouletteOpen = false;
 
   @override
   void didUpdateWidget(covariant MemoInputArea oldWidget) {
@@ -114,38 +116,209 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
   @override
   Widget build(BuildContext context) {
+    final allTagsAsync = ref.watch(allTagsProvider);
+
+    // Swift版準拠: ヘッダー40 + 区切り2 + 本文 + フッター28 + マージン
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      constraints: const BoxConstraints(maxHeight: 280),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(CornerRadius.card),
-        border: Border.all(
-          color: _hasMemo
-              ? Colors.blueAccent.withValues(alpha: 0.5)
-              : Colors.grey.shade300,
-          width: _hasMemo ? 2 : 1,
-        ),
-        boxShadow: [AppShadows.card()],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      margin: const EdgeInsets.fromLTRB(10, 6, 10, 2),
+      height: 316,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          // ヘッダー: タイトル + タグ
-          _buildHeader(),
-          // 本文
-          _buildContent(),
-          // ツールバー
-          _buildToolbar(),
+          // メイン入力エリア
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(CornerRadius.card),
+              border: Border.all(
+                color: _hasMemo
+                    ? Colors.blueAccent.withValues(alpha: 0.5)
+                    : Colors.grey.shade300,
+                width: _hasMemo ? 2 : 1,
+              ),
+              boxShadow: [AppShadows.card()],
+            ),
+            child: Column(
+              children: [
+                _buildHeader(),
+                // Swift版: 区切り線 2pt
+                Container(height: 2, color: Colors.grey.withValues(alpha: 0.1)),
+                _buildContent(),
+                _buildToolbar(),
+              ],
+            ),
+          ),
+          // ルーレット（タイトル行の下端〜入力欄の下端）
+          Positioned(
+            right: -4,
+            top: 42, // ヘッダー40pt + 区切り2pt
+            bottom: 0,
+            child: allTagsAsync.when(
+              data: (allTags) => _buildRoulette(allTags),
+              loading: () => const SizedBox(),
+              error: (_, _) => const SizedBox(),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  /// ヘッダー（タイトル＋タグバッジ）
+  /// ルーレット構築
+  Widget _buildRoulette(List<Tag> allTags) {
+    final parentTags = allTags.where((t) => t.parentTagId == null).toList();
+    // 「タグなし」オプション + 親タグ
+    final parentOptions = [
+      const TagDialOption(id: null, name: 'タグなし', color: Colors.white),
+      ...parentTags.map((t) => TagDialOption(
+            id: t.id,
+            name: t.name,
+            color: TagColors.getColor(t.colorIndex),
+          )),
+    ];
+
+    // 選択中の親タグの子タグ
+    final selectedParent = _attachedTags
+        .where((t) => t.parentTagId == null)
+        .toList();
+    final parentId = selectedParent.isNotEmpty ? selectedParent.first.id : null;
+    final childTags = parentId != null
+        ? allTags.where((t) => t.parentTagId == parentId).toList()
+        : <Tag>[];
+    // 子タグがなくても常に内側リングを表示（「なし」のみ）
+    final childOptions = [
+      const TagDialOption(id: null, name: 'なし', color: Colors.white),
+      ...childTags.map((t) => TagDialOption(
+            id: t.id,
+            name: t.name,
+            color: TagColors.getColor(t.colorIndex),
+          )),
+    ];
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+      width: _rouletteOpen ? 240 : 28,
+      child: GestureDetector(
+        onTap: () {
+          if (!_rouletteOpen) {
+            setState(() => _rouletteOpen = true);
+          }
+        },
+        child: ClipRRect(
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(10),
+            bottomLeft: Radius.circular(10),
+          ),
+          child: Container(
+            // グレートレー背景
+            color: const Color.fromRGBO(230, 230, 230, 1),
+            child: Column(
+              children: [
+                // 上部ラベル（親タグ / 子タグ）
+                if (_rouletteOpen)
+                  Container(
+                    height: 22,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      children: [
+                        // 閉じるボタン
+                        GestureDetector(
+                          onTap: () =>
+                              setState(() => _rouletteOpen = false),
+                          child: const Icon(Icons.play_arrow,
+                              size: 14, color: Colors.grey),
+                        ),
+                        const Spacer(),
+                        Text('親タグ',
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey[600])),
+                        const SizedBox(width: 24),
+                        Text('子タグ',
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey[600])),
+                        const Spacer(),
+                      ],
+                    ),
+                  ),
+                // ルーレット本体
+                Expanded(
+                  child: OverflowBox(
+                    maxWidth: 240,
+                    alignment: Alignment.centerRight,
+                    child: TagDialView(
+                      height: _rouletteOpen ? 211 : 260,
+                      parentOptions: parentOptions,
+                      childOptions: childOptions,
+                      selectedParentId: parentId,
+                      isOpen: _rouletteOpen,
+                      onParentSelected: (id) =>
+                          _onTagSelected(id, false),
+                      onChildSelected: (id) =>
+                          _onTagSelected(id, true),
+                    ),
+                  ),
+                ),
+                // 下部ボタン（親タグ追加 / 子タグ追加）
+                if (_rouletteOpen)
+                  Container(
+                    height: 28,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.add_circle_outline,
+                            size: 14, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text('親タグ追加',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[600])),
+                        const SizedBox(width: 12),
+                        const Icon(Icons.add_circle_outline,
+                            size: 14, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text('子タグ追加',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[600])),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onTagSelected(String? id, bool isChild) async {
+    if (widget.editingMemoId == null || id == null) return;
+    final db = ref.read(databaseProvider);
+    // 既存タグを外してから付ける
+    if (!isChild) {
+      // 親タグ: 既存の親タグを外す
+      for (final tag in _attachedTags.where((t) => t.parentTagId == null)) {
+        await db.removeTagFromMemo(widget.editingMemoId!, tag.id);
+      }
+      await db.addTagToMemo(widget.editingMemoId!, id);
+    } else {
+      // 子タグ: 既存の子タグを外す
+      for (final tag in _attachedTags.where((t) => t.parentTagId != null)) {
+        await db.removeTagFromMemo(widget.editingMemoId!, tag.id);
+      }
+      await db.addTagToMemo(widget.editingMemoId!, id);
+    }
+    _attachedTags = await db.getTagsForMemo(widget.editingMemoId!);
+    setState(() {});
+  }
+
+  /// ヘッダー（タイトル＋タグバッジ）— Swift版: 40pt高さ
   Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
       child: Row(
         children: [
           // タイトル入力
@@ -248,10 +421,11 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
     );
   }
 
-  /// ツールバー
+  /// ツールバー — Swift版: 28pt高さ
   Widget _buildToolbar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 0, 10, 6),
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.fromLTRB(10, 5, 10, 5),
       child: Row(
         children: [
           // 削除ボタン
@@ -266,19 +440,22 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
           // MDトグル
           Text('MD',
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: FontWeight.bold,
                 fontFamily: 'monospace',
                 color: Colors.grey[500],
               )),
           const SizedBox(width: 4),
-          SizedBox(
-            width: 34,
-            height: 20,
-            child: Switch(
-              value: false,
-              onChanged: (_) {},
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          Transform.scale(
+            scale: 0.6,
+            child: SizedBox(
+              width: 34,
+              height: 20,
+              child: Switch(
+                value: false,
+                onChanged: (_) {},
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
             ),
           ),
           const Spacer(),

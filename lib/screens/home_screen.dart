@@ -38,8 +38,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final parentTagsAsync = ref.watch(parentTagsProvider);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      body: SafeArea(
+      backgroundColor: const Color(0xFFFAFAFA),
+      resizeToAvoidBottomInset: false, // キーボードでオーバーフローしないように
+      body: Padding(
+        // SafeAreaを使わず手動で上部パディング制御
+        padding: EdgeInsets.only(
+          top: MediaQuery.of(context).viewPadding.top - 4,
+          bottom: MediaQuery.of(context).viewPadding.bottom,
+        ),
         child: Column(
           children: [
             // 1. 検索バー
@@ -107,48 +113,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   // ========================================
   Widget _buildSearchBar() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.fromLTRB(14, 2, 14, 4),
       child: Row(
         children: [
-          // ＋ボタン（新規メモ）
+          // ＋ボタン（小さめ、線太め）
           GestureDetector(
             onTap: _createNewMemo,
             child: Container(
-              width: 32,
-              height: 32,
+              width: 24,
+              height: 24,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.blueAccent, width: 1.5),
+                border: Border.all(color: Colors.blueAccent, width: 2.0),
               ),
-              child: const Icon(Icons.add, size: 20, color: Colors.blueAccent),
+              child: const Icon(Icons.add, size: 14, color: Colors.blueAccent),
             ),
           ),
-          const SizedBox(width: 8),
-          // 検索バー
-          Expanded(
-            child: Container(
-              height: 36,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.search, size: 18, color: Colors.grey[500]),
-                  const SizedBox(width: 6),
-                  Text('メモを探す',
-                      style:
-                          TextStyle(fontSize: 14, color: Colors.grey[500])),
-                ],
-              ),
+          const Spacer(),
+          // 検索バー（中央配置、固定幅、角丸控えめ）
+          Container(
+            width: 180,
+            height: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.search, size: 16, color: Colors.grey[500]),
+                const SizedBox(width: 6),
+                Text('メモを探す',
+                    style:
+                        TextStyle(fontSize: 13, color: Colors.grey[500])),
+              ],
             ),
           ),
-          const SizedBox(width: 8),
-          // 設定ギア
+          const Spacer(),
+          // 設定ギア（線画細め、サイズ統一）
           GestureDetector(
             onTap: () {},
-            child: Icon(Icons.settings, size: 24, color: Colors.grey[600]),
+            child: Icon(Icons.settings_outlined,
+                size: 26, color: Colors.blueAccent.withValues(alpha: 0.8)),
           ),
         ],
       ),
