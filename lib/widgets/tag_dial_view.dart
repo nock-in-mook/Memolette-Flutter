@@ -298,15 +298,15 @@ class _TagDialPainter extends CustomPainter {
       );
     }
 
-    // ポインター（選択インジケーター）
-    _drawPointer(canvas);
-
     // リング境界線（Swift版準拠のグラデーション）
     _drawEdgeArc(canvas, parentOuterR, 3.0, brightness: (0.35, 0.5, 0.35));
     _drawEdgeArc(canvas, parentInnerR, 1.5, brightness: (0.3, 0.45, 0.3));
     if (childOptions.isNotEmpty) {
       _drawEdgeArc(canvas, childInnerR, 1.5, brightness: (0.3, 0.45, 0.3));
     }
+
+    // ポインター（最前面に描画）
+    _drawPointer(canvas);
   }
 
   void _drawRing(

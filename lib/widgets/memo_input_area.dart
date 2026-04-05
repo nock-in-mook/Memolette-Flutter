@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -205,56 +207,62 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // トレー背景（右寄せ、ClipRRectはトレーだけに適用）
+          // トレー背景（TrayWithTabShape: タブ+ボディ一体型）
           Positioned(
             right: 0,
             top: 0,
             bottom: 0,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOut,
-              width: trayWidth,
-              child: GestureDetector(
-                onTap: () {
-                  if (!_rouletteOpen) {
-                    setState(() => _rouletteOpen = true);
-                  }
-                },
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(10),
-                    bottomLeft: Radius.circular(10),
-                  ),
-                  child: Container(
-                    color: const Color.fromRGBO(142, 142, 147, 1), // iOS Color.gray相当
-                    child: Column(
-                      children: [
-                        // 上部ラベル
-                        if (_rouletteOpen)
-                          Container(
-                            height: 22,
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: GestureDetector(
+              onTap: () {
+                if (!_rouletteOpen) {
+                  setState(() => _rouletteOpen = true);
+                }
+              },
+              child: CustomPaint(
+                painter: _TrayWithTabPainter(
+                  color: const Color.fromRGBO(142, 142, 147, 1),
+                  tabWidth: 22,
+                  tabHeight: 22,
+                  tabRadius: 6,
+                  bodyRadius: 10,
+                  innerRadius: 10,
+                ),
+                child: SizedBox(
+                  width: trayWidth + 22, // トレー幅 + タブはみ出し分
+                  child: Column(
+                    children: [
+                      // ラベル帯（タブ領域を含む）
+                      GestureDetector(
+                        onTap: () =>
+                            setState(() => _rouletteOpen = !_rouletteOpen),
+                        child: SizedBox(
+                          height: 22,
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 4, right: 8),
                             child: Row(
                               children: [
-                                GestureDetector(
-                                  onTap: () =>
-                                      setState(() => _rouletteOpen = false),
-                                  child: const Icon(Icons.play_arrow,
-                                      size: 14, color: Colors.grey),
-                                ),
-                                const Spacer(),
-                                Text('親タグ',
-                                    style: TextStyle(
-                                        fontSize: 11, color: Colors.grey[600])),
-                                const SizedBox(width: 24),
-                                Text('子タグ',
-                                    style: TextStyle(
-                                        fontSize: 11, color: Colors.grey[600])),
-                                const Spacer(),
+                                Icon(Icons.play_arrow,
+                                    size: 14,
+                                    color: Colors.white.withValues(alpha: 0.7)),
+                                if (_rouletteOpen) ...[
+                                  const Spacer(),
+                                  Text('親タグ',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.white.withValues(alpha: 0.7))),
+                                  const SizedBox(width: 24),
+                                  Text('子タグ',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.white.withValues(alpha: 0.7))),
+                                  const Spacer(),
+                                ],
                               ],
                             ),
                           ),
-                        // トレー中央（ルーレットが上に重なる）
+                        ),
+                      ),
+                        // トレー中央
                         const Expanded(child: SizedBox()),
                         // 下部ボタン
                         if (_rouletteOpen)
@@ -288,7 +296,6 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 ),
               ),
             ),
-          ),
           // ルーレット本体（トレーから左にはみ出す、クリップなし）
           if (_rouletteOpen)
             Positioned(
@@ -543,4 +550,79 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _clearInput();
     widget.onClosed();
   }
+}
+
+/// Swift版 TrayWithTabShape の移植
+/// タブ（左上に飛び出す取っ手）+ ボディ（本体）の一体型形状
+class _TrayWithTabPainter extends CustomPainter {
+  final Color color;
+  final double tabWidth;
+  final double tabHeight;
+  final double tabRadius;
+  final double bodyRadius;
+  final double innerRadius;
+
+  _TrayWithTabPainter({
+    required this.color,
+    required this.tabWidth,
+    required this.tabHeight,
+    required this.tabRadius,
+    required this.bodyRadius,
+    required this.innerRadius,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bodyTop = tabHeight;
+    final bodyLeftX = tabWidth;
+    final ir = innerRadius.clamp(0.0, bodyTop);
+
+    final path = Path();
+
+    // 1. タブ左上角（丸み）
+    path.moveTo(0, tabRadius);
+    path.arcTo(
+      Rect.fromLTWH(0, 0, tabRadius * 2, tabRadius * 2),
+      pi, pi / 2, false,
+    );
+
+    // 2. タブ上辺 → 右端
+    path.lineTo(size.width, 0);
+
+    // 3. 右辺を下へ
+    path.lineTo(size.width, size.height);
+
+    // 4. ボディ下辺 → ボディ左下角（丸み）
+    path.lineTo(bodyLeftX + bodyRadius, size.height);
+    path.arcTo(
+      Rect.fromLTWH(bodyLeftX, size.height - bodyRadius * 2, bodyRadius * 2, bodyRadius * 2),
+      pi / 2, pi / 2, false,
+    );
+
+    // 5. ボディ左辺を上へ → 内側角の手前
+    path.lineTo(bodyLeftX, bodyTop + ir);
+
+    // 5.5. 内側角の丸み（凹カーブ: 時計回り = SwiftのclockwiseTrue）
+    path.arcTo(
+      Rect.fromLTWH(bodyLeftX - ir * 2, bodyTop, ir * 2, ir * 2),
+      0, -pi / 2, false,
+    );
+
+    // 6. タブ下辺を左へ
+    path.lineTo(tabRadius, bodyTop);
+
+    // 7. タブ左下角（丸み）
+    path.arcTo(
+      Rect.fromLTWH(0, bodyTop - tabRadius * 2, tabRadius * 2, tabRadius * 2),
+      pi / 2, pi / 2, false,
+    );
+
+    // 8. 閉じる
+    path.close();
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrayWithTabPainter old) =>
+      old.color != color;
 }
