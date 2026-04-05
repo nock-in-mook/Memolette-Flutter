@@ -38,7 +38,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final parentTagsAsync = ref.watch(parentTagsProvider);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
+      backgroundColor: Colors.white,
       resizeToAvoidBottomInset: false, // キーボードでオーバーフローしないように
       body: Padding(
         // SafeAreaを使わず手動で上部パディング制御
