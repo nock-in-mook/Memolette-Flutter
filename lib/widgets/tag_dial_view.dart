@@ -307,6 +307,50 @@ class _TagDialPainter extends CustomPainter {
 
     // ポインター（最前面に描画）
     _drawPointer(canvas);
+
+    // インナーシャドウ（上・下・右の三辺、Swift版準拠）
+    _drawInnerShadows(canvas, size);
+  }
+
+  void _drawInnerShadows(Canvas canvas, Size size) {
+    const shadowSize = 7.0;
+    // 弧の左端位置を計算（弧の外にはみ出さないように）
+    final sinAngle = min(1.0, cy / parentOuterR);
+    final cosAngle = sqrt(1.0 - sinAngle * sinAngle);
+    final shadowLeft = cx - (parentOuterR + 2) * cosAngle;
+
+    // 上辺: 上から下へ
+    canvas.drawRect(
+      Rect.fromLTWH(shadowLeft, 0, size.width - shadowLeft, shadowSize),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          const Offset(0, 0),
+          const Offset(0, shadowSize),
+          [Colors.black.withValues(alpha: 0.1), Colors.transparent],
+        ),
+    );
+
+    // 下辺: 下から上へ
+    canvas.drawRect(
+      Rect.fromLTWH(shadowLeft, size.height - shadowSize, size.width - shadowLeft, shadowSize),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(0, size.height),
+          Offset(0, size.height - shadowSize),
+          [Colors.black.withValues(alpha: 0.1), Colors.transparent],
+        ),
+    );
+
+    // 右辺: 右から左へ
+    canvas.drawRect(
+      Rect.fromLTWH(size.width - shadowSize, 0, shadowSize, size.height),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(size.width, 0),
+          Offset(size.width - shadowSize, 0),
+          [Colors.black.withValues(alpha: 0.1), Colors.transparent],
+        ),
+    );
   }
 
   void _drawRing(

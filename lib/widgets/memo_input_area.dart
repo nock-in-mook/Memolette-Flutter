@@ -214,10 +214,9 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
             bottom: 0,
             child: GestureDetector(
               onTap: () {
-                if (!_rouletteOpen) {
-                  setState(() => _rouletteOpen = true);
-                }
+                setState(() => _rouletteOpen = !_rouletteOpen);
               },
+              behavior: HitTestBehavior.opaque,
               child: CustomPaint(
                 painter: _TrayWithTabPainter(
                   color: const Color.fromRGBO(142, 142, 147, 1),
@@ -262,8 +261,36 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                           ),
                         ),
                       ),
-                        // トレー中央
-                        const Expanded(child: SizedBox()),
+                        // トレー中央 + 右端に収納ボタン
+                        Expanded(
+                          child: _rouletteOpen
+                              ? Align(
+                                  alignment: Alignment.centerRight,
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () =>
+                                        setState(() => _rouletteOpen = false),
+                                    child: Transform.translate(
+                                      offset: const Offset(-8, 0),
+                                      child: SizedBox(
+                                        width: 36,
+                                        child: Center(
+                                          child: Text(
+                                            '›',
+                                            style: TextStyle(
+                                              fontSize: 60,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white.withValues(alpha: 0.5),
+                                              height: 1,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox(),
+                        ),
                         // 下部ボタン
                         if (_rouletteOpen)
                           Container(
