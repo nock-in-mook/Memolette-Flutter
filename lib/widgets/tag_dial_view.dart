@@ -320,9 +320,8 @@ class _TagDialPainter extends CustomPainter {
     for (int offset = -12; offset <= 12; offset++) {
       final baseIndex = (rotation / itemAngle).round();
       final rawIndex = baseIndex + offset;
-      if (rawIndex < 0 || rawIndex >= options.length) continue;
+      final hasTag = rawIndex >= 0 && rawIndex < options.length;
 
-      final option = options[rawIndex];
       final displayAngle = rawIndex * itemAngle - rotation;
       final distance = displayAngle.abs();
 
@@ -330,7 +329,7 @@ class _TagDialPainter extends CustomPainter {
       final fade = max(0.0, 1.0 - distance / (itemAngle * 8));
       if (fade <= 0) continue;
 
-      final isSelected = distance < itemAngle / 2;
+      final isSelected = hasTag && distance < itemAngle / 2;
 
       // セクター描画
       final startAngle = (180 - displayAngle - itemAngle / 2) * pi / 180;
@@ -353,20 +352,28 @@ class _TagDialPainter extends CustomPainter {
       );
       sectorPath.close();
 
-      // 塗りつぶし（Swift版準拠: セクター自体は不透明、fadeはテキスト・線のみ）
+      // 塗りつぶし
       Color fillColor;
-      if (!isOpen) {
+      if (!hasTag) {
+        // タグ範囲外: グレー（Swift版準拠: Color(white: 0.92)）
         fillColor = const Color.fromRGBO(235, 235, 235, 1);
-      } else if (option.id == null) {
+      } else if (!isOpen) {
+        fillColor = const Color.fromRGBO(235, 235, 235, 1);
+      } else if (options[rawIndex].id == null) {
         fillColor = Colors.white;
       } else {
-        fillColor = option.color;
+        fillColor = options[rawIndex].color;
       }
 
       final fillPaint = Paint()
         ..color = fillColor
         ..style = PaintingStyle.fill;
       canvas.drawPath(sectorPath, fillPaint);
+
+      // タグ範囲外はセクター塗りだけで終了
+      if (!hasTag) continue;
+
+      final option = options[rawIndex];
 
       // 仕切り線（Swift版準拠: Color(white: 0.35), opacity: fade * 0.5）
       final dividerPaint = Paint()

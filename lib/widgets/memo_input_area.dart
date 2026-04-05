@@ -226,7 +226,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                     bottomLeft: Radius.circular(10),
                   ),
                   child: Container(
-                    color: const Color.fromRGBO(230, 230, 230, 1),
+                    color: const Color.fromRGBO(142, 142, 147, 1), // iOS Color.gray相当
                     child: Column(
                       children: [
                         // 上部ラベル
@@ -299,7 +299,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
               child: Align(
                 alignment: Alignment.centerRight,
                 child: Transform.translate(
-                  offset: const Offset(-dialOverhang, 0),
+                  offset: const Offset(-dialOverhang, -5),
                   child: TagDialView(
                     height: 211,
                     parentOptions: parentOptions,
