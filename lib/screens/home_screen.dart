@@ -7,6 +7,7 @@ import '../providers/database_provider.dart';
 import '../widgets/memo_card.dart';
 import '../widgets/memo_input_area.dart';
 import '../widgets/tag_edit_dialog.dart';
+import '../widgets/trapezoid_tab_shape.dart';
 import 'memo_edit_screen.dart';
 import 'quick_sort_screen.dart';
 import 'todo_lists_screen.dart';
@@ -36,6 +37,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final parentTagsAsync = ref.watch(parentTagsProvider);
+    final parentTags = parentTagsAsync.valueOrNull ?? const <Tag>[];
+    final currentColor = _currentTabColor(parentTags);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -55,8 +58,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               editingMemoId: _editingMemoId,
               onMemoCreated: (id) => setState(() => _editingMemoId = id),
               onClosed: () => setState(() => _editingMemoId = null),
-              selectedParentTagId: _currentParentTagId(
-                  parentTagsAsync.valueOrNull ?? []),
+              selectedParentTagId: _currentParentTagId(parentTags),
               selectedChildTagId: _selectedChildTagId,
             ),
             // 3. 機能バー（爆速・ToDo・ドロワーハンドル）
@@ -67,33 +69,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               loading: () => const SizedBox(height: 40),
               error: (_, _) => const SizedBox(height: 40),
             ),
-            // 5. 子タグドロワー（選択中の親タグがある場合のみ）
-            if (_childDrawerOpen)
-              parentTagsAsync.when(
-                data: (tags) => _buildChildTagDrawer(tags),
-                loading: () => const SizedBox(),
-                error: (_, _) => const SizedBox(),
-              ),
-            // 6. 件数 + 子タグトグル
-            parentTagsAsync.when(
-              data: (tags) => _buildCountBar(tags),
-              loading: () => const SizedBox(),
-              error: (_, _) => const SizedBox(),
-            ),
-            // 7. メモグリッド
+            // 5〜8. フォルダ本体（タブと一体化したカラー領域）
+            // 下部ボタン類（ゴミ箱・上へ移動・メモ作成・グリッド数）はフォルダ内フロート
             Expanded(
-              child: parentTagsAsync.when(
-                data: (tags) => _buildMemoGrid(tags),
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Center(child: Text('エラー: $e')),
+              child: Container(
+                color: currentColor,
+                child: Stack(
+                  children: [
+                    Column(
+                      children: [
+                        if (_childDrawerOpen)
+                          _buildChildTagDrawer(parentTags),
+                        _buildCountBar(parentTags),
+                        Expanded(
+                          child: parentTagsAsync.when(
+                            data: (tags) => _buildMemoGrid(tags),
+                            loading: () => const Center(
+                                child: CircularProgressIndicator()),
+                            error: (e, _) => Center(child: Text('エラー: $e')),
+                          ),
+                        ),
+                      ],
+                    ),
+                    // フロートする下部ボタン群
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 8,
+                      child: _buildFloatingBottomBar(parentTags),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            // 8. ボトムバー
-            parentTagsAsync.when(
-              data: (tags) => _buildBottomBar(tags),
-              loading: () => const SizedBox(),
-              error: (_, _) => const SizedBox(),
             ),
           ],
         ),
@@ -106,6 +113,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final idx = _selectedTabIndex - 2;
     if (idx >= parentTags.length) return null;
     return parentTags[idx].id;
+  }
+
+  /// 現在選択中タブの色（フォルダ背景用）
+  Color _currentTabColor(List<Tag> parentTags) {
+    if (_selectedTabIndex == 0) return TagColors.allTabColor;
+    if (_selectedTabIndex == 1) return TagColors.palette[0];
+    final idx = _selectedTabIndex - 2;
+    if (idx >= parentTags.length) return TagColors.palette[0];
+    return TagColors.getColor(parentTags[idx].colorIndex);
   }
 
   // ========================================
@@ -200,47 +216,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final maxIndex = 1 + parentTags.length;
     if (_selectedTabIndex > maxIndex) _selectedTabIndex = 0;
 
+    // タブの底辺がフォルダ本体の上端と完璧に一致するように、
+    // crossAxisAlignment.end で下端揃え
     return SizedBox(
       height: 40,
-      child: ListView(
+      child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8),
-        children: [
-          // 「すべて」
-          _buildTab(
-            label: 'すべて',
-            color: TagColors.allTabColor,
-            isSelected: _selectedTabIndex == 0,
-            onTap: () => setState(() {
-              _selectedTabIndex = 0;
-              _childDrawerOpen = false;
-              _selectedChildTagId = null;
-            }),
-          ),
-          // 「タグなし」
-          _buildTab(
-            label: 'タグなし',
-            color: TagColors.palette[0],
-            isSelected: _selectedTabIndex == 1,
-            onTap: () => setState(() {
-              _selectedTabIndex = 1;
-              _childDrawerOpen = false;
-              _selectedChildTagId = null;
-            }),
-          ),
-          // 親タグ
-          for (int i = 0; i < parentTags.length; i++)
+        clipBehavior: Clip.none,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
             _buildTab(
-              label: parentTags[i].name,
-              color: TagColors.getColor(parentTags[i].colorIndex),
-              isSelected: _selectedTabIndex == i + 2,
+              label: 'すべて',
+              color: TagColors.allTabColor,
+              isSelected: _selectedTabIndex == 0,
               onTap: () => setState(() {
-                _selectedTabIndex = i + 2;
+                _selectedTabIndex = 0;
+                _childDrawerOpen = false;
                 _selectedChildTagId = null;
               }),
-              onLongPress: () => _showTagActions(parentTags[i]),
             ),
-        ],
+            _buildTab(
+              label: 'タグなし',
+              color: TagColors.palette[0],
+              isSelected: _selectedTabIndex == 1,
+              onTap: () => setState(() {
+                _selectedTabIndex = 1;
+                _childDrawerOpen = false;
+                _selectedChildTagId = null;
+              }),
+            ),
+            for (int i = 0; i < parentTags.length; i++)
+              _buildTab(
+                label: parentTags[i].name,
+                color: TagColors.getColor(parentTags[i].colorIndex),
+                isSelected: _selectedTabIndex == i + 2,
+                onTap: () => setState(() {
+                  _selectedTabIndex = i + 2;
+                  _selectedChildTagId = null;
+                }),
+                onLongPress: () => _showTagActions(parentTags[i]),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -256,32 +275,59 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final displayLabel =
         label.length > 5 ? '${label.substring(0, 5)}...' : label;
 
+    // 選択中は不透明、非選択は薄め
+    final bgColor = isSelected ? color : color.withValues(alpha: 0.55);
+
+    final tab = CustomPaint(
+      painter: TrapezoidTabPainter(
+        color: bgColor,
+        shadows: isSelected
+            ? [
+                const Shadow(
+                  color: Color(0x4D000000), // black 0.3
+                  offset: Offset(-3, 3),
+                  blurRadius: 4,
+                ),
+              ]
+            : const [],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        child: Text(
+          displayLabel,
+          // 行高1.0で詰める＋strutで余分な leading を削除
+          strutStyle: const StrutStyle(
+            fontSize: 14,
+            height: 1.0,
+            forceStrutHeight: true,
+            leading: 0,
+          ),
+          textHeightBehavior: const TextHeightBehavior(
+            applyHeightToFirstAscent: false,
+            applyHeightToLastDescent: false,
+            leadingDistribution: TextLeadingDistribution.even,
+          ),
+          style: TextStyle(
+            fontSize: 14,
+            height: 1.0,
+            leadingDistribution: TextLeadingDistribution.even,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected ? Colors.black : Colors.black54,
+          ),
+        ),
+      ),
+    );
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 2),
       child: GestureDetector(
         onTap: onTap,
         onLongPress: onLongPress,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: isSelected ? color : color.withValues(alpha: 0.35),
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(8),
-              topRight: Radius.circular(8),
-              bottomLeft: Radius.circular(2),
-              bottomRight: Radius.circular(2),
-            ),
-            boxShadow: isSelected ? [AppShadows.light()] : null,
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            displayLabel,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-              color: Colors.black87,
-            ),
-          ),
+        // 1.08倍スケール（下端基点）
+        child: Transform.scale(
+          scale: isSelected ? 1.08 : 1.0,
+          alignment: Alignment.bottomCenter,
+          child: tab,
         ),
       ),
     );
@@ -459,21 +505,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   // ========================================
-  // 8. ボトムバー
+  // 8. フォルダ内フロート ボトムバー
   // ========================================
-  Widget _buildBottomBar(List<Tag> parentTags) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 4,
-            offset: const Offset(0, -1),
-          ),
-        ],
-      ),
+  Widget _buildFloatingBottomBar(List<Tag> parentTags) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         children: [
           // 左: 選択削除・移動
@@ -851,7 +887,8 @@ class _MemoGridView extends StatelessWidget {
               ),
             )
           : Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              // 下端はフロートボタン分の余白
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 56),
               child: GridView.builder(
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: gridColumns,

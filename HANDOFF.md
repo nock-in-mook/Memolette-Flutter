@@ -1,64 +1,74 @@
 # 引き継ぎメモ
 
 ## 現在の状況
-- 入力欄のUIをSwift版（本家）と視覚的に一致させる調整を実施
-- 本家Swift版を021FC865シミュレータ、Flutter版を29B0ACCA(Flutter)シミュレータで並べて比較できる環境構築済み
+- 入力欄UI、ルーレット選択、タグ追加機能、フォルダビューの基礎が完成
+- Swift版とFlutter版を並べて比較しながら順次再現中
 
 ## 今回完了したこと
-- **タイトルプレースホルダー色**: `grey × opacity 0.4`（Swift版準拠）に薄く
-- **背景色**: `0xFFFAFAFA` → `#FFFFFF`（純白）に修正
-- **タイトル横タグ欄**: タグアイコン（`sell_outlined`）+ 縦区切り線を常時表示
-- **色の統一**: SwiftUI `Color.gray (142,142,147)` ベースに統一
-  - 枠線: `rgba(142,142,147, 0.4)`、width 1.5
-  - 区切り線: `rgba(142,142,147, 0.35)`
-  - タグアイコン: `rgba(142,142,147, 0.45)`
-- **ドロップシャドウ削除**: Swift版準拠（枠線のみ）
-- **水平仕切り線追加**:
-  - タイトル下 / フッター上の2本
-  - 外枠に密着（左右マージン0）
-- **フッター高さ**: 28 → 34に拡大
-- **ヘッダーボタン色**: `blueAccent` → iOS標準青 `#007AFF`
-- **設定アイコンサイズ**: 26 → 22
+
+### 入力欄まわり
+- **タグ表示の親+子重ね合わせデザイン**: Swift版 `HStack(.bottom, spacing: -4)` を Row + `Transform.translate(-4, 0)` で再現
+  - 親の右padding 10ptが「めり込み余白」になり、子の幅に関わらず4pt固定で重なる
+- **枠線色を選択タグ色に連動**: AnimatedContainer 300ms easeInOutで遷移、`_pendingParentTag` で事前選択状態を保持
+- **タグエリア全体タップ判定**: タグマーク上下の余白も含めてタップ可能に（親Containerの上下padding 0化、Rowを40pt使い切り）
+- **タグバッジのフォント・中央寄せ**: SF Pro Rounded、`height: 1.0` + strut + leadingDistribution.even
+
+### タグ追加機能
+- **NewTagSheet (lib/widgets/new_tag_sheet.dart)**: 下から出るモーダル
+  - すりガラス背景（BackdropFilter blur sigma 12, 白0.65）
+  - 画面55%の固定高、キーボード表示時はpadding分上に伸びる
+  - 72色パレット、重複チェック、確定/キャンセル
+- **親タグ追加・子タグ追加ボタン**: ルーレット下のボタンをタップ → シート表示
+  - 下部ボタンエリアのSizedBox高さを 20→36 に拡張、負のオフセットを正に修正してタップ判定を有効化
+- **追加したタグ自動選択**: 作成完了後にそのタグの位置にルーレットがスナップ
+  - `_onTagSelected` でDB直接取得をfallback、`didUpdateWidget` で options.length 変化も検出
+
+### 警告ダイアログ
+- **FrostedAlertDialog (lib/widgets/frosted_alert_dialog.dart)**: 中央配置のすりガラスダイアログ
+  - showGeneralDialog ベース、Materialで囲んで黄色下線(debug警告)を抑制
+  - 子タグ追加で親未選択時に表示
+
+### フォルダビュー（フェーズ1）
+- **TrapezoidTabClipper / TrapezoidTabPainter (lib/widgets/trapezoid_tab_shape.dart)**: Swift版 `addArc(tangent1:tangent2:radius:)` 相当を tan/sin/atan2 で再現
+- **タブのスタイル**: 選択中は1.08倍スケール（下端基点）、影 `(-3,3) blur 4 black 0.3`、太字
+- **タブ⇄本体の連結**: Row + `crossAxisAlignment: end` で下端揃え、SizedBox高さ40
+- **フォルダ本体の背景**: 選択中タブの色で塗りつぶし
+- **下部ボタンのフロート化**: フォルダ本体内Stackで `Positioned(bottom: 8)`、グリッドに下56pt余白
 
 ## 次のアクション
-- **開いた時（タグ選択時）の見た目調整**
-- **ボタン機能実装**: 親タグ追加・子タグ追加・履歴ボタンの実際の機能
+
+### フォルダビュー フェーズ2以降
+- **「よく見る」タブ特殊レイアウト**: Swift版で2列表示・特殊配色
+- **タブの並び替えモード**: 長押しでwiggle、ドラッグで順序入れ替え、自動スクロール
+- **タブの長押しメニュー**: 編集・削除・色変更・並び替え開始
+- **子タグドロワーの引き出しアニメーション**: ドラッグで開閉
+- **検索結果モード**: タブ風セクション表示
+- **CardWithTabShape**: タブとカード本体を1パスで描く（フォルダ表紙的な完全連結）
+
+### その他
+- **NewTagSheet 親タグプレビューを TrapezoidTabShape に差し替え**（暫定でバッジ仮実装中）
 - **8. Firebase同期** — Firestore ↔ SQLite
 - **9. iCloud同期** — CloudKit ↔ SQLite
 - **多言語対応** — ARBファイル、日英中西仏
 
 ## 技術的注意
-- **Google Driveビルド問題**: `/tmp/memolette_build` にコピーしてビルド
+- **Google Driveビルド問題**: `/tmp/memolette-run` にコピーしてビルド（rsync --excludeでbuild/.dart_tool/Pods除外）
 - **シミュレータ2台並べて比較**:
   - Swift版（本家）: `021FC865-074D-4979-9556-1F2CEDF0F0F3` (iPhone 17 Pro Max)
   - Flutter版: `29B0ACCA-D4C6-4A55-BD2F-CDB13CF5917C` (iPhone 17 Pro Max (Flutter))
-- **Swift版ビルド**: `xcodebuild -project SokuMemoKun.xcodeproj -scheme SokuMemoKun -sdk iphonesimulator -destination "id=021FC865..." -derivedDataPath /tmp/swift_build build`
-- **Swift版バンドルID**: `com.sokumemokun.app`
-- **Flutter版バンドルID**: `com.memolette.memolette`
-- **色の知見**: SwiftUIとFlutterでは同じ不透明度でも見た目が変わる。本家との比較では数値を視覚で合わせる必要あり
+- **タップ判定のFlutter特性**: GestureDetector(opaque)はchild bounds内のみ。親Containerにpaddingがあると、その領域はタップが届かない。Rowの crossAxisAlignment + ContainerやSizedBoxの height 制御でフル領域を確保する
+- **Stack内Positionedの負オフセット**: Stack(clipBehavior: Clip.none)でも、子のヒットテストは親bounds内のみ。視覚的にはみ出しても、タップ判定は届かない
+- **swift addArc(tangent1:tangent2:radius:)** はFlutterに無いので tan/sin/atan2 で実装
 
-## ファイル構成
+## ファイル構成（追加・変更分）
 ```
 lib/
-  main.dart                       — エントリポイント + ダミータグ挿入
-  constants/
-    design_constants.dart          — 72色パレット、角丸、シャドウ
-  db/
-    tables.dart                    — Driftテーブル定義（8テーブル）
-    database.dart                  — AppDatabase
-    database.g.dart                — 自動生成
-  providers/
-    database_provider.dart         — Riverpodプロバイダー
   screens/
-    home_screen.dart               — タブ付きメモ一覧
-    memo_edit_screen.dart          — メモ編集
-    quick_sort_screen.dart         — 爆速モード
-    todo_lists_screen.dart         — ToDoリスト一覧
-    todo_list_screen.dart          — 個別ToDoリスト
+    home_screen.dart               — フォルダタブ / フォルダ本体 / フロートボトムバー
   widgets/
-    memo_card.dart                 — メモカード
-    memo_input_area.dart           — メモ入力エリア + TrayWithTabShape + DialArcShadow
-    tag_edit_dialog.dart           — タグ作成・編集ダイアログ
-    tag_dial_view.dart             — タグルーレット（扇形ダイヤル）
-    markdown_toolbar.dart          — MDツールバー
+    memo_input_area.dart           — タグ表示・タグ追加ボタン・ルーレット連動
+    tag_dial_view.dart             — didUpdateWidgetでoptions.length変化を検出
+    new_tag_sheet.dart             — タグ追加シート（すりガラス）
+    frosted_alert_dialog.dart      — 中央すりガラスダイアログ
+    trapezoid_tab_shape.dart       — 台形タブShape
 ```

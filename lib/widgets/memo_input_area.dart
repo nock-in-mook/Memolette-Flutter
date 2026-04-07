@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import 'frosted_alert_dialog.dart';
+import 'new_tag_sheet.dart';
 import 'tag_dial_view.dart';
 
 /// メモ入力エリア（ホーム画面上部に常駐）
@@ -36,6 +38,40 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
   List<Tag> _attachedTags = [];
   bool _hasMemo = false;
   bool _rouletteOpen = false;
+  // メモ未作成時にルーレットで先に選んだタグの保持先（事前選択状態）
+  Tag? _pendingParentTag;
+  Tag? _pendingChildTag;
+
+  /// 表示用の親タグ（メモ作成済みなら添付タグ、未作成ならpending）
+  Tag? get _parentTag {
+    for (final t in _attachedTags) {
+      if (t.parentTagId == null) return t;
+    }
+    return _pendingParentTag;
+  }
+
+  /// 表示用の子タグ（メモ作成済みなら添付タグ、未作成ならpending）
+  Tag? get _childTag {
+    for (final t in _attachedTags) {
+      if (t.parentTagId != null) return t;
+    }
+    return _pendingChildTag;
+  }
+
+  /// 半角幅換算で文字列を切り詰める（全角=2、半角=1）
+  String _truncateByWidth(String text, double maxWidth) {
+    double width = 0;
+    final buf = StringBuffer();
+    for (final ch in text.characters) {
+      final w = ch.runes.every((r) => r < 128) ? 1.0 : 2.0;
+      if (width + w > maxWidth) {
+        return '${buf.toString()}…';
+      }
+      width += w;
+      buf.write(ch);
+    }
+    return buf.toString();
+  }
 
   @override
   void didUpdateWidget(covariant MemoInputArea oldWidget) {
@@ -64,6 +100,8 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _titleController.clear();
     _contentController.clear();
     _attachedTags = [];
+    _pendingParentTag = null;
+    _pendingChildTag = null;
     setState(() => _hasMemo = false);
   }
 
@@ -90,13 +128,18 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
       title: _titleController.text,
       content: _contentController.text,
     );
-    if (widget.selectedParentTagId != null) {
-      await db.addTagToMemo(memo.id, widget.selectedParentTagId!);
+    // pending（ルーレットで先に選んだタグ）を優先、無ければwidgetから渡されたタブのタグを使う
+    final parentId = _pendingParentTag?.id ?? widget.selectedParentTagId;
+    final childId = _pendingChildTag?.id ?? widget.selectedChildTagId;
+    if (parentId != null) {
+      await db.addTagToMemo(memo.id, parentId);
     }
-    if (widget.selectedChildTagId != null) {
-      await db.addTagToMemo(memo.id, widget.selectedChildTagId!);
+    if (childId != null) {
+      await db.addTagToMemo(memo.id, childId);
     }
     _attachedTags = await db.getTagsForMemo(memo.id);
+    _pendingParentTag = null;
+    _pendingChildTag = null;
     widget.onMemoCreated(memo.id);
     setState(() => _hasMemo = true);
   }
@@ -124,17 +167,20 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // メイン入力エリア
-          Container(
+          // メイン入力エリア（タグ選択時は親タグ色の枠に切り替わる）
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
             margin: const EdgeInsets.only(right: 10),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(CornerRadius.card),
               border: Border.all(
-                color: _hasMemo
-                    ? Colors.blueAccent.withValues(alpha: 0.5)
+                color: _parentTag != null
+                    ? TagColors.getColor(_parentTag!.colorIndex)
+                        .withValues(alpha: 0.5)
                     : const Color.fromRGBO(142, 142, 147, 0.4),
-                width: _hasMemo ? 2.5 : 1.5,
+                width: _parentTag != null ? 2.5 : 1.5,
               ),
               // \u30B7\u30E3\u30C9\u30A6\u306A\u3057\uFF08Swift\u7248\u6E96\u62E0\uFF09
             ),
@@ -182,10 +228,8 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
           )),
     ];
 
-    final selectedParent = _attachedTags
-        .where((t) => t.parentTagId == null)
-        .toList();
-    final parentId = selectedParent.isNotEmpty ? selectedParent.first.id : null;
+    // 親タグID: 添付済み優先、未作成ならpending
+    final parentId = _parentTag?.id;
     final childTags = parentId != null
         ? allTags.where((t) => t.parentTagId == parentId).toList()
         : <Tag>[];
@@ -326,17 +370,20 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                               : const SizedBox(),
                         ),
                         // 下部ボタン（Swift版準拠: trailing揃え）
+                        // 注: Stackの親サイズが小さいとヒットテストが効かないので
+                        // ボタンが収まる高さを確保し、正のオフセットで配置する
                         SizedBox(
-                          height: 20,
+                          height: 36,
                           child: Stack(
                             clipBehavior: Clip.none,
                             children: [
-                              // 親タグ追加（上にオフセット）
+                              // 親タグ追加
                               Positioned(
                                 right: 191,
-                                top: -17,
+                                top: 0,
                                 child: GestureDetector(
-                                  onTap: () {},
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _openAddParentTagSheet,
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
@@ -355,12 +402,13 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                                   ),
                                 ),
                               ),
-                              // 子タグ追加（上にオフセット）
+                              // 子タグ追加
                               Positioned(
                                 right: 78,
-                                top: -17,
+                                top: 0,
                                 child: GestureDetector(
-                                  onTap: () {},
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _openAddChildTagSheet,
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
@@ -382,8 +430,9 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                               // 履歴ボタン（タグ追加より少し下）
                               Positioned(
                                 right: 8,
-                                top: -8,
+                                top: 9,
                                 child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
                                   onTap: () {},
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
@@ -439,6 +488,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                           parentOptions: parentOptions,
                           childOptions: childOptions,
                           selectedParentId: parentId,
+                          selectedChildId: _childTag?.id,
                           isOpen: _rouletteOpen,
                           onParentSelected: (id) => _onTagSelected(id, false),
                           onChildSelected: (id) => _onTagSelected(id, true),
@@ -456,8 +506,36 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
   }
 
   Future<void> _onTagSelected(String? id, bool isChild) async {
-    if (widget.editingMemoId == null || id == null) return;
+    if (id == null) return;
     final db = ref.read(databaseProvider);
+    // タグの実体を取得（pending保持用）
+    // まずキャッシュから探し、無ければDB直接（新規作成直後はストリーム未反映なため）
+    final allTags = ref.read(allTagsProvider).value ?? const <Tag>[];
+    Tag? selectedTag;
+    for (final t in allTags) {
+      if (t.id == id) {
+        selectedTag = t;
+        break;
+      }
+    }
+    selectedTag ??= await db.getTagById(id);
+    if (selectedTag == null) return;
+
+    // メモ未作成の場合は pending に保持するだけ
+    if (widget.editingMemoId == null) {
+      setState(() {
+        if (!isChild) {
+          _pendingParentTag = selectedTag;
+          // 親を変えたら子はリセット
+          _pendingChildTag = null;
+        } else {
+          _pendingChildTag = selectedTag;
+        }
+      });
+      return;
+    }
+
+    // メモ作成済みの場合はDBに反映
     if (!isChild) {
       for (final tag in _attachedTags.where((t) => t.parentTagId == null)) {
         await db.removeTagFromMemo(widget.editingMemoId!, tag.id);
@@ -473,11 +551,50 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
     setState(() {});
   }
 
+  /// ルーレットを開く（収納時のみ）
+  void _openRoulette() {
+    if (_rouletteOpen) return;
+    FocusScope.of(context).unfocus();
+    setState(() => _rouletteOpen = true);
+  }
+
+  /// 親タグ追加シートを開く
+  Future<void> _openAddParentTagSheet() async {
+    FocusScope.of(context).unfocus();
+    final newTagId = await NewTagSheet.show(context: context);
+    if (newTagId == null) return;
+    // 作成直後にそのタグを選択状態にする
+    await _onTagSelected(newTagId, false);
+  }
+
+  /// 子タグ追加シートを開く（親タグ未選択時は警告ダイアログ）
+  Future<void> _openAddChildTagSheet() async {
+    FocusScope.of(context).unfocus();
+    final parentId = _parentTag?.id;
+    if (parentId == null) {
+      if (!mounted) return;
+      await showFrostedAlert(
+        context: context,
+        title: '親タグを選んでください',
+        message: '子タグを追加するには、先にルーレットで親タグを選択してください。',
+      );
+      return;
+    }
+    final newTagId = await NewTagSheet.show(
+      context: context,
+      parentTagId: parentId,
+    );
+    if (newTagId == null) return;
+    await _onTagSelected(newTagId, true);
+  }
+
   Widget _buildHeader() {
     return Container(
       height: 40,
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
+      // 上下paddingは0に。Row全体（40pt）をタグ欄のタップ判定として使う
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
             child: TextField(
@@ -514,50 +631,168 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
             margin: const EdgeInsets.symmetric(horizontal: 8),
             color: const Color.fromRGBO(142, 142, 147, 0.35),
           ),
-          // \u30BF\u30B0\u30A8\u30EA\u30A2
-          if (_attachedTags.isEmpty)
-            GestureDetector(
-              onTap: () {
-                // TODO: \u30C8\u30EC\u30FC\u3092\u958B\u304F
-              },
-              child: const Icon(Icons.sell_outlined, size: 16,
-                  color: Color.fromRGBO(142, 142, 147, 0.45)),
-            )
-          else ...[
-            ..._attachedTags.take(2).map((tag) => Container(
-                  margin: const EdgeInsets.only(right: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: TagColors.getColor(tag.colorIndex),
-                    borderRadius: BorderRadius.circular(CornerRadius.parentTag),
-                  ),
-                  child: Text(
-                    tag.name.length > 5
-                        ? '${tag.name.substring(0, 5)}...'
-                        : tag.name,
-                    style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
-                )),
-            GestureDetector(
-              onTap: () async {
-                if (widget.editingMemoId != null) {
-                  final db = ref.read(databaseProvider);
-                  for (final tag in _attachedTags) {
-                    await db.removeTagFromMemo(widget.editingMemoId!, tag.id);
-                  }
-                  _attachedTags = await db.getTagsForMemo(widget.editingMemoId!);
-                  setState(() {});
-                }
-              },
-              child: const Icon(Icons.close, size: 14,
-                  color: Color.fromRGBO(142, 142, 147, 0.3)),
+          // タグ表示エリア: 行の縦方向いっぱいを埋めるContainerで囲んで
+          // アイコン上下の隙間もタップ判定に含める（見た目はコンパクト）
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _openRoulette,
+            child: Container(
+              height: 40,
+              alignment: Alignment.center,
+              color: Colors.transparent,
+              child: _parentTag == null
+                  ? const Icon(Icons.sell_outlined, size: 16,
+                      color: Color.fromRGBO(142, 142, 147, 0.45))
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        _buildTagDisplay(),
+                        const SizedBox(width: 4),
+                        // ×ボタンも縦方向いっぱいを埋める
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () async {
+                            _pendingParentTag = null;
+                            _pendingChildTag = null;
+                            if (widget.editingMemoId != null) {
+                              final db = ref.read(databaseProvider);
+                              for (final tag in _attachedTags) {
+                                await db.removeTagFromMemo(
+                                    widget.editingMemoId!, tag.id);
+                              }
+                              _attachedTags = await db
+                                  .getTagsForMemo(widget.editingMemoId!);
+                            }
+                            if (mounted) setState(() {});
+                          },
+                          child: Container(
+                            height: 40,
+                            alignment: Alignment.center,
+                            color: Colors.transparent,
+                            child: Icon(Icons.cancel,
+                                size: 14,
+                                color: Colors.grey.withValues(alpha: 0.5)),
+                          ),
+                        ),
+                      ],
+                    ),
             ),
-          ],
+          ),
         ],
       ),
     );
   }
+
+  /// 親タグ＋子タグの重ね合わせ表示（Swift版 tagDisplay 準拠）
+  Widget _buildTagDisplay() {
+    final parent = _parentTag!;
+    final child = _childTag;
+    final parentColor = TagColors.getColor(parent.colorIndex);
+
+    if (child != null) {
+      // Swift版 HStack(alignment: .bottom, spacing: -4) 相当
+      // 親の右端と子の左端を4ptだけX軸でオーバーラップ。
+      // 親の右paddingが10ptあるので、4pt重なっても親の文字には到達しない。
+      final childColor = TagColors.getColor(child.colorIndex);
+      final parentLabel = _truncateByWidth(parent.name, 10);
+      final childLabel = _truncateByWidth(child.name, 10);
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // 親タグ（trailing padding 10pt が「めり込み余白」になる）
+          Container(
+            padding: const EdgeInsets.fromLTRB(7, 4, 10, 4),
+            decoration: BoxDecoration(
+              color: parentColor,
+              borderRadius: BorderRadius.circular(CornerRadius.parentTag),
+            ),
+            child: Text(
+              parentLabel,
+              style: _parentTagTextStyle,
+              strutStyle: _parentStrutStyle,
+              textHeightBehavior: _tightHeightBehavior,
+            ),
+          ),
+          // 子タグ（4pt左にズラして親の右paddingに重ねる / 白枠線）
+          Transform.translate(
+            offset: const Offset(-4, 0),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: childColor,
+                borderRadius: BorderRadius.circular(CornerRadius.badge),
+                border: Border.all(color: Colors.white, width: 1.5),
+              ),
+              child: Text(
+                childLabel,
+                style: _childTagTextStyle,
+                strutStyle: _childStrutStyle,
+                textHeightBehavior: _tightHeightBehavior,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // 親タグのみ
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: parentColor,
+        borderRadius: BorderRadius.circular(CornerRadius.parentTag),
+      ),
+      child: Text(
+        _truncateByWidth(parent.name, 12),
+        style: _parentTagTextStyle,
+        strutStyle: _parentStrutStyle,
+        textHeightBehavior: _tightHeightBehavior,
+      ),
+    );
+  }
+
+  // タグバッジ用のテキストスタイル（SF Pro Rounded、行高1.0で中央寄せ）
+  static const TextStyle _parentTagTextStyle = TextStyle(
+    fontSize: 13,
+    fontWeight: FontWeight.w600,
+    fontFamily: '.SF Pro Rounded',
+    fontFamilyFallback: ['SF Pro Rounded', 'Hiragino Sans'],
+    height: 1.0,
+    leadingDistribution: TextLeadingDistribution.even,
+    color: Colors.black,
+  );
+
+  static const TextStyle _childTagTextStyle = TextStyle(
+    fontSize: 11,
+    fontWeight: FontWeight.w500,
+    fontFamily: '.SF Pro Rounded',
+    fontFamilyFallback: ['SF Pro Rounded', 'Hiragino Sans'],
+    height: 1.0,
+    leadingDistribution: TextLeadingDistribution.even,
+    color: Colors.black,
+  );
+
+  static const StrutStyle _parentStrutStyle = StrutStyle(
+    fontSize: 13,
+    height: 1.0,
+    forceStrutHeight: true,
+    leading: 0,
+  );
+
+  static const StrutStyle _childStrutStyle = StrutStyle(
+    fontSize: 11,
+    height: 1.0,
+    forceStrutHeight: true,
+    leading: 0,
+  );
+
+  static const TextHeightBehavior _tightHeightBehavior = TextHeightBehavior(
+    applyHeightToFirstAscent: false,
+    applyHeightToLastDescent: false,
+    leadingDistribution: TextLeadingDistribution.even,
+  );
 
   Widget _buildContent() {
     return Expanded(

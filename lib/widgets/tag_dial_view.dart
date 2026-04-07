@@ -59,8 +59,11 @@ class _TagDialViewState extends State<TagDialView>
   @override
   void didUpdateWidget(covariant TagDialView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // 選択IDが変わった or オプション数が変わった（タグ追加直後など）にsync
     if (oldWidget.selectedParentId != widget.selectedParentId ||
-        oldWidget.selectedChildId != widget.selectedChildId) {
+        oldWidget.selectedChildId != widget.selectedChildId ||
+        oldWidget.parentOptions.length != widget.parentOptions.length ||
+        oldWidget.childOptions.length != widget.childOptions.length) {
       _syncToSelection();
     }
   }

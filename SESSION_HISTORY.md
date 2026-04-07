@@ -54,3 +54,19 @@
 - フッター高さ 28→34、枠線太さ 1→1.5
 - ヘッダーの＋ / 設定ボタンをiOS標準青 `#007AFF` に統一
 - 本家Swift版とFlutter版を2台のシミュレータで並べて比較できる環境構築
+
+---
+## #5 Memolette-Flutter_005_タグ追加機能_フォルダビュー基礎 (2026-04-08)
+
+- タグ表示の親+子重ね合わせデザイン（Row + Transform.translate -4pt）
+- 枠線色を選択タグ色に連動（AnimatedContainer 300ms）
+- _pendingParentTag/Child で事前選択状態保持
+- タグエリア全体タップ判定（行40pt使い切り、Row crossAxisEnd）
+- NewTagSheet（すりガラス背景、72色パレット、画面55%固定高）
+- 親/子タグ追加ボタン実装、子タグなし警告は中央フロストガラスダイアログ
+- 追加タグの自動選択 + ルーレット位置スナップ
+- FrostedAlertDialog 共通化
+- TrapezoidTabClipper/Painter（Swift addArc(tangent1:tangent2:radius:) を tan/sin/atan2 で再現）
+- フォルダタブ実装: 1.08倍スケール、影、太字、選択中は不透明
+- フォルダ本体を選択タブ色で塗りつぶし
+- 下部ボタンをフォルダ内 Positioned フロートに移行
