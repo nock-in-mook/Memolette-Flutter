@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -824,7 +825,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
         children: [
           GestureDetector(
             onTap: _hasMemo ? _deleteMemo : null,
-            child: Icon(Icons.delete_outline,
+            child: Icon(CupertinoIcons.delete_simple,
                 size: 18,
                 color: _hasMemo
                     ? Colors.red.withValues(alpha: 0.5)

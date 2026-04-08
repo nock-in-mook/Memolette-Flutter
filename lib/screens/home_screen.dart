@@ -1,4 +1,6 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../constants/design_constants.dart';
@@ -6,10 +8,12 @@ import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../widgets/memo_card.dart';
 import '../widgets/memo_input_area.dart';
+import '../widgets/move_to_top_icon.dart';
 import '../widgets/tag_edit_dialog.dart';
 import '../widgets/trapezoid_tab_shape.dart';
 import 'memo_edit_screen.dart';
 import 'quick_sort_screen.dart';
+import 'settings_screen.dart';
 import 'todo_lists_screen.dart';
 
 /// ホーム画面（Swift版レイアウト準拠）
@@ -44,10 +48,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: false, // キーボードでオーバーフローしないように
       body: Padding(
-        // SafeAreaを使わず手動で上部パディング制御
+        // SafeAreaを使わず手動で上部パディング制御。
+        // 下部はフォルダ色をホームインジケータ下まで延ばすため、ここではpaddingしない
         padding: EdgeInsets.only(
           top: MediaQuery.of(context).viewPadding.top - 4,
-          bottom: MediaQuery.of(context).viewPadding.bottom,
         ),
         child: Column(
           children: [
@@ -91,11 +95,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ),
                       ],
                     ),
-                    // フロートする下部ボタン群
+                    // フロートする下部ボタン群（ホームインジケータの上に配置）
                     Positioned(
                       left: 0,
                       right: 0,
-                      bottom: 8,
+                      bottom: MediaQuery.of(context).viewPadding.bottom + 8,
                       child: _buildFloatingBottomBar(parentTags),
                     ),
                   ],
@@ -169,7 +173,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           const Spacer(),
           // 設定ギア（線画細め、サイズ統一）
           GestureDetector(
-            onTap: () {},
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
             child: const Icon(Icons.settings_outlined,
                 size: 22, color: Color(0xFF007AFF)),
           ),
@@ -218,47 +224,51 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     // タブの底辺がフォルダ本体の上端と完璧に一致するように、
     // crossAxisAlignment.end で下端揃え
+    // タブを正順で組み立ててから、paint順を反転させて「左が前」にする
+    final tabs = <Widget>[
+      _buildTab(
+        label: 'すべて',
+        color: TagColors.allTabColor,
+        isSelected: _selectedTabIndex == 0,
+        onTap: () => setState(() {
+          _selectedTabIndex = 0;
+          _childDrawerOpen = false;
+          _selectedChildTagId = null;
+        }),
+      ),
+      _buildTab(
+        label: 'タグなし',
+        color: TagColors.palette[0],
+        isSelected: _selectedTabIndex == 1,
+        onTap: () => setState(() {
+          _selectedTabIndex = 1;
+          _childDrawerOpen = false;
+          _selectedChildTagId = null;
+        }),
+      ),
+      for (int i = 0; i < parentTags.length; i++)
+        _buildTab(
+          label: parentTags[i].name,
+          color: TagColors.getColor(parentTags[i].colorIndex),
+          isSelected: _selectedTabIndex == i + 2,
+          onTap: () => setState(() {
+            _selectedTabIndex = i + 2;
+            _selectedChildTagId = null;
+          }),
+          onLongPress: () => _showTagActions(parentTags[i]),
+        ),
+    ];
+
     return SizedBox(
       height: 40,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8),
         clipBehavior: Clip.none,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            _buildTab(
-              label: 'すべて',
-              color: TagColors.allTabColor,
-              isSelected: _selectedTabIndex == 0,
-              onTap: () => setState(() {
-                _selectedTabIndex = 0;
-                _childDrawerOpen = false;
-                _selectedChildTagId = null;
-              }),
-            ),
-            _buildTab(
-              label: 'タグなし',
-              color: TagColors.palette[0],
-              isSelected: _selectedTabIndex == 1,
-              onTap: () => setState(() {
-                _selectedTabIndex = 1;
-                _childDrawerOpen = false;
-                _selectedChildTagId = null;
-              }),
-            ),
-            for (int i = 0; i < parentTags.length; i++)
-              _buildTab(
-                label: parentTags[i].name,
-                color: TagColors.getColor(parentTags[i].colorIndex),
-                isSelected: _selectedTabIndex == i + 2,
-                onTap: () => setState(() {
-                  _selectedTabIndex = i + 2;
-                  _selectedChildTagId = null;
-                }),
-                onLongPress: () => _showTagActions(parentTags[i]),
-              ),
-          ],
+        // Flow を使い、レイアウトは左→右の順、paint順は「左ほど前面・選択中は最前面」
+        child: _ZOrderedRow(
+          selectedIndex: _selectedTabIndex,
+          children: tabs,
         ),
       ),
     );
@@ -310,8 +320,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           style: TextStyle(
             fontSize: 14,
             height: 1.0,
+            fontFamily: 'Hiragino Sans',
             leadingDistribution: TextLeadingDistribution.even,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
             color: isSelected ? Colors.black : Colors.black54,
           ),
         ),
@@ -507,70 +518,120 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   // ========================================
   // 8. フォルダ内フロート ボトムバー
   // ========================================
+  // 本家共通スタイル: Capsule + systemGray6 + gray0.4枠線 + 影(0.15, blur3, y1)
+  static const Color _capsuleFill = Color(0xFFF2F2F7); // systemGray6
+  static const Color _capsuleStroke = Color(0x66999999); // gray.opacity(0.4)
+  static const Color _secondary = Color(0x993C3C43); // .secondary
+
+  BoxDecoration _capsuleDeco() {
+    return BoxDecoration(
+      color: _capsuleFill,
+      borderRadius: BorderRadius.circular(50),
+      border: Border.all(color: _capsuleStroke, width: 1.0),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x26000000), // black 0.15
+          blurRadius: 3,
+          offset: Offset(0, 1),
+        ),
+      ],
+    );
+  }
+
   Widget _buildFloatingBottomBar(List<Tag> parentTags) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
         children: [
-          // 左: 選択削除・移動
-          IconButton(
-            icon: const Icon(Icons.delete_outline, size: 20),
-            onPressed: () {},
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36),
-            color: Colors.grey[600],
+          // ① ゴミ箱（円形カプセル, padding 10, アイコン17）
+          GestureDetector(
+            onTap: () {},
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: _capsuleDeco(),
+              child: const Icon(CupertinoIcons.delete_simple,
+                  size: 17, color: _secondary),
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.vertical_align_top, size: 20),
-            onPressed: () {},
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36),
-            color: Colors.grey[600],
+          const SizedBox(width: 8),
+          // ② トップに移動
+          GestureDetector(
+            onTap: () {},
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: _capsuleDeco(),
+              child: const MoveToTopIcon(size: 20, color: _secondary),
+            ),
           ),
           const Spacer(),
-          // 中央: このフォルダにメモ作成
+          // ③ このフォルダにメモ作成（青文字、本家は2行）
           GestureDetector(
             onTap: () => _createMemoInFolder(parentTags),
             child: Container(
               padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.blueAccent.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Row(
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: _capsuleDeco(),
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.add_circle_outline,
-                      size: 16, color: Colors.blueAccent),
-                  SizedBox(width: 4),
-                  Text('このフォルダに\nメモ作成',
+                children: const [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(CupertinoIcons.add_circled,
+                          size: 15, color: Colors.blue),
+                      SizedBox(width: 5),
+                      Text('このフォルダに',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'Hiragino Sans',
+                            color: Colors.blue,
+                            height: 1.0,
+                          )),
+                    ],
+                  ),
+                  SizedBox(height: 2),
+                  Text('メモ作成',
                       style: TextStyle(
-                          fontSize: 11, color: Colors.blueAccent),
-                      textAlign: TextAlign.center),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Hiragino Sans',
+                        color: Colors.blue,
+                        height: 1.0,
+                      )),
                 ],
               ),
             ),
           ),
           const Spacer(),
-          // 右: グリッドサイズ切替
+          // ④ グリッドサイズ
           GestureDetector(
             onTap: () => setState(() {
-              _gridColumns = _gridColumns == 2 ? 3 : (_gridColumns == 3 ? 1 : 2);
+              _gridColumns =
+                  _gridColumns == 2 ? 3 : (_gridColumns == 3 ? 1 : 2);
             }),
             child: Container(
               padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade400),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                _gridColumns == 1
-                    ? '1列'
-                    : '$_gridColumns×${_gridColumns + 1}',
-                style:
-                    TextStyle(fontSize: 12, color: Colors.grey[700]),
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: _capsuleDeco(),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(CupertinoIcons.square_grid_2x2,
+                      size: 15, color: _secondary),
+                  const SizedBox(width: 5),
+                  Text(
+                    _gridColumns == 1
+                        ? '1列'
+                        : '$_gridColumns×${_gridColumns + 1}',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Hiragino Sans',
+                      color: _secondary,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -873,22 +934,30 @@ class _MemoGridView extends StatelessWidget {
   Widget build(BuildContext context) {
     return stream.when(
       data: (memos) => memos.isEmpty
-          ? Center(
+          ? Align(
+              // 中央(0)より少し上(-0.2)= 下から6/10の位置
+              alignment: const Alignment(0, -0.2),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.note_add_outlined,
-                      size: 60, color: Colors.grey[300]),
-                  const SizedBox(height: 12),
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  // 本家: Image "note.text" .title2 (22pt), .secondary
+                  Icon(Icons.sticky_note_2_outlined,
+                      size: 22, color: Color(0x998E8E93)),
+                  SizedBox(height: 8),
+                  // 本家: 14pt rounded, .secondary
                   Text('メモがありません',
-                      style:
-                          TextStyle(fontSize: 16, color: Colors.grey[500])),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontFamily: '.SF Pro Rounded',
+                        color: Color(0x998E8E93),
+                      )),
                 ],
               ),
             )
           : Padding(
-              // 下端はフロートボタン分の余白
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 56),
+              // 下端はフロートボタン+ホームインジケータ分の余白
+              padding: EdgeInsets.fromLTRB(
+                  8, 0, 8, 56 + MediaQuery.of(context).viewPadding.bottom),
               child: GridView.builder(
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: gridColumns,
@@ -910,5 +979,185 @@ class _MemoGridView extends StatelessWidget {
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('エラー: $e')),
     );
+  }
+}
+
+// ========================================
+// _ZOrderedRow: 子をRowのように左→右に配置するが、
+// paint順を「右ほど後ろ・左ほど前」+「選択中は最前面」にする
+// ========================================
+class _ZOrderedRow extends MultiChildRenderObjectWidget {
+  final int selectedIndex;
+
+  const _ZOrderedRow({
+    required this.selectedIndex,
+    required super.children,
+  });
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _ZOrderedRowRenderBox(selectedIndex: selectedIndex);
+
+  @override
+  void updateRenderObject(
+      BuildContext context, _ZOrderedRowRenderBox renderObject) {
+    renderObject.selectedIndex = selectedIndex;
+  }
+}
+
+class _ZOrderedRowParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _ZOrderedRowRenderBox extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _ZOrderedRowParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _ZOrderedRowParentData> {
+  _ZOrderedRowRenderBox({required int selectedIndex})
+      : _selectedIndex = selectedIndex;
+
+  int _selectedIndex;
+  int get selectedIndex => _selectedIndex;
+  set selectedIndex(int value) {
+    if (_selectedIndex != value) {
+      _selectedIndex = value;
+      markNeedsPaint();
+    }
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _ZOrderedRowParentData) {
+      child.parentData = _ZOrderedRowParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    double x = 0;
+    double maxH = 0;
+    final childConstraints =
+        BoxConstraints(maxHeight: constraints.maxHeight);
+    var child = firstChild;
+    while (child != null) {
+      child.layout(childConstraints, parentUsesSize: true);
+      final pd = child.parentData! as _ZOrderedRowParentData;
+      pd.offset = Offset(x, 0);
+      x += child.size.width;
+      if (child.size.height > maxH) maxH = child.size.height;
+      child = pd.nextSibling;
+    }
+    // コンテナ高さ: 親が固定高を指定していればそれを使う、なければ子の最大
+    final containerH = constraints.hasBoundedHeight
+        ? constraints.maxHeight
+        : maxH;
+    // 全子供を下端揃え（フォルダ本体上端と接する）
+    child = firstChild;
+    while (child != null) {
+      final pd = child.parentData! as _ZOrderedRowParentData;
+      pd.offset = Offset(pd.offset.dx, containerH - child.size.height);
+      child = pd.nextSibling;
+    }
+    size = constraints.constrain(Size(x, containerH));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    // 子をリスト化
+    final children = <RenderBox>[];
+    var c = firstChild;
+    while (c != null) {
+      children.add(c);
+      c = (c.parentData! as _ZOrderedRowParentData).nextSibling;
+    }
+    // paint順: インデックス大→小（右が後ろ・左が前）
+    // ただし選択中の子は最後にpaint（最前面）
+    final order = <int>[];
+    for (int i = children.length - 1; i >= 0; i--) {
+      if (i != _selectedIndex) order.add(i);
+    }
+    if (_selectedIndex >= 0 && _selectedIndex < children.length) {
+      order.add(_selectedIndex);
+    }
+    for (final i in order) {
+      final child = children[i];
+      final pd = child.parentData! as _ZOrderedRowParentData;
+      context.paintChild(child, offset + pd.offset);
+    }
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    // hit test も paint と同じ順（前面のものが優先）
+    final children = <RenderBox>[];
+    var c = firstChild;
+    while (c != null) {
+      children.add(c);
+      c = (c.parentData! as _ZOrderedRowParentData).nextSibling;
+    }
+    final order = <int>[];
+    if (_selectedIndex >= 0 && _selectedIndex < children.length) {
+      order.add(_selectedIndex);
+    }
+    for (int i = 0; i < children.length; i++) {
+      if (i != _selectedIndex) order.add(i);
+    }
+    for (final i in order) {
+      final child = children[i];
+      final pd = child.parentData! as _ZOrderedRowParentData;
+      final hit = result.addWithPaintOffset(
+        offset: pd.offset,
+        position: position,
+        hitTest: (BoxHitTestResult r, Offset p) {
+          return child.hitTest(r, position: p);
+        },
+      );
+      if (hit) return true;
+    }
+    return false;
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) {
+    double w = 0;
+    var c = firstChild;
+    while (c != null) {
+      w += c.getMinIntrinsicWidth(height);
+      c = (c.parentData! as _ZOrderedRowParentData).nextSibling;
+    }
+    return w;
+  }
+
+  @override
+  double computeMaxIntrinsicWidth(double height) {
+    double w = 0;
+    var c = firstChild;
+    while (c != null) {
+      w += c.getMaxIntrinsicWidth(height);
+      c = (c.parentData! as _ZOrderedRowParentData).nextSibling;
+    }
+    return w;
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) {
+    double h = 0;
+    var c = firstChild;
+    while (c != null) {
+      final ch = c.getMinIntrinsicHeight(double.infinity);
+      if (ch > h) h = ch;
+      c = (c.parentData! as _ZOrderedRowParentData).nextSibling;
+    }
+    return h;
+  }
+
+  @override
+  double computeMaxIntrinsicHeight(double width) {
+    double h = 0;
+    var c = firstChild;
+    while (c != null) {
+      final ch = c.getMaxIntrinsicHeight(double.infinity);
+      if (ch > h) h = ch;
+      c = (c.parentData! as _ZOrderedRowParentData).nextSibling;
+    }
+    return h;
   }
 }
