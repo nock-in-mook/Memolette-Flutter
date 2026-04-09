@@ -36,13 +36,14 @@ class AppDatabase extends _$AppDatabase {
   // ========================================
 
   /// 全メモをcreatedAt降順で取得（リアルタイム）
+  /// ソート優先度: ピン留め → 手動並び順(トップ移動) → 作成日時
   Stream<List<Memo>> watchAllMemos() {
     return (select(memos)
           ..orderBy([
-            // ピン留めを先頭に
             (t) => OrderingTerm(
                 expression: t.isPinned, mode: OrderingMode.desc),
-            // 作成日時の新しい順
+            (t) => OrderingTerm(
+                expression: t.manualSortOrder, mode: OrderingMode.desc),
             (t) => OrderingTerm(
                 expression: t.createdAt, mode: OrderingMode.desc),
           ]))
@@ -98,6 +99,42 @@ class AppDatabase extends _$AppDatabase {
   /// メモを削除
   Future<void> deleteMemo(String id) {
     return (delete(memos)..where((t) => t.id.equals(id))).go();
+  }
+
+  /// 複数メモをまとめて削除
+  Future<void> deleteMemos(List<String> ids) async {
+    if (ids.isEmpty) return;
+    await (delete(memos)..where((t) => t.id.isIn(ids))).go();
+  }
+
+  /// メモをトップに移動: 既存最大の manualSortOrder + 1 を設定
+  /// （ソートは isPinned → manualSortOrder → createdAt の優先順）
+  Future<void> moveMemoToTop(String id) async {
+    final maxRow = await (selectOnly(memos)
+          ..addColumns([memos.manualSortOrder.max()]))
+        .getSingle();
+    final maxOrder = maxRow.read(memos.manualSortOrder.max()) ?? 0;
+    await (update(memos)..where((t) => t.id.equals(id))).write(
+      MemosCompanion(manualSortOrder: Value(maxOrder + 1)),
+    );
+  }
+
+  /// 複数メモをまとめてトップに移動。+1, +2, +3... の順で並ぶ
+  Future<void> moveMemosToTop(List<String> memoIds) async {
+    if (memoIds.isEmpty) return;
+    final maxRow = await (selectOnly(memos)
+          ..addColumns([memos.manualSortOrder.max()]))
+        .getSingle();
+    final maxOrder = maxRow.read(memos.manualSortOrder.max()) ?? 0;
+    await batch((b) {
+      for (var i = 0; i < memoIds.length; i++) {
+        b.update(
+          memos,
+          MemosCompanion(manualSortOrder: Value(maxOrder + i + 1)),
+          where: (t) => t.id.equals(memoIds[i]),
+        );
+      }
+    });
   }
 
   /// 閲覧回数を増やす（ソート順は変えない）
@@ -244,12 +281,34 @@ class AppDatabase extends _$AppDatabase {
     return all.map((t) => t.sortOrder).reduce((a, b) => a > b ? a : b);
   }
 
+  /// よく見るメモ: viewCount > 0 を viewCount 降順
+  Stream<List<Memo>> watchFrequentMemos() {
+    return (select(memos)
+          ..where((t) => t.viewCount.isBiggerThanValue(0))
+          ..orderBy([
+            (t) => OrderingTerm(
+                expression: t.viewCount, mode: OrderingMode.desc),
+          ]))
+        .watch();
+  }
+
+  /// 最近見たメモ: lastViewedAt が非null を 降順
+  Stream<List<Memo>> watchRecentMemos() {
+    return (select(memos)
+          ..where((t) => t.lastViewedAt.isNotNull())
+          ..orderBy([
+            (t) => OrderingTerm(
+                expression: t.lastViewedAt, mode: OrderingMode.desc),
+          ]))
+        .watch();
+  }
+
   /// タグなしメモを取得（リアルタイム）
   Stream<List<Memo>> watchUntaggedMemos() {
     // memoTagsに存在しないメモを取得
     return customSelect(
       'SELECT * FROM memos WHERE id NOT IN (SELECT DISTINCT memo_id FROM memo_tags) '
-      'ORDER BY is_pinned DESC, created_at DESC',
+      'ORDER BY is_pinned DESC, manual_sort_order DESC, created_at DESC',
       readsFrom: {memos, memoTags},
     ).watch().map((rows) => rows.map((row) {
           return Memo(
@@ -296,6 +355,15 @@ class AppDatabase extends _$AppDatabase {
     return query.map((row) => row.readTable(tags)).get();
   }
 
+  /// メモに紐づくタグをリアルタイム監視
+  Stream<List<Tag>> watchTagsForMemo(String memoId) {
+    final query = select(tags).join([
+      innerJoin(memoTags, memoTags.tagId.equalsExp(tags.id)),
+    ])
+      ..where(memoTags.memoId.equals(memoId));
+    return query.map((row) => row.readTable(tags)).watch();
+  }
+
   /// タグに紐づくメモを取得（リアルタイム）
   Stream<List<Memo>> watchMemosForTag(String tagId) {
     final query = select(memos).join([
@@ -305,6 +373,8 @@ class AppDatabase extends _$AppDatabase {
       ..orderBy([
         OrderingTerm(
             expression: memos.isPinned, mode: OrderingMode.desc),
+        OrderingTerm(
+            expression: memos.manualSortOrder, mode: OrderingMode.desc),
         OrderingTerm(
             expression: memos.createdAt, mode: OrderingMode.desc),
       ]);

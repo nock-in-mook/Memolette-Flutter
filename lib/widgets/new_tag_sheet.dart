@@ -8,30 +8,45 @@ import '../db/database.dart';
 import '../providers/database_provider.dart';
 import 'trapezoid_tab_shape.dart';
 
-/// 新規タグ追加シート（Swift版 NewTagSheetView 準拠）
+/// タグシート（Swift版 NewTagSheetView 準拠）
 ///
-/// 親タグ追加: parentTagId == null
-/// 子タグ追加: parentTagId に親タグIDを指定
+/// モード:
+/// - 親タグ追加: 引数なし
+/// - 子タグ追加: parentTagId
+/// - 既存タグ編集: editingTag
+/// - 特殊タブ(すべて/タグなし)の色変更: specialLabel + specialInitialColorIndex + onSpecialColorSaved
 ///
-/// 確定時は新規タグの id をPopの戻り値として返す。
+/// 確定時は対象タグの id をPopの戻り値として返す（特殊タブの場合は null）。
 class NewTagSheet extends ConsumerStatefulWidget {
   final String? parentTagId;
+  final Tag? editingTag;
+  final String? specialLabel;
+  final int specialInitialColorIndex;
+  final ValueChanged<int>? onSpecialColorSaved;
   final String initialName;
   final int initialColorIndex;
 
   const NewTagSheet({
     super.key,
     this.parentTagId,
+    this.editingTag,
+    this.specialLabel,
+    this.specialInitialColorIndex = 0,
+    this.onSpecialColorSaved,
     this.initialName = '',
     this.initialColorIndex = 1,
   });
 
-  /// モーダルボトムシートで開くヘルパー。完了時に新規タグIDを返す。
+  /// モーダルボトムシートで開くヘルパー。完了時に対象タグIDを返す。
   /// Swift版 .medium detent 相当: 画面高の約55%が見える状態。
   /// キーボード表示時はシート全体を上に伸ばし、見える領域(55%)を維持する。
   static Future<String?> show({
     required BuildContext context,
     String? parentTagId,
+    Tag? editingTag,
+    String? specialLabel,
+    int specialInitialColorIndex = 0,
+    ValueChanged<int>? onSpecialColorSaved,
   }) {
     return showModalBottomSheet<String>(
       context: context,
@@ -64,7 +79,13 @@ class NewTagSheet extends ConsumerStatefulWidget {
                 child: Container(
                   // 半透明の白で軽くカバー
                   color: Colors.white.withValues(alpha: 0.65),
-                  child: NewTagSheet(parentTagId: parentTagId),
+                  child: NewTagSheet(
+                    parentTagId: parentTagId,
+                    editingTag: editingTag,
+                    specialLabel: specialLabel,
+                    specialInitialColorIndex: specialInitialColorIndex,
+                    onSpecialColorSaved: onSpecialColorSaved,
+                  ),
                 ),
               ),
             ),
@@ -83,11 +104,24 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
   int _selectedColorIndex = 1;
   static const int _maxNameLength = 20;
 
+  bool get _isEdit => widget.editingTag != null;
+  bool get _isSpecial => widget.specialLabel != null;
+  bool get _isChild =>
+      widget.parentTagId != null || widget.editingTag?.parentTagId != null;
+
   @override
   void initState() {
     super.initState();
-    _nameController.text = widget.initialName;
-    _selectedColorIndex = widget.initialColorIndex;
+    if (_isEdit) {
+      _nameController.text = widget.editingTag!.name;
+      _selectedColorIndex = widget.editingTag!.colorIndex;
+    } else if (_isSpecial) {
+      _nameController.text = widget.specialLabel!;
+      _selectedColorIndex = widget.specialInitialColorIndex;
+    } else {
+      _nameController.text = widget.initialName;
+      _selectedColorIndex = widget.initialColorIndex;
+    }
     _nameController.addListener(() => setState(() {}));
   }
 
@@ -101,12 +135,37 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
 
   bool _isDuplicate(List<Tag> all) {
     if (_trimmed.isEmpty) return false;
+    final ownParent =
+        widget.editingTag?.parentTagId ?? widget.parentTagId;
     return all.any(
-      (t) => t.parentTagId == widget.parentTagId && t.name == _trimmed,
+      (t) =>
+          t.parentTagId == ownParent &&
+          t.name == _trimmed &&
+          t.id != widget.editingTag?.id,
     );
   }
 
-  Future<void> _saveTag() async {
+  Future<void> _save() async {
+    // 特殊タブ: 色変更コールバック
+    if (_isSpecial) {
+      widget.onSpecialColorSaved?.call(_selectedColorIndex);
+      if (mounted) Navigator.of(context).pop();
+      return;
+    }
+    // 編集モード
+    if (_isEdit) {
+      final name = _trimmed;
+      if (name.isEmpty) return;
+      final db = ref.read(databaseProvider);
+      await db.updateTag(
+        id: widget.editingTag!.id,
+        name: name,
+        colorIndex: _selectedColorIndex,
+      );
+      if (mounted) Navigator.of(context).pop(widget.editingTag!.id);
+      return;
+    }
+    // 新規作成
     final name = _trimmed;
     if (name.isEmpty) return;
     final db = ref.read(databaseProvider);
@@ -122,14 +181,14 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isChild = widget.parentTagId != null;
     final allTags = ref.watch(allTagsProvider).value ?? const <Tag>[];
     final duplicate = _isDuplicate(allTags);
-    final canSave = _trimmed.isNotEmpty && !duplicate;
+    // 特殊タブは色変更だけなので常に保存可能
+    final canSave = _isSpecial || (_trimmed.isNotEmpty && !duplicate);
 
     return Column(
       children: [
-        _buildHeader(isChild: isChild, canSave: canSave),
+        _buildHeader(canSave: canSave),
         // 仕切り線なし（Swift版同様に余白で区切る）
         Expanded(
           child: SingleChildScrollView(
@@ -137,9 +196,12 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildNameField(duplicate: duplicate),
-                const SizedBox(height: 20),
-                _buildPreview(isChild: isChild),
+                // 特殊タブはタブ名固定なので名前欄は出さない
+                if (!_isSpecial) ...[
+                  _buildNameField(duplicate: duplicate),
+                  const SizedBox(height: 20),
+                ],
+                _buildPreview(),
                 const SizedBox(height: 20),
                 _buildColorPalette(),
               ],
@@ -150,7 +212,21 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
     );
   }
 
-  Widget _buildHeader({required bool isChild, required bool canSave}) {
+  Widget _buildHeader({required bool canSave}) {
+    // タイトルとサブタイトルをモードごとに切り替え
+    String title;
+    String? subtitle;
+    if (_isSpecial) {
+      title = '色を変更';
+      subtitle = '「${widget.specialLabel}」フォルダ';
+    } else if (_isEdit) {
+      title = _isChild ? '子タグを編集' : '親タグを編集';
+      if (!_isChild) subtitle = '（フォルダの編集）';
+    } else {
+      title = _isChild ? '子タグの追加' : '親タグの追加';
+      if (!_isChild) subtitle = '（フォルダの追加）';
+    }
+
     // iOSナビゲーションバー風: 余白多め、仕切り線なし
     return SizedBox(
       height: 64,
@@ -162,16 +238,16 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  isChild ? '子タグの追加' : '親タグの追加',
+                  title,
                   style: const TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                if (!isChild) ...[
+                if (subtitle != null) ...[
                   const SizedBox(height: 2),
                   Text(
-                    '（フォルダの追加）',
+                    subtitle,
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey.shade600,
@@ -204,7 +280,7 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
             top: 0,
             bottom: 0,
             child: TextButton(
-              onPressed: canSave ? _saveTag : null,
+              onPressed: canSave ? _save : null,
               style: TextButton.styleFrom(
                 foregroundColor: const Color(0xFF007AFF),
                 disabledForegroundColor: Colors.grey.shade400,
@@ -284,12 +360,15 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
   }
 
   /// プレビュー（親=フォルダタブ形状、子=タグバッジ）
-  Widget _buildPreview({required bool isChild}) {
+  Widget _buildPreview() {
     final color = TagColors.getColor(_selectedColorIndex);
-    final name = _trimmed.isEmpty ? ' ' : _trimmed;
-    final isEmpty = _trimmed.isEmpty;
+    // 特殊タブ・編集中は名前固定/初期値あり、新規はトリム値
+    final displayName = _isSpecial
+        ? widget.specialLabel!
+        : (_trimmed.isEmpty ? ' ' : _trimmed);
+    final isEmpty = !_isSpecial && _trimmed.isEmpty;
 
-    if (isChild) {
+    if (_isChild) {
       // 子タグはバッジ風プレビュー
       return Center(
         child: Container(
@@ -299,7 +378,7 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
             borderRadius: BorderRadius.circular(6),
           ),
           child: Text(
-            name,
+            displayName,
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.bold,
@@ -328,7 +407,7 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
             child: Text(
-              name,
+              displayName,
               strutStyle: const StrutStyle(
                 fontSize: 16,
                 height: 1.0,
