@@ -47,6 +47,18 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => _seedDummyData(context, ref),
           ),
           ListTile(
+            leading: const Icon(Icons.local_offer_outlined),
+            title: const Text('子タグもりもり親タグを追加'),
+            subtitle: const Text('子タグドロワー検証用 (子タグ30個)'),
+            onTap: () => _seedManyChildTagsParent(context, ref),
+          ),
+          ListTile(
+            leading: const Icon(Icons.search),
+            title: const Text('Claudeダミーデータ投入'),
+            subtitle: const Text('検索検証用: Claude/CLAUDE/claude/Cｌａｕｄｅ等を含むメモ'),
+            onTap: () => _seedClaudeSearchData(context, ref),
+          ),
+          ListTile(
             leading: const Icon(Icons.delete_sweep_outlined,
                 color: Colors.red),
             title: const Text('全データ削除',
@@ -232,6 +244,120 @@ class SettingsScreen extends ConsumerWidget {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('ダミーデータを投入しました')),
+    );
+  }
+
+  // 子タグドロワー検証用: 子タグを30個持つ親タグを1つ作る
+  Future<void> _seedManyChildTagsParent(
+      BuildContext context, WidgetRef ref) async {
+    final db = ref.read(databaseProvider);
+
+    // 親タグ「もりもり」
+    final parent = await db.createTag(name: 'もりもり', colorIndex: 30);
+
+    // 子タグ30個（バリエーション豊か）
+    final names = [
+      '英単語', '熟語', '長文', 'リスニング', '発音',
+      '文法', '会話', '作文', '読解', 'スラング',
+      '映画', 'ドラマ', '音楽', 'Podcast', 'YouTube',
+      '日常会話', 'ビジネス', '旅行英語', '面接', '電話',
+      'TOEIC', 'TOEFL', '英検', 'IELTS', '留学準備',
+      'ニュース', '科学', '歴史', '文化', '経済',
+    ];
+    for (var i = 0; i < names.length; i++) {
+      final colorIdx = (i * 2 + 1) % 70; // 色を散らす
+      await db.createTag(
+        name: names[i],
+        colorIndex: colorIdx,
+        parentTagId: parent.id,
+      );
+    }
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('「もりもり」親タグ + 子タグ30個を追加しました'),
+      ),
+    );
+  }
+
+  // 検索検証用: Claude という単語を様々な大小・全半角で含むメモを大量投入
+  Future<void> _seedClaudeSearchData(
+      BuildContext context, WidgetRef ref) async {
+    final db = ref.read(databaseProvider);
+
+    // 検証用に専用親タグを4個作る
+    final ai = await db.createTag(name: 'AI', colorIndex: 12);
+    final dev = await db.createTag(name: '開発', colorIndex: 18);
+    final note = await db.createTag(name: 'メモ', colorIndex: 26);
+    final misc = await db.createTag(name: 'その他', colorIndex: 34);
+
+    // 子タグも軽く
+    final aiChat = await db.createTag(
+        name: 'チャット', colorIndex: 14, parentTagId: ai.id);
+    final aiCode =
+        await db.createTag(name: 'コード', colorIndex: 16, parentTagId: ai.id);
+    final devTool = await db.createTag(
+        name: 'ツール', colorIndex: 20, parentTagId: dev.id);
+
+    Future<void> mk(String title, String content,
+        {List<String> tagIds = const []}) async {
+      final m = await db.createMemo(title: title, content: content);
+      for (final t in tagIds) {
+        await db.addTagToMemo(m.id, t);
+      }
+    }
+
+    // ── タイトルにClaude/大小バリエーション ──
+    await mk('Claude を試す', '今日は半角小文字標準。Claude の応答は早かった。',
+        tagIds: [ai.id, aiChat.id]);
+    await mk('CLAUDE 大文字テスト', 'タイトルだけ大文字 CLAUDE。本文は普通のClaude表記。',
+        tagIds: [ai.id, aiChat.id]);
+    await mk('claude 全部小文字', '本文も全部小文字 claude です。',
+        tagIds: [ai.id]);
+    await mk('Cｌａｕｄｅ 全角テスト', '全角の Cｌａｕｄｅ は別物として扱われるはず。',
+        tagIds: [misc.id]);
+    await mk('Claudeとペアプロ', 'コードレビューを Claude に頼んで時短した',
+        tagIds: [dev.id, aiCode.id, devTool.id]);
+    await mk('AI比較メモ', 'GPT, Gemini, Claude, Llama を比べた所感。',
+        tagIds: [ai.id]);
+
+    // ── 本文にだけ含む ──
+    await mk('プロジェクト計画', 'AI支援で工数削減。Claudeを中心に運用予定。',
+        tagIds: [dev.id]);
+    await mk('日報 4/9', '・コードレビュー\n・claudeに質問×3件\n・PR2件マージ',
+        tagIds: [dev.id]);
+    await mk('議事録', '出席: 田中、佐藤\n議題:\n- Claudeの導入評価\n- 来週のスプリント',
+        tagIds: [dev.id, devTool.id]);
+    await mk('読書ログ', 'AI関連の本まとめ。Claude については別記事参照。',
+        tagIds: [note.id]);
+    await mk('長文サンプル',
+        'Lorem ipsum dolor sit amet. Claude is helpful. 日本語と英語混じりのサンプル本文。'
+        '2行目: claude lower case here.\n3行目: CLAUDE all caps. \n4行目: 通常テキスト。',
+        tagIds: [note.id]);
+
+    // ── ヒットしないが似た単語 ──
+    await mk('clouds tag', '天気の話。clouds in the sky.',
+        tagIds: [misc.id]); // claude にヒットしない
+    await mk('Cloude typo', 'Cloude (タイプミス)。これも本来ヒットしない。',
+        tagIds: [misc.id]);
+
+    // ── 大量データ ──
+    for (var i = 1; i <= 30; i++) {
+      await mk(
+        'メモ #$i',
+        i % 3 == 0
+            ? '$i 番目のメモ。Claude を含む本文 ($i)'
+            : i % 5 == 0
+                ? '$i 番目。CLAUDE を大文字で。'
+                : '$i 番目の普通のメモ',
+        tagIds: i % 2 == 0 ? [ai.id] : [dev.id],
+      );
+    }
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Claude検索検証用ダミーデータを投入しました')),
     );
   }
 

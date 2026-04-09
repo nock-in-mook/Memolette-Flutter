@@ -288,6 +288,22 @@ class AppDatabase extends _$AppDatabase {
     return all.map((t) => t.sortOrder).reduce((a, b) => a > b ? a : b);
   }
 
+  /// メモを title/content で検索（大文字小文字区別なし）
+  /// ピン留め降順 → 作成日時降順
+  Stream<List<Memo>> searchMemos(String query) {
+    final lower = '%${query.toLowerCase()}%';
+    return (select(memos)
+          ..where((t) =>
+              t.title.lower().like(lower) | t.content.lower().like(lower))
+          ..orderBy([
+            (t) => OrderingTerm(
+                expression: t.isPinned, mode: OrderingMode.desc),
+            (t) => OrderingTerm(
+                expression: t.createdAt, mode: OrderingMode.desc),
+          ]))
+        .watch();
+  }
+
   /// よく見るメモ: viewCount > 0 を viewCount 降順
   Stream<List<Memo>> watchFrequentMemos() {
     return (select(memos)

@@ -52,6 +52,41 @@ final frequentMemosProvider = StreamProvider<List<Memo>>((ref) {
   return db.watchFrequentMemos();
 });
 
+/// 検索用正規化: 小文字化 + 全角ASCII→半角
+String normalizeForSearch(String s) {
+  final buf = StringBuffer();
+  for (final cp in s.codeUnits) {
+    if (cp >= 0xFF01 && cp <= 0xFF5E) {
+      // 全角ASCII (！〜～) → 半角ASCII (! 〜 ~)
+      buf.writeCharCode(cp - 0xFEE0);
+    } else if (cp == 0x3000) {
+      // 全角スペース → 半角スペース
+      buf.writeCharCode(0x20);
+    } else {
+      buf.writeCharCode(cp);
+    }
+  }
+  return buf.toString().toLowerCase();
+}
+
+/// メモ検索（title/content を正規化して大小・全半角を吸収）
+/// watchAllMemos を購読して Dart 側でフィルタ → 全/半角混在も検索可能
+final searchMemosProvider =
+    StreamProvider.family<List<Memo>, String>((ref, query) {
+  final db = ref.watch(databaseProvider);
+  final normQuery = normalizeForSearch(query);
+  if (normQuery.isEmpty) {
+    return Stream<List<Memo>>.value(const []);
+  }
+  return db.watchAllMemos().map((all) {
+    return all.where((m) {
+      final t = normalizeForSearch(m.title);
+      final c = normalizeForSearch(m.content);
+      return t.contains(normQuery) || c.contains(normQuery);
+    }).toList();
+  });
+});
+
 /// 最近見たメモ取得（lastViewedAt 降順）
 final recentMemosProvider = StreamProvider<List<Memo>>((ref) {
   final db = ref.watch(databaseProvider);

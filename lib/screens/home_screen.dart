@@ -179,6 +179,52 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     await db.moveMemosToTop(_selectedMemoIds.toList());
     if (mounted) _exitSelectMode();
   }
+
+  /// メモグリッドの左右スワイプで隣のタブへ切替
+  /// 本家準拠: 両端でループ
+  void _switchToAdjacentTab(int delta) {
+    final order = _tabOrder;
+    if (order == null || order.isEmpty) return;
+    final cur = order.indexOf(_selectedTabKey);
+    if (cur < 0) return;
+    var next = cur + delta;
+    if (next < 0) next = order.length - 1;
+    if (next >= order.length) next = 0;
+    setState(() {
+      _selectedTabKey = order[next];
+      _selectedChildTagId = null;
+      _childDrawerOpen = false;
+      _selectMode = _SelectMode.none;
+      _selectedMemoIds.clear();
+    });
+    _animateDrawer(false);
+  }
+
+  // スワイプ・タブ切替時のスライドイン方向 (true: 右から、false: 左から)
+  bool _slideFromRight = true;
+  // タブ切替アニメ duration: フリック時のみ 280ms、タップ等は 0 (即時)
+  int _tabAnimMs = 0;
+
+  void _onSwipeEnd(DragEndDetails d) {
+    final v = d.primaryVelocity ?? 0;
+    // 最低 300px/s のフリック速度
+    if (v.abs() < 300) return;
+    setState(() {
+      _slideFromRight = v < 0;
+      _tabAnimMs = 280;
+    });
+    if (v < 0) {
+      _switchToAdjacentTab(1); // 左フリック → 次のタブ
+    } else {
+      _switchToAdjacentTab(-1); // 右フリック → 前のタブ
+    }
+    // アニメ完了後に 0 に戻す (次のタップ切替を即時化)
+    Future.delayed(const Duration(milliseconds: 320), () {
+      if (mounted && _tabAnimMs != 0) {
+        setState(() => _tabAnimMs = 0);
+      }
+    });
+  }
   // タブバーのスクロール位置を並び替え前後で保持
   final ScrollController _tabBarScrollController = ScrollController();
   double _savedTabBarOffset = 0;
@@ -186,6 +232,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   List<String>? _savedTabOrder;
   // 入力エリア用
   String? _editingMemoId;
+  // 検索 (ヘッダの全フォルダ横断検索)
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  bool get _isSearchActive => _searchQuery.isNotEmpty;
+
+  // フォルダ内検索 (虫眼鏡ボタンから入る、現在のフォルダのみが対象)
+  bool _isInFolderSearch = false;
+  String? _folderSearchTagId; // 検索対象の親タグID
+  String _folderSearchTagName = '';
+  final TextEditingController _folderSearchController =
+      TextEditingController();
+  String _folderSearchQuery = '';
+
+  void _enterFolderSearch(List<Tag> parentTags) {
+    final id = _currentParentTagId(parentTags);
+    if (id == null) return;
+    final tag = parentTags.where((t) => t.id == id).firstOrNull;
+    setState(() {
+      _isInFolderSearch = true;
+      _folderSearchTagId = id;
+      _folderSearchTagName = tag?.name ?? '';
+      _folderSearchQuery = '';
+      _folderSearchController.clear();
+      _selectMode = _SelectMode.none;
+      _selectedMemoIds.clear();
+    });
+  }
+
+  void _exitFolderSearch() {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _isInFolderSearch = false;
+      _folderSearchTagId = null;
+      _folderSearchTagName = '';
+      _folderSearchQuery = '';
+      _folderSearchController.clear();
+    });
+  }
 
   @override
   void initState() {
@@ -197,6 +281,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void dispose() {
     _drawerCtrl.dispose();
     _tabBarScrollController.dispose();
+    _searchController.dispose();
+    _folderSearchController.dispose();
     super.dispose();
   }
 
@@ -305,47 +391,115 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
             // 3. 機能バー（爆速・ToDo・ドロワーハンドル）
             _buildFunctionBar(),
-            // 4. 親タグタブ
-            parentTagsAsync.when(
-              data: (tags) => _buildTabBar(tags),
-              loading: () => const SizedBox(height: 40),
-              error: (_, _) => const SizedBox(height: 40),
-            ),
+            // 4. 親タグタブ（検索/フォルダ内検索中は専用タブに切替）
+            if (_isSearchActive)
+              _wrapWithCloseButton(_buildSearchResultTab(), () {
+                _searchController.clear();
+                setState(() => _searchQuery = '');
+                FocusScope.of(context).unfocus();
+              })
+            else if (_isInFolderSearch)
+              _wrapWithCloseButton(_buildFolderSearchTab(), _exitFolderSearch)
+            else
+              parentTagsAsync.when(
+                data: (tags) => _buildTabBar(tags),
+                loading: () => const SizedBox(height: 40),
+                error: (_, _) => const SizedBox(height: 40),
+              ),
             // 5〜8. フォルダ本体（タブと一体化したカラー領域）
             // 下部ボタン類（ゴミ箱・上へ移動・メモ作成・グリッド数）はフォルダ内フロート
             Expanded(
               child: Container(
-                color: currentColor,
+                color: (_isSearchActive || _isInFolderSearch)
+                    ? const Color(0xFFE0E8F0) // 検索モード用の薄水色
+                    : currentColor,
                 child: Stack(
+                  // 閉じるボタンを上方向にはみ出させるためクリップ無効
+                  clipBehavior: Clip.none,
                   children: [
-                    // 件数バー + メモグリッド: ドロワー展開時はその分下にスライド
-                    AnimatedBuilder(
-                      animation: _drawerCtrl,
-                      builder: (context, child) {
-                        final t = _drawerCtrl.value.clamp(0.0, 1.0);
-                        // 本家準拠: drawerBandHeight(37) + gap(6) = 43px 下にずらす
-                        return Padding(
-                          padding: EdgeInsets.only(top: 43 * t),
-                          child: child,
-                        );
-                      },
-                      child: Column(
-                        children: [
-                          _buildCountBar(parentTags),
-                          Expanded(
-                            child: parentTagsAsync.when(
-                              data: (tags) => _buildMemoGrid(tags),
-                              loading: () => const Center(
-                                  child: CircularProgressIndicator()),
-                              error: (e, _) =>
-                                  Center(child: Text('エラー: $e')),
+                    // 検索中: 検索結果ビュー
+                    // 通常: 件数バー + メモグリッド（ドロワー展開時はその分下にスライド）
+                    if (_isSearchActive)
+                      _SearchResultsView(
+                        query: _searchQuery,
+                        onTapMemo: _openMemo,
+                        onLongPressMemo: (m) => _showMemoActions(m),
+                      )
+                    else if (_isInFolderSearch)
+                      _FolderSearchView(
+                        parentTagId: _folderSearchTagId!,
+                        controller: _folderSearchController,
+                        query: _folderSearchQuery,
+                        onQueryChanged: (v) =>
+                            setState(() => _folderSearchQuery = v.trim()),
+                        onTapMemo: _openMemo,
+                        onLongPressMemo: (m) => _showMemoActions(m),
+                      )
+                    else
+                      // 左右スワイプでタブ切替（選択モード/並び替え中は無効）
+                      GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onHorizontalDragEnd:
+                            (_isSelectMode || _isReorderMode)
+                                ? null
+                                : _onSwipeEnd,
+                        child: AnimatedBuilder(
+                          animation: _drawerCtrl,
+                          builder: (context, child) {
+                            final t = _drawerCtrl.value.clamp(0.0, 1.0);
+                            return Padding(
+                              padding: EdgeInsets.only(top: 43 * t),
+                              child: child,
+                            );
+                          },
+                          // タブ切替時にスライドイン (フリック時のみ。タップ時は即時)
+                          child: ClipRect(
+                            child: AnimatedSwitcher(
+                              duration: Duration(milliseconds: _tabAnimMs),
+                              switchInCurve: Curves.easeOutCubic,
+                              switchOutCurve: Curves.easeInCubic,
+                              transitionBuilder: (child, animation) {
+                                final isCurrent =
+                                    (child.key as ValueKey?)?.value ==
+                                        _selectedTabKey;
+                                if (isCurrent) {
+                                  return SlideTransition(
+                                    position: animation.drive(Tween(
+                                      begin: Offset(
+                                          _slideFromRight ? 1 : -1, 0),
+                                      end: Offset.zero,
+                                    )),
+                                    child: child,
+                                  );
+                                }
+                                return FadeTransition(
+                                    opacity: animation, child: child);
+                              },
+                              child: KeyedSubtree(
+                                key: ValueKey(_selectedTabKey),
+                                child: Column(
+                                  children: [
+                                    _buildCountBar(parentTags),
+                                    Expanded(
+                                      child: parentTagsAsync.when(
+                                        data: (tags) => _buildMemoGrid(tags),
+                                        loading: () => const Center(
+                                            child: CircularProgressIndicator()),
+                                        error: (e, _) => Center(
+                                            child: Text('エラー: $e')),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
-                        ],
+                        ),
                       ),
-                    ),
-                    // 子タグドロワー（フォルダ右上）
-                    if (_currentParentTagId(parentTags) != null)
+                    // 子タグドロワー（フォルダ右上、検索中・フォルダ内検索中は非表示）
+                    if (!_isSearchActive &&
+                        !_isInFolderSearch &&
+                        _currentParentTagId(parentTags) != null)
                       Positioned(
                         top: 7,
                         right: 0,
@@ -369,14 +523,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       Positioned.fill(
                         child: _buildReorderOverlay(),
                       ),
-                    // フロートする下部ボタン群（ホームインジケータの上に配置）
-                    if (!_isReorderMode)
+                    // フロートする下部ボタン群（検索中・並び替え中・フォルダ内検索中は非表示）
+                    if (!_isReorderMode &&
+                        !_isSearchActive &&
+                        !_isInFolderSearch)
                       Positioned(
                         left: 0,
                         right: 0,
                         bottom:
                             MediaQuery.of(context).viewPadding.bottom + 8,
                         child: _buildFloatingBottomBar(parentTags),
+                      ),
+                    // 親タグフォルダ表示中のみ虫眼鏡ボタン (グリッドボタンの上に浮かぶ)
+                    if (!_isReorderMode &&
+                        !_isSearchActive &&
+                        !_isInFolderSearch &&
+                        !_isSelectMode &&
+                        _currentParentTagId(parentTags) != null)
+                      Positioned(
+                        right: 12,
+                        bottom: MediaQuery.of(context).viewPadding.bottom +
+                            8 +
+                            48 +
+                            6,
+                        child: _buildFolderSearchButton(parentTags),
                       ),
                   ],
                 ),
@@ -438,24 +608,52 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
           ),
           const Spacer(),
-          // 検索バー（中央配置、固定幅、角丸控えめ）
-          Container(
-            width: 180,
+          // 検索バー（中央配置、固定幅、入力可能）
+          SizedBox(
+            width: 220,
             height: 32,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.search, size: 16, color: Colors.grey[500]),
-                const SizedBox(width: 6),
-                Text('メモを探す',
-                    style:
-                        TextStyle(fontSize: 13, color: Colors.grey[500])),
-              ],
+            child: TextField(
+              controller: _searchController,
+              onChanged: (v) => setState(() => _searchQuery = v.trim()),
+              textAlignVertical: TextAlignVertical.center,
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                isDense: true,
+                filled: true,
+                fillColor: Colors.grey[200],
+                hintText: 'メモを探す',
+                hintStyle: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                prefixIcon:
+                    Icon(Icons.search, size: 16, color: Colors.grey[500]),
+                prefixIconConstraints: const BoxConstraints(
+                    minWidth: 28, minHeight: 28),
+                suffixIcon: _isSearchActive
+                    ? GestureDetector(
+                        onTap: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                          FocusScope.of(context).unfocus();
+                        },
+                        child: Icon(Icons.cancel,
+                            size: 16, color: Colors.grey[500]),
+                      )
+                    : null,
+                suffixIconConstraints: const BoxConstraints(
+                    minWidth: 28, minHeight: 28),
+                contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+              ),
             ),
           ),
           const Spacer(),
@@ -859,6 +1057,163 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             .jumpTo(_savedTabBarOffset.clamp(0.0, max));
       }
     });
+  }
+
+  /// 検索系タブの右端に閉じるボタンを重ねるラッパー
+  Widget _wrapWithCloseButton(Widget tabWidget, VoidCallback onClose) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        tabWidget,
+        Positioned(
+          top: 7,
+          right: 22,
+          child: GestureDetector(
+            onTap: onClose,
+            child: Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade500,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 3,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                CupertinoIcons.xmark,
+                size: 14,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// フォルダ内検索中のタブバー: 「"○○"フォルダ内の検索」のフォルダタブ
+  Widget _buildFolderSearchTab() {
+    return GestureDetector(
+      // タブをタップで終了
+      onTap: _exitFolderSearch,
+      child: SizedBox(
+        height: 40,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: CustomPaint(
+            painter: TrapezoidTabPainter(
+              color: const Color(0xFFD8E3EE),
+              shadows: const [
+                Shadow(
+                  color: Color(0x4D000000),
+                  offset: Offset(-3, 3),
+                  blurRadius: 4,
+                ),
+              ],
+            ),
+            child: Center(
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                child: Text(
+                  '"$_folderSearchTagName" フォルダ内の検索',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  strutStyle: const StrutStyle(
+                    fontSize: 14,
+                    height: 1.0,
+                    forceStrutHeight: true,
+                    leading: 0,
+                  ),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    height: 1.0,
+                    fontFamily: 'Hiragino Sans',
+                    fontWeight: FontWeight.w800,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 虫眼鏡フロートボタン (グリッドボタンの真上にフロート)
+  Widget _buildFolderSearchButton(List<Tag> parentTags) {
+    return GestureDetector(
+      onTap: () => _enterFolderSearch(parentTags),
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: _capsuleFill,
+          shape: BoxShape.circle,
+          border: Border.all(color: _capsuleStroke, width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: const Icon(CupertinoIcons.search,
+            size: 18, color: _secondary),
+      ),
+    );
+  }
+
+  /// 検索中のタブバー: 「"query" の検索結果」のフォルダタブ1個
+  Widget _buildSearchResultTab() {
+    return SizedBox(
+      height: 40,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: CustomPaint(
+          painter: TrapezoidTabPainter(
+            color: const Color(0xFFD8E3EE), // 薄水色
+            shadows: const [
+              Shadow(
+                color: Color(0x4D000000),
+                offset: Offset(-3, 3),
+                blurRadius: 4,
+              ),
+            ],
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+              child: Text(
+                '"$_searchQuery" の検索結果',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                strutStyle: const StrutStyle(
+                  fontSize: 14,
+                  height: 1.0,
+                  forceStrutHeight: true,
+                  leading: 0,
+                ),
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.0,
+                  fontFamily: 'Hiragino Sans',
+                  fontWeight: FontWeight.w800,
+                  color: Colors.black,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// 末尾の「+」追加タブ（親タグ追加。挙動はルーレットの親タグ追加と同じ）
@@ -1651,90 +2006,195 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
   }
 
-  // メモカードを CupertinoContextMenu でラップ
-  // 長押しで本家iOSのcontextMenuと同じふわっと浮き上がる挙動。
-  // 本家準拠: トップに移動 / 固定 / コピー / ロック / 削除（ロック中はdisabled）
-  // よく見るタブでは「トップに移動」「固定」を出さない
+  // メモカードを長押し検知付きでラップする（ボトムシート方式）
   Widget _wrapMemoInContextMenu(Memo memo, Widget card) {
-    final showMoveAndPin = !_isFrequentTab;
-    return CupertinoContextMenu.builder(
-      enableHapticFeedback: true,
-      actions: [
-        if (showMoveAndPin)
-          CupertinoContextMenuAction(
-            trailingIcon: CupertinoIcons.arrow_up_to_line,
-            onPressed: () {
-              Navigator.of(context).pop();
-              ref.read(databaseProvider).moveMemoToTop(memo.id);
-            },
-            child: const Text('トップに移動'),
-          ),
-        if (showMoveAndPin)
-          CupertinoContextMenuAction(
-            trailingIcon: memo.isPinned
-                ? CupertinoIcons.pin_slash
-                : CupertinoIcons.pin,
-            onPressed: () {
-              Navigator.of(context).pop();
-              ref
-                  .read(databaseProvider)
-                  .updateMemo(id: memo.id, isPinned: !memo.isPinned);
-            },
-            child: Text(memo.isPinned ? '固定を解除' : 'トップに常時固定'),
-          ),
-        CupertinoContextMenuAction(
-          trailingIcon: CupertinoIcons.doc_on_doc,
-          onPressed: () {
-            Navigator.of(context).pop();
-            Clipboard.setData(ClipboardData(text: memo.content));
-          },
-          child: const Text('コピー'),
-        ),
-        CupertinoContextMenuAction(
-          trailingIcon:
-              memo.isLocked ? CupertinoIcons.lock_open : CupertinoIcons.lock,
-          onPressed: () {
-            Navigator.of(context).pop();
-            final wasLocked = memo.isLocked;
-            ref
-                .read(databaseProvider)
-                .updateMemo(id: memo.id, isLocked: !memo.isLocked);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                duration: const Duration(milliseconds: 1500),
-                content: Text(
-                  wasLocked ? 'ロックを解除しました' : 'メモをロックしました',
-                ),
-              ),
-            );
-          },
-          child: Text(memo.isLocked ? 'ロックを解除' : '削除防止ロック'),
-        ),
-        if (memo.isLocked)
-          CupertinoContextMenuAction(
-            trailingIcon: CupertinoIcons.lock_fill,
-            isDestructiveAction: true,
-            onPressed: null, // 削除ロック中はタップ不可
-            child: const Text('削除ロック中'),
-          )
-        else
-          CupertinoContextMenuAction(
-            trailingIcon: CupertinoIcons.delete,
-            isDestructiveAction: true,
-            onPressed: () {
-              Navigator.of(context).pop();
-              ref.read(databaseProvider).deleteMemo(memo.id);
-            },
-            child: const Text('削除'),
-          ),
-      ],
-      // 浮き上がり中のカードはMaterialツリー外に描かれるので、
-      // 黄色いデバッグアンダーラインを消すためにMaterialで包む
-      builder: (ctx, animation) => Material(
-        color: Colors.transparent,
-        child: card,
-      ),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPress: () => _showMemoActions(memo),
+      child: card,
     );
+  }
+
+  // メモカード長押しメニュー: ボトムシートに対象カードのプレビュー + 項目リスト
+  // 本家contextMenu準拠の項目: トップに移動 / 固定 / コピー / ロック / 削除
+  // よく見るタブでは「トップに移動」「固定」非表示
+  Future<void> _showMemoActions(Memo memo) async {
+    FocusScope.of(context).unfocus();
+    final showMoveAndPin = !_isFrequentTab;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.35),
+      builder: (sheetCtx) {
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 対象メモカードのプレビュー（薄水色の枠でメニューと差別化）
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 160),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD8ECF7), // 薄水色
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: IgnorePointer(
+                      child: MemoCard(
+                        memo: memo,
+                        onTap: () {},
+                        gridSize: GridSizeOption.grid2x3,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // 項目リスト（すりガラス調）
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.88),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (showMoveAndPin)
+                            _MenuActionRow(
+                              icon: Icons.vertical_align_top,
+                              label: 'トップに移動',
+                              onTap: () =>
+                                  Navigator.of(sheetCtx).pop('moveTop'),
+                            ),
+                          if (showMoveAndPin)
+                            _MenuActionRow(
+                              icon: memo.isPinned
+                                  ? Icons.push_pin_outlined
+                                  : Icons.push_pin,
+                              label: memo.isPinned
+                                  ? '固定を解除'
+                                  : 'トップに常時固定',
+                              onTap: () =>
+                                  Navigator.of(sheetCtx).pop('pin'),
+                            ),
+                          _MenuActionRow(
+                            icon: Icons.copy,
+                            label: 'コピー',
+                            onTap: () =>
+                                Navigator.of(sheetCtx).pop('copy'),
+                          ),
+                          _MenuActionRow(
+                            icon: memo.isLocked
+                                ? Icons.lock_open
+                                : Icons.lock_outline,
+                            label: memo.isLocked ? 'ロックを解除' : '削除防止ロック',
+                            onTap: () =>
+                                Navigator.of(sheetCtx).pop('lock'),
+                          ),
+                          if (memo.isLocked)
+                            _MenuActionRow(
+                              icon: Icons.lock,
+                              label: '削除ロック中',
+                              destructive: true,
+                              disabled: true,
+                              onTap: () {},
+                            )
+                          else
+                            _MenuActionRow(
+                              icon: Icons.delete_outline,
+                              label: '削除',
+                              destructive: true,
+                              onTap: () =>
+                                  Navigator.of(sheetCtx).pop('delete'),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // キャンセルボタン (iOS ActionSheet 風)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => Navigator.of(sheetCtx).pop(),
+                      child: Container(
+                        height: 50,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.95),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Text(
+                          'キャンセル',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF007AFF),
+                            fontFamily: 'Hiragino Sans',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted) return;
+    FocusScope.of(context).unfocus();
+    final db = ref.read(databaseProvider);
+    switch (action) {
+      case 'moveTop':
+        await db.moveMemoToTop(memo.id);
+        break;
+      case 'pin':
+        await db.updateMemo(id: memo.id, isPinned: !memo.isPinned);
+        break;
+      case 'copy':
+        await Clipboard.setData(ClipboardData(text: memo.content));
+        break;
+      case 'lock':
+        final wasLocked = memo.isLocked;
+        await db.updateMemo(id: memo.id, isLocked: !memo.isLocked);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              duration: const Duration(milliseconds: 1500),
+              content: Text(
+                wasLocked ? 'ロックを解除しました' : 'メモをロックしました',
+              ),
+            ),
+          );
+        }
+        break;
+      case 'delete':
+        await db.deleteMemo(memo.id);
+        break;
+    }
   }
 }
 
@@ -1832,6 +2292,573 @@ class _ParentChildBadge extends ConsumerWidget {
 // _FrequentTabContent: 「よく見る」フォルダ専用レイアウト（左右二列）
 // 左 = よく見る（viewCount降順）、右 = 最近見た（lastViewedAt降順）
 // ========================================
+// ========================================
+// _FolderSearchView: フォルダ内検索モード
+// 上部に入力欄、その下に現在のフォルダ内のヒットメモを2列グリッドで表示
+// ========================================
+class _FolderSearchView extends ConsumerWidget {
+  final String parentTagId;
+  final TextEditingController controller;
+  final String query;
+  final ValueChanged<String> onQueryChanged;
+  final void Function(Memo) onTapMemo;
+  final void Function(Memo) onLongPressMemo;
+
+  const _FolderSearchView({
+    required this.parentTagId,
+    required this.controller,
+    required this.query,
+    required this.onQueryChanged,
+    required this.onTapMemo,
+    required this.onLongPressMemo,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final memosAsync = ref.watch(memosForTagProvider(parentTagId));
+    final normQ = normalizeForSearch(query);
+
+    return Column(
+      children: [
+        // 入力欄
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          child: SizedBox(
+            height: 38,
+            child: TextField(
+              controller: controller,
+              autofocus: true,
+              onChanged: onQueryChanged,
+              textAlignVertical: TextAlignVertical.center,
+              style: const TextStyle(fontSize: 14),
+              decoration: InputDecoration(
+                isDense: true,
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.85),
+                hintText: 'このフォルダのメモを検索',
+                hintStyle:
+                    TextStyle(fontSize: 13, color: Colors.grey[500]),
+                prefixIcon:
+                    Icon(Icons.search, size: 18, color: Colors.grey[500]),
+                prefixIconConstraints: const BoxConstraints(
+                    minWidth: 32, minHeight: 32),
+                suffixIcon: query.isNotEmpty
+                    ? GestureDetector(
+                        onTap: () {
+                          controller.clear();
+                          onQueryChanged('');
+                        },
+                        child: Icon(Icons.cancel,
+                            size: 16, color: Colors.grey[500]),
+                      )
+                    : null,
+                suffixIconConstraints: const BoxConstraints(
+                    minWidth: 32, minHeight: 32),
+                contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+        ),
+        // 検索結果
+        Expanded(
+          child: memosAsync.when(
+            data: (memos) {
+              if (normQ.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(CupertinoIcons.search,
+                          size: 28, color: Colors.grey.shade500),
+                      const SizedBox(height: 8),
+                      Text(
+                        'キーワードを入力',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                          fontFamily: 'Hiragino Sans',
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              final hits = memos.where((m) {
+                final t = normalizeForSearch(m.title);
+                final c = normalizeForSearch(m.content);
+                return t.contains(normQ) || c.contains(normQ);
+              }).toList();
+              if (hits.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(CupertinoIcons.search,
+                          size: 28, color: Colors.grey.shade500),
+                      const SizedBox(height: 8),
+                      Text(
+                        '見つかりませんでした',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                          fontFamily: 'Hiragino Sans',
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 80),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(6, 4, 6, 8),
+                      child: Text(
+                        '${hits.length}件ヒット',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          fontFamily: 'Hiragino Sans',
+                          color: Color(0x993C3C43),
+                        ),
+                      ),
+                    ),
+                    for (var i = 0; i < hits.length; i += 2)
+                      Padding(
+                        padding: EdgeInsets.only(
+                            bottom: i + 2 < hits.length ? 8 : 0),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 110,
+                                child: _SearchMemoCard(
+                                  memo: hits[i],
+                                  query: query,
+                                  onTap: () => onTapMemo(hits[i]),
+                                  onLongPress: () => onLongPressMemo(hits[i]),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: i + 1 < hits.length
+                                  ? SizedBox(
+                                      height: 110,
+                                      child: _SearchMemoCard(
+                                        memo: hits[i + 1],
+                                        query: query,
+                                        onTap: () =>
+                                            onTapMemo(hits[i + 1]),
+                                        onLongPress: () =>
+                                            onLongPressMemo(hits[i + 1]),
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text('検索エラー: $e')),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ========================================
+// _SearchResultsView: 検索結果モード
+// 検索クエリにヒットしたメモをタグ別セクションにまとめて表示
+// ========================================
+class _SearchResultsView extends ConsumerWidget {
+  final String query;
+  final void Function(Memo) onTapMemo;
+  final void Function(Memo) onLongPressMemo;
+
+  const _SearchResultsView({
+    required this.query,
+    required this.onTapMemo,
+    required this.onLongPressMemo,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final memosAsync = ref.watch(searchMemosProvider(query.toLowerCase()));
+    final parentTags =
+        ref.watch(parentTagsProvider).valueOrNull ?? const <Tag>[];
+
+    return memosAsync.when(
+      data: (memos) {
+        if (memos.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(CupertinoIcons.search,
+                    size: 32, color: Color(0xB33C3C43)),
+                SizedBox(height: 8),
+                Text(
+                  '見つかりませんでした',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontFamily: 'Hiragino Sans',
+                    color: Color(0xB33C3C43),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        // メモごとのタグを取得して、親タグ別にグループ化
+        return _SearchSections(
+          query: query,
+          memos: memos,
+          parentTags: parentTags,
+          onTapMemo: onTapMemo,
+          onLongPressMemo: onLongPressMemo,
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('検索エラー: $e')),
+    );
+  }
+}
+
+class _SearchSections extends ConsumerWidget {
+  final String query;
+  final List<Memo> memos;
+  final List<Tag> parentTags;
+  final void Function(Memo) onTapMemo;
+  final void Function(Memo) onLongPressMemo;
+
+  const _SearchSections({
+    required this.query,
+    required this.memos,
+    required this.parentTags,
+    required this.onTapMemo,
+    required this.onLongPressMemo,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 各メモの親タグ集合を集める
+    final memoParents = <String, Set<String>>{};
+    for (final m in memos) {
+      final tags =
+          ref.watch(tagsForMemoStreamProvider(m.id)).valueOrNull ??
+              const <Tag>[];
+      final parents = <String>{};
+      for (final t in tags) {
+        parents.add(t.parentTagId ?? t.id);
+      }
+      memoParents[m.id] = parents;
+    }
+
+    // セクション組み立て
+    final sections = <_SearchSection>[];
+    // タグなし
+    final noTag = memos
+        .where((m) => (memoParents[m.id] ?? const {}).isEmpty)
+        .toList();
+    if (noTag.isNotEmpty) {
+      sections.add(_SearchSection(
+        name: 'タグなし',
+        colorIndex: 0,
+        memos: noTag,
+      ));
+    }
+    // 親タグごと
+    for (final pt in parentTags) {
+      final matched = memos
+          .where((m) => (memoParents[m.id] ?? const {}).contains(pt.id))
+          .toList();
+      if (matched.isNotEmpty) {
+        sections.add(_SearchSection(
+          name: pt.name,
+          colorIndex: pt.colorIndex,
+          memos: matched,
+        ));
+      }
+    }
+
+    final totalHits = memos.length;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 80),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
+            child: Text(
+              '$totalHits件ヒット',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                fontFamily: 'Hiragino Sans',
+                color: Color(0x993C3C43),
+              ),
+            ),
+          ),
+          for (final s in sections)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    width: 0.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 3,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // セクションヘッダー (タグバッジ + 件数)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: TagColors.getColor(s.colorIndex),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              s.name,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                fontFamily: 'Hiragino Sans',
+                                color: Colors.black,
+                                height: 1.0,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${s.memos.length}件',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              fontFamily: 'Hiragino Sans',
+                              color: Color(0x993C3C43),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // 2列レイアウト (手動 Column-of-Rows で確実な余白制御)
+                    for (var i = 0; i < s.memos.length; i += 2)
+                      Padding(
+                        padding: EdgeInsets.only(
+                            bottom: i + 2 < s.memos.length ? 8 : 0),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 110,
+                                child: _SearchMemoCard(
+                                  memo: s.memos[i],
+                                  query: query,
+                                  onTap: () => onTapMemo(s.memos[i]),
+                                  onLongPress: () =>
+                                      onLongPressMemo(s.memos[i]),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: i + 1 < s.memos.length
+                                  ? SizedBox(
+                                      height: 110,
+                                      child: _SearchMemoCard(
+                                        memo: s.memos[i + 1],
+                                        query: query,
+                                        onTap: () =>
+                                            onTapMemo(s.memos[i + 1]),
+                                        onLongPress: () =>
+                                            onLongPressMemo(s.memos[i + 1]),
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchSection {
+  final String name;
+  final int colorIndex;
+  final List<Memo> memos;
+  _SearchSection({
+    required this.name,
+    required this.colorIndex,
+    required this.memos,
+  });
+}
+
+// ヒットしたクエリ箇所をハイライト表示するメモカード
+class _SearchMemoCard extends StatelessWidget {
+  final Memo memo;
+  final String query;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  const _SearchMemoCard({
+    required this.memo,
+    required this.query,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  // 本文からマッチ行を中心としたスニペットを抽出（最大3行）
+  String get _snippet {
+    final lines = memo.content.split('\n');
+    final normQ = normalizeForSearch(query);
+    final idx = lines
+        .indexWhere((l) => normalizeForSearch(l).contains(normQ));
+    if (idx == -1) {
+      // タイトルにのみマッチ → 先頭3行
+      return lines.take(3).join('\n');
+    }
+    final start = (idx - 1).clamp(0, lines.length - 1);
+    final end = (idx + 1).clamp(0, lines.length - 1);
+    return lines.sublist(start, end + 1).join('\n');
+  }
+
+  // テキストを TextSpan に分解してマッチ箇所をハイライト
+  // 正規化(全角→半角・小文字)でマッチ位置を探し、元テキストでハイライト
+  // (正規化は 1文字 → 1文字 の 1:1 マップなので index は一致する)
+  TextSpan _highlight(String text, TextStyle baseStyle) {
+    final lower = normalizeForSearch(text);
+    final lowerQ = normalizeForSearch(query);
+    if (lowerQ.isEmpty) return TextSpan(text: text, style: baseStyle);
+    final spans = <TextSpan>[];
+    var start = 0;
+    while (true) {
+      final idx = lower.indexOf(lowerQ, start);
+      if (idx < 0) {
+        spans.add(TextSpan(text: text.substring(start), style: baseStyle));
+        break;
+      }
+      if (idx > start) {
+        spans.add(
+            TextSpan(text: text.substring(start, idx), style: baseStyle));
+      }
+      spans.add(
+        TextSpan(
+          text: text.substring(idx, idx + lowerQ.length),
+          style: baseStyle.copyWith(
+            backgroundColor: Colors.yellow.withValues(alpha: 0.5),
+            fontWeight: FontWeight.w600,
+            color: Colors.black,
+          ),
+        ),
+      );
+      start = idx + lowerQ.length;
+    }
+    return TextSpan(children: spans);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasTitle = memo.title.isNotEmpty;
+    final titleStyle = TextStyle(
+      fontSize: 14,
+      fontWeight: hasTitle ? FontWeight.w600 : FontWeight.w400,
+      color: hasTitle ? Colors.black : Colors.grey.withValues(alpha: 0.5),
+      height: 1.3,
+      fontFamily: 'Hiragino Sans',
+    );
+    final bodyStyle = TextStyle(
+      fontSize: 12,
+      color: Colors.grey[700],
+      height: 1.35,
+      fontFamily: 'Hiragino Sans',
+    );
+
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      child: Container(
+        clipBehavior: Clip.hardEdge,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text.rich(
+              _highlight(hasTitle ? memo.title : '(タイトルなし)', titleStyle),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 4),
+            Expanded(
+              child: Text.rich(
+                _highlight(_snippet, bodyStyle),
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _FrequentTabContent extends ConsumerWidget {
   final FrequentGridOption gridOption;
   final Color tabColor;
@@ -1873,6 +2900,7 @@ class _FrequentTabContent extends ConsumerWidget {
 
   Widget _buildCardCell(Memo memo, double? cardHeight) {
     final card = MemoCard(
+      key: ValueKey('freqmemo_${memo.id}'),
       memo: memo,
       onTap: () => onTap(memo),
       gridSize: gridOption.cardGridSize,
@@ -2101,13 +3129,16 @@ class _MemoGridView extends StatelessWidget {
         ),
       );
     }
+    // 全カードに ValueKey を付けて stream 更新時もウィジェット同一性を維持
     final card = MemoCard(
+      key: ValueKey('memocard_${memo.id}'),
       memo: memo,
       onTap: () => onTap(memo),
       parentTagId: parentTagId,
       gridSize: gridSize,
     );
-    return wrapBuilder != null ? wrapBuilder!(memo, card) : card;
+    final wrapped = wrapBuilder != null ? wrapBuilder!(memo, card) : card;
+    return KeyedSubtree(key: ValueKey('cell_${memo.id}'), child: wrapped);
   }
 
   /// 1行の高さを availableHeight から計算（Swift版cardHeight準拠）
@@ -2763,6 +3794,7 @@ class _MenuActionRow extends StatefulWidget {
   final IconData icon;
   final String label;
   final bool destructive;
+  final bool disabled;
   final VoidCallback onTap;
 
   const _MenuActionRow({
@@ -2770,6 +3802,7 @@ class _MenuActionRow extends StatefulWidget {
     required this.label,
     required this.onTap,
     this.destructive = false,
+    this.disabled = false,
   });
 
   @override
@@ -2781,13 +3814,17 @@ class _MenuActionRowState extends State<_MenuActionRow> {
 
   @override
   Widget build(BuildContext context) {
-    final color = widget.destructive ? Colors.red : Colors.black87;
+    final base = widget.destructive ? Colors.red : Colors.black87;
+    final color = widget.disabled ? base.withValues(alpha: 0.4) : base;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapCancel: () => setState(() => _pressed = false),
-      onTapUp: (_) => setState(() => _pressed = false),
-      onTap: widget.onTap,
+      onTapDown:
+          widget.disabled ? null : (_) => setState(() => _pressed = true),
+      onTapCancel:
+          widget.disabled ? null : () => setState(() => _pressed = false),
+      onTapUp:
+          widget.disabled ? null : (_) => setState(() => _pressed = false),
+      onTap: widget.disabled ? null : widget.onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 100),
         height: 46,
