@@ -52,3 +52,8 @@ final tagsForMemoProvider =
   final db = ref.watch(databaseProvider);
   return db.getTagsForMemo(memoId);
 });
+
+/// 「すべて」「タグなし」タブの色（colorIndex）を保持
+/// 永続化は後日対応。今はメモリのみ。
+final allTabColorIndexProvider = StateProvider<int>((ref) => -1); // -1 = TagColors.allTabColor を使う
+final untaggedTabColorIndexProvider = StateProvider<int>((ref) => 0); // 0 = palette[0]

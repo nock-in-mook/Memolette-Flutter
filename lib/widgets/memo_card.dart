@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../db/database.dart';
 
@@ -18,18 +17,16 @@ class MemoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateFormat = DateFormat('M/d HH:mm');
-    // タイトルがあればタイトル、なければ本文の先頭を表示
-    final displayTitle = memo.title.isNotEmpty
-        ? memo.title
-        : (memo.content.isNotEmpty ? memo.content : '新規メモ');
-    final displayBody =
-        memo.title.isNotEmpty ? memo.content : '';
+    // 本家準拠: タイトル空なら "(タイトルなし)" を薄く、本文は常に memo.content
+    final hasTitle = memo.title.isNotEmpty;
+    final displayTitle = hasTitle ? memo.title : '(タイトルなし)';
+    final displayBody = memo.content;
 
     return GestureDetector(
       onTap: onTap,
       onLongPress: onLongPress,
       child: Container(
+        clipBehavior: Clip.hardEdge,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
@@ -44,6 +41,7 @@ class MemoCard extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             // ピン留め・ロックアイコン行
             if (memo.isPinned || memo.isLocked)
@@ -61,37 +59,35 @@ class MemoCard extends StatelessWidget {
                   ],
                 ),
               ),
-            // タイトル
+            // タイトル（本家: 空なら .regular + gray.opacity(0.5)）
             Text(
               displayTitle,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 15,
-                fontWeight: FontWeight.w600,
+                fontWeight: hasTitle ? FontWeight.w600 : FontWeight.w400,
+                color: hasTitle
+                    ? Colors.black
+                    : Colors.grey.withValues(alpha: 0.5),
                 height: 1.3,
               ),
-              maxLines: 2,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            if (displayBody.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Expanded(
-                child: Text(
-                  displayBody,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[600],
-                    height: 1.4,
+            if (displayBody.isNotEmpty)
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    displayBody,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey[600],
+                      height: 1.4,
+                    ),
+                    overflow: TextOverflow.fade,
                   ),
-                  overflow: TextOverflow.fade,
                 ),
               ),
-            ] else
-              const Spacer(),
-            // 日時
-            Text(
-              dateFormat.format(memo.createdAt),
-              style: TextStyle(fontSize: 11, color: Colors.grey[400]),
-            ),
           ],
         ),
       ),

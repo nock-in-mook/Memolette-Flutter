@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import 'trapezoid_tab_shape.dart';
 
 /// 新規タグ追加シート（Swift版 NewTagSheetView 準拠）
 ///
@@ -282,24 +283,66 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
     );
   }
 
-  /// プレビュー（暫定: 親も子もタグバッジ。後で親はフォルダタブに差し替え予定）
+  /// プレビュー（親=フォルダタブ形状、子=タグバッジ）
   Widget _buildPreview({required bool isChild}) {
     final color = TagColors.getColor(_selectedColorIndex);
     final name = _trimmed.isEmpty ? ' ' : _trimmed;
     final isEmpty = _trimmed.isEmpty;
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isEmpty ? Colors.transparent : color,
-          borderRadius: BorderRadius.circular(isChild ? 6 : 10),
+
+    if (isChild) {
+      // 子タグはバッジ風プレビュー
+      return Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: isEmpty ? Colors.transparent : color,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            name,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: isEmpty ? Colors.transparent : Colors.black,
+            ),
+          ),
         ),
-        child: Text(
-          name,
-          style: TextStyle(
-            fontSize: isChild ? 14 : 16,
-            fontWeight: FontWeight.bold,
-            color: isEmpty ? Colors.transparent : Colors.black,
+      );
+    }
+
+    // 親タグはフォルダタブ形状（タグ名が入るまで非表示）
+    return Center(
+      child: Opacity(
+        opacity: isEmpty ? 0 : 1,
+        child: CustomPaint(
+          painter: TrapezoidTabPainter(
+            color: color,
+            shadows: const [
+              Shadow(
+                color: Color(0x4D000000),
+                offset: Offset(-3, 3),
+                blurRadius: 4,
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+            child: Text(
+              name,
+              strutStyle: const StrutStyle(
+                fontSize: 16,
+                height: 1.0,
+                forceStrutHeight: true,
+                leading: 0,
+              ),
+              style: const TextStyle(
+                fontSize: 16,
+                height: 1.0,
+                fontFamily: 'Hiragino Sans',
+                fontWeight: FontWeight.w800,
+                color: Colors.black,
+              ),
+            ),
           ),
         ),
       ),

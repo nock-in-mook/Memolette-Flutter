@@ -189,6 +189,37 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  /// タグと、そのタグに紐づくメモも一緒に削除
+  Future<void> deleteTagWithMemos(String id) async {
+    // このタグに紐づく全メモIDを取得
+    final memoIdQuery = await (select(memoTags)
+          ..where((t) => t.tagId.equals(id)))
+        .get();
+    final memoIds = memoIdQuery.map((mt) => mt.memoId).toList();
+    // メモ削除
+    for (final memoId in memoIds) {
+      await deleteMemo(memoId);
+    }
+    // 子タグの分も再帰的に
+    final children =
+        await (select(tags)..where((t) => t.parentTagId.equals(id))).get();
+    for (final child in children) {
+      await deleteTagWithMemos(child.id);
+    }
+    // タグ自体は通常の deleteTag で消す
+    await deleteTag(id);
+  }
+
+  /// 親タグの並び替え（IDリストの新しい順序で sortOrder を再採番）
+  Future<void> reorderParentTags(List<String> orderedIds) async {
+    await transaction(() async {
+      for (var i = 0; i < orderedIds.length; i++) {
+        await (update(tags)..where((t) => t.id.equals(orderedIds[i])))
+            .write(TagsCompanion(sortOrder: Value(i)));
+      }
+    });
+  }
+
   /// タグを削除（紐づく中間テーブルも削除）
   Future<void> deleteTag(String id) async {
     await (delete(memoTags)..where((t) => t.tagId.equals(id))).go();
@@ -341,6 +372,20 @@ class AppDatabase extends _$AppDatabase {
     for (final (name, colorIndex) in dummyTags) {
       await createTag(name: name, colorIndex: colorIndex);
     }
+  }
+
+  /// 全データ削除（開発用）
+  Future<void> wipeAll() async {
+    await transaction(() async {
+      await delete(memoTags).go();
+      await delete(todoItemTags).go();
+      await delete(todoListTags).go();
+      await delete(memos).go();
+      await delete(tags).go();
+      await delete(todoItems).go();
+      await delete(todoLists).go();
+      await delete(tagHistories).go();
+    });
   }
 }
 
