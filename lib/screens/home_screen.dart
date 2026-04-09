@@ -21,18 +21,35 @@ import 'quick_sort_screen.dart';
 import 'settings_screen.dart';
 import 'todo_lists_screen.dart';
 
-/// グリッドサイズ選択肢（Swift版GridSizeOption準拠）
+/// グリッドサイズ選択肢（Swift版GridSizeOption準拠 / 旧「全文」を 1×可変 に置き換え）
 enum GridSizeOption {
   grid3x6('3×6', 3),
   grid2x5('2×5', 2),
   grid2x3('2×3', 2),
   grid1x2('1×2', 1),
-  full('1(全文)', 1),
+  // 旧「全文(無制限)」を廃止し、本文 max 15行の 1列可変高さに置き換え
+  grid1flex('1×可変', 1),
   titleOnly('タイトルのみ', 2);
 
   final String label;
   final int columns;
   const GridSizeOption(this.label, this.columns);
+}
+
+/// 「よく見る」フォルダ専用グリッドオプション
+enum FrequentGridOption {
+  grid2x5('2×5', 5, GridSizeOption.grid2x5),
+  grid2x3('2×3', 3, GridSizeOption.grid2x3),
+  // 旧「2×1(全文)」を廃止し、2×可変 (本文 max 15行) に置き換え
+  grid2flex('2×可変', 0, GridSizeOption.grid1flex),
+  titleOnly('タイトルのみ', 0, GridSizeOption.titleOnly);
+
+  final String label;
+  /// 各列で表示する行数（高さ計算用）。0 = 高さ固定しない
+  final int rows;
+  /// カード描画に使う GridSizeOption（フォントやパディング決定用）
+  final GridSizeOption cardGridSize;
+  const FrequentGridOption(this.label, this.rows, this.cardGridSize);
 }
 
 /// ホーム画面（Swift版レイアウト準拠）
@@ -86,6 +103,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
   // グリッドサイズ
   GridSizeOption _gridSize = GridSizeOption.grid2x3;
+  // 「よく見る」フォルダ専用グリッドサイズ
+  FrequentGridOption _frequentGridSize = FrequentGridOption.grid2x5;
   // フォルダ並び替えモード
   bool _isReorderMode = false;
   // メモ複数選択モード（削除 or トップに移動）
@@ -516,6 +535,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         clipBehavior: Clip.none,
         child: _ZOrderedRow(
           selectedIndex: selectedIdx >= 0 ? selectedIdx : 0,
+          overlap: 0, // 重ねず、隙間もゼロ
           children: tabs,
         ),
       ),
@@ -853,12 +873,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         child: Icon(Icons.add, size: 16, color: Colors.black54),
       ),
     );
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: GestureDetector(
-        onTap: () => NewTagSheet.show(context: context),
-        child: addTab,
-      ),
+    return GestureDetector(
+      onTap: () => NewTagSheet.show(context: context),
+      child: addTab,
     );
   }
 
@@ -917,17 +934,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ),
     );
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: GestureDetector(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        // 1.08倍スケール（下端基点）
-        child: Transform.scale(
-          scale: isSelected ? 1.08 : 1.0,
-          alignment: Alignment.bottomCenter,
-          child: tab,
-        ),
+    // 重なり制御は親 _ZOrderedRow が overlap で行う
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      // 1.08倍スケール（下端基点）
+      child: Transform.scale(
+        scale: isSelected ? 1.08 : 1.0,
+        alignment: Alignment.bottomCenter,
+        child: tab,
       ),
     );
   }
@@ -1008,7 +1023,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Widget _buildMemoGrid(List<Tag> parentTags) {
     if (_selectedTabKey == kFrequentTabKey) {
       return _FrequentTabContent(
-        gridSize: _gridSize,
+        gridOption: _frequentGridSize,
         tabColor: _currentTabColor(parentTags),
         onTap: _openMemo,
         wrapBuilder: (memo, card) => _wrapMemoInContextMenu(memo, card),
@@ -1241,33 +1256,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
             ),
           if (!hideCreate) const Spacer(),
-          // ④ グリッドサイズ
+          // ④ グリッドサイズ（よく見るタブは別オプション）
           Builder(
-            builder: (btnContext) => GestureDetector(
-              onTap: () => _showGridSizeMenu(btnContext),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 8),
-                decoration: _capsuleDeco(),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(CupertinoIcons.square_grid_2x2,
-                        size: 15, color: _secondary),
-                    const SizedBox(width: 5),
-                    Text(
-                      _gridSize.label,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        fontFamily: 'Hiragino Sans',
-                        color: _secondary,
+            builder: (btnContext) {
+              final label = _isFrequentTab
+                  ? _frequentGridSize.label
+                  : _gridSize.label;
+              return GestureDetector(
+                onTap: () => _showGridSizeMenu(btnContext),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 8),
+                  decoration: _capsuleDeco(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(CupertinoIcons.square_grid_2x2,
+                          size: 15, color: _secondary),
+                      const SizedBox(width: 5),
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Hiragino Sans',
+                          color: _secondary,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ],
       ),
@@ -1285,6 +1305,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final btnTopLeft =
         renderBox.localToGlobal(Offset.zero, ancestor: overlay);
     final btnSize = renderBox.size;
+    final btnRect = Rect.fromLTWH(
+      btnTopLeft.dx,
+      btnTopLeft.dy,
+      btnSize.width,
+      btnSize.height,
+    );
+
+    // 「よく見る」タブ専用メニュー
+    if (_isFrequentTab) {
+      final selected = await showGeneralDialog<FrequentGridOption>(
+        context: btnContext,
+        barrierDismissible: true,
+        barrierLabel: 'gridSizeMenu',
+        barrierColor: Colors.transparent,
+        transitionDuration: const Duration(milliseconds: 150),
+        pageBuilder: (ctx, _, _) {
+          return _FrequentGridSizeMenuOverlay(
+            current: _frequentGridSize,
+            buttonRect: btnRect,
+          );
+        },
+        transitionBuilder: (_, anim, _, child) {
+          return FadeTransition(opacity: anim, child: child);
+        },
+      );
+      if (selected != null) {
+        setState(() => _frequentGridSize = selected);
+      }
+      return;
+    }
 
     final selected = await showGeneralDialog<GridSizeOption>(
       context: btnContext,
@@ -1295,12 +1345,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       pageBuilder: (ctx, _, _) {
         return _GridSizeMenuOverlay(
           current: _gridSize,
-          buttonRect: Rect.fromLTWH(
-            btnTopLeft.dx,
-            btnTopLeft.dy,
-            btnSize.width,
-            btnSize.height,
-          ),
+          buttonRect: btnRect,
         );
       },
       transitionBuilder: (_, anim, _, child) {
@@ -1317,13 +1362,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // アクション
   // ========================================
 
+  // メモ全件数の上限（同期/クラウド保存時の安全マージン）
+  static const int _maxMemoCount = 10000;
+
+  /// 件数上限を超えてないかチェック。超えてたらアラート出して true を返す
+  Future<bool> _checkMemoLimit() async {
+    final db = ref.read(databaseProvider);
+    final count = await db.countMemos();
+    if (count >= _maxMemoCount) {
+      if (!mounted) return true;
+      await showCupertinoDialog<void>(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('メモ数の上限に達しました'),
+          content: Text(
+            '現在 $count 件のメモがあります。これ以上は作成できません（上限: $_maxMemoCount 件）。\n'
+            '不要なメモを削除してください。',
+          ),
+          actions: [
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _createNewMemo() async {
+    if (await _checkMemoLimit()) return;
     final db = ref.read(databaseProvider);
     final memo = await db.createMemo();
-    setState(() => _editingMemoId = memo.id);
+    if (mounted) setState(() => _editingMemoId = memo.id);
   }
 
   Future<void> _createMemoInFolder(List<Tag> parentTags) async {
+    if (await _checkMemoLimit()) return;
     final db = ref.read(databaseProvider);
     final memo = await db.createMemo();
     // 現在のタブのタグを自動付与
@@ -1334,7 +1412,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (_selectedChildTagId != null) {
       await db.addTagToMemo(memo.id, _selectedChildTagId!);
     }
-    setState(() => _editingMemoId = memo.id);
+    if (mounted) setState(() => _editingMemoId = memo.id);
   }
 
   void _openMemo(Memo memo) {
@@ -1755,7 +1833,7 @@ class _ParentChildBadge extends ConsumerWidget {
 // 左 = よく見る（viewCount降順）、右 = 最近見た（lastViewedAt降順）
 // ========================================
 class _FrequentTabContent extends ConsumerWidget {
-  final GridSizeOption gridSize;
+  final FrequentGridOption gridOption;
   final Color tabColor;
   final void Function(Memo) onTap;
   final MemoCardWrapper? wrapBuilder;
@@ -1764,7 +1842,7 @@ class _FrequentTabContent extends ConsumerWidget {
   final void Function(Memo)? onToggleSelect;
 
   const _FrequentTabContent({
-    required this.gridSize,
+    required this.gridOption,
     required this.tabColor,
     required this.onTap,
     this.wrapBuilder,
@@ -1781,55 +1859,66 @@ class _FrequentTabContent extends ConsumerWidget {
     return Color.from(alpha: 1.0, red: r, green: g, blue: b);
   }
 
-  Widget _buildCardCell(Memo memo) {
+  /// 本家 cardHeight 計算式準拠
+  /// (availableHeight - spacing × (rows + peek)) / (rows + peek)
+  /// - rows = 0 (full / titleOnly) のときは null
+  double? _computeCardHeight(double availableHeight) {
+    if (gridOption.rows == 0) return null; // full / titleOnly は固定しない
+    const spacing = 8.0;
+    const peek = 0.2;
+    final rows = gridOption.rows.toDouble();
+    final h = (availableHeight - spacing * (rows + peek)) / (rows + peek);
+    return h < 36 ? 36 : h;
+  }
+
+  Widget _buildCardCell(Memo memo, double? cardHeight) {
     final card = MemoCard(
       memo: memo,
       onTap: () => onTap(memo),
-      gridSize: GridSizeOption.grid2x5,
+      gridSize: gridOption.cardGridSize,
     );
     if (selectMode) {
       final isSelected = selectedIds.contains(memo.id);
       final isLocked = memo.isLocked;
+      final inner = Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Icon(
+              isLocked
+                  ? CupertinoIcons.lock_fill
+                  : isSelected
+                      ? CupertinoIcons.checkmark_circle_fill
+                      : CupertinoIcons.circle,
+              size: 16,
+              color: isLocked
+                  ? Colors.grey.withValues(alpha: 0.4)
+                  : isSelected
+                      ? Colors.blue
+                      : Colors.grey.withValues(alpha: 0.6),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Opacity(
+              opacity: isLocked ? 0.4 : 1.0,
+              child: IgnorePointer(child: card),
+            ),
+          ),
+        ],
+      );
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => onToggleSelect?.call(memo),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Icon(
-                isLocked
-                    ? CupertinoIcons.lock_fill
-                    : isSelected
-                        ? CupertinoIcons.checkmark_circle_fill
-                        : CupertinoIcons.circle,
-                size: 16,
-                color: isLocked
-                    ? Colors.grey.withValues(alpha: 0.4)
-                    : isSelected
-                        ? Colors.blue
-                        : Colors.grey.withValues(alpha: 0.6),
-              ),
-            ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: SizedBox(
-                height: 110,
-                child: Opacity(
-                  opacity: isLocked ? 0.4 : 1.0,
-                  child: IgnorePointer(child: card),
-                ),
-              ),
-            ),
-          ],
-        ),
+        child: cardHeight != null ? SizedBox(height: cardHeight, child: inner) : inner,
       );
     }
     final wrapped = wrapBuilder != null ? wrapBuilder!(memo, card) : card;
-    return SizedBox(height: 110, child: wrapped);
+    return cardHeight != null ? SizedBox(height: cardHeight, child: wrapped) : wrapped;
   }
 
-  Widget _buildColumn(BuildContext context, String title, List<Memo> memos) {
+  Widget _buildColumn(
+      BuildContext context, String title, List<Memo> memos, double? cardHeight) {
     // 本家準拠: ラベルとカード群が同じ箱の中にまとまる
     return Container(
       padding: const EdgeInsets.all(8),
@@ -1861,7 +1950,7 @@ class _FrequentTabContent extends ConsumerWidget {
             ),
           ),
           for (var i = 0; i < memos.length; i++) ...[
-            _buildCardCell(memos[i]),
+            _buildCardCell(memos[i], cardHeight),
             if (i < memos.length - 1) const SizedBox(height: 8),
           ],
           if (memos.isEmpty)
@@ -1910,16 +1999,28 @@ class _FrequentTabContent extends ConsumerWidget {
       );
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 120),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: _buildColumn(context, 'よく見る', freq)),
-          const SizedBox(width: 8),
-          Expanded(child: _buildColumn(context, '最近見た', recent)),
-        ],
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 列ラベル(20pt) + 上下padding(16pt) を引いた領域でカード高を計算
+        const frequentExtraOffset = 36.0;
+        final available = constraints.maxHeight - frequentExtraOffset;
+        final cardHeight = _computeCardHeight(available);
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 120),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildColumn(context, 'よく見る', freq, cardHeight),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildColumn(context, '最近見た', recent, cardHeight),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -2072,18 +2173,13 @@ class _MemoGridView extends StatelessWidget {
                 );
               }
 
-              // 全文: 1列固定、高さ可変（aspectRatio大きめ）
-              if (gridSize == GridSizeOption.full) {
-                return GridView.builder(
+              // 1×可変: 1列、カード高さは内容に追従、本文 max 15行
+              // ListView.separated は lazy build なので 1万件あっても画面外は描画しない
+              if (gridSize == GridSizeOption.grid1flex) {
+                return ListView.separated(
                   padding: const EdgeInsets.only(bottom: bottomPad),
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 1,
-                    crossAxisSpacing: 8,
-                    mainAxisSpacing: 8,
-                    mainAxisExtent: 240,
-                  ),
                   itemCount: memos.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (_, i) => _buildCard(memos[i]),
                 );
               }
@@ -2205,7 +2301,7 @@ class _GridSizeMenuOverlay extends StatelessWidget {
                     ),
                     for (final opt in options)
                       _MenuRow(
-                        option: opt,
+                        label: opt.label,
                         isCurrent: opt == current,
                         onTap: () => Navigator.of(context).pop(opt),
                       ),
@@ -2222,12 +2318,12 @@ class _GridSizeMenuOverlay extends StatelessWidget {
 }
 
 class _MenuRow extends StatelessWidget {
-  final GridSizeOption option;
+  final String label;
   final bool isCurrent;
   final VoidCallback onTap;
 
   const _MenuRow({
-    required this.option,
+    required this.label,
     required this.isCurrent,
     required this.onTap,
   });
@@ -2251,7 +2347,7 @@ class _MenuRow extends StatelessWidget {
                     : null,
               ),
               Text(
-                option.label,
+                label,
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight:
@@ -2267,26 +2363,129 @@ class _MenuRow extends StatelessWidget {
   }
 }
 
+// 「よく見る」フォルダ専用のグリッドサイズメニュー
+class _FrequentGridSizeMenuOverlay extends StatelessWidget {
+  final FrequentGridOption current;
+  final Rect buttonRect;
+
+  const _FrequentGridSizeMenuOverlay({
+    required this.current,
+    required this.buttonRect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const options = FrequentGridOption.values;
+    const menuWidth = 220.0;
+    const rowHeight = 46.0;
+    const headerHeight = 32.0;
+    final menuHeight = headerHeight + rowHeight * options.length + 8;
+
+    final screen = MediaQuery.of(context).size;
+    double left = buttonRect.right - menuWidth;
+    if (left < 8) left = 8;
+    if (left + menuWidth > screen.width - 8) {
+      left = screen.width - 8 - menuWidth;
+    }
+    final top = buttonRect.top - menuHeight - 6;
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(context).pop(),
+            onLongPress: () => Navigator.of(context).pop(),
+          ),
+        ),
+        Positioned(
+          left: left,
+          top: top,
+          width: menuWidth,
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        width: 0.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(16, 12, 16, 6),
+                        child: Text(
+                          '表示形式',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xB33C3C43),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        height: 0.5,
+                        color: const Color(0x33000000),
+                      ),
+                      for (final opt in options)
+                        _MenuRow(
+                          label: opt.label,
+                          isCurrent: opt == current,
+                          onTap: () => Navigator.of(context).pop(opt),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 // ========================================
 // _ZOrderedRow: 子をRowのように左→右に配置するが、
 // paint順を「右ほど後ろ・左ほど前」+「選択中は最前面」にする
 // ========================================
 class _ZOrderedRow extends MultiChildRenderObjectWidget {
   final int selectedIndex;
+  /// 隣り合う子をどれだけ重ねるか（正値=重なる）
+  final double overlap;
 
   const _ZOrderedRow({
     required this.selectedIndex,
+    this.overlap = 0,
     required super.children,
   });
 
   @override
   RenderObject createRenderObject(BuildContext context) =>
-      _ZOrderedRowRenderBox(selectedIndex: selectedIndex);
+      _ZOrderedRowRenderBox(
+          selectedIndex: selectedIndex, overlap: overlap);
 
   @override
   void updateRenderObject(
       BuildContext context, _ZOrderedRowRenderBox renderObject) {
     renderObject.selectedIndex = selectedIndex;
+    renderObject.overlap = overlap;
   }
 }
 
@@ -2296,8 +2495,9 @@ class _ZOrderedRowRenderBox extends RenderBox
     with
         ContainerRenderObjectMixin<RenderBox, _ZOrderedRowParentData>,
         RenderBoxContainerDefaultsMixin<RenderBox, _ZOrderedRowParentData> {
-  _ZOrderedRowRenderBox({required int selectedIndex})
-      : _selectedIndex = selectedIndex;
+  _ZOrderedRowRenderBox({required int selectedIndex, double overlap = 0})
+      : _selectedIndex = selectedIndex,
+        _overlap = overlap;
 
   int _selectedIndex;
   int get selectedIndex => _selectedIndex;
@@ -2305,6 +2505,15 @@ class _ZOrderedRowRenderBox extends RenderBox
     if (_selectedIndex != value) {
       _selectedIndex = value;
       markNeedsPaint();
+    }
+  }
+
+  double _overlap;
+  double get overlap => _overlap;
+  set overlap(double value) {
+    if (_overlap != value) {
+      _overlap = value;
+      markNeedsLayout();
     }
   }
 
@@ -2322,12 +2531,16 @@ class _ZOrderedRowRenderBox extends RenderBox
     final childConstraints =
         BoxConstraints(maxHeight: constraints.maxHeight);
     var child = firstChild;
+    var first = true;
     while (child != null) {
       child.layout(childConstraints, parentUsesSize: true);
       final pd = child.parentData! as _ZOrderedRowParentData;
+      // 2番目以降は前の子と重ねる
+      if (!first) x -= _overlap;
       pd.offset = Offset(x, 0);
       x += child.size.width;
       if (child.size.height > maxH) maxH = child.size.height;
+      first = false;
       child = pd.nextSibling;
     }
     // コンテナ高さ: 親が固定高を指定していればそれを使う、なければ子の最大

@@ -29,7 +29,7 @@ class MemoCard extends ConsumerWidget {
         GridSizeOption.grid2x5 => 15,
         GridSizeOption.grid2x3 => 16,
         GridSizeOption.grid1x2 => 17,
-        GridSizeOption.full => 18,
+        GridSizeOption.grid1flex => 16,
         GridSizeOption.titleOnly => 14,
       };
 
@@ -38,17 +38,17 @@ class MemoCard extends ConsumerWidget {
         GridSizeOption.grid2x5 => 14,
         GridSizeOption.grid2x3 => 14,
         GridSizeOption.grid1x2 => 15,
-        GridSizeOption.full => 16,
+        GridSizeOption.grid1flex => 14,
         GridSizeOption.titleOnly => 12,
       };
 
-  // bodyLines: 0 = 無制限
+  // bodyLines: 0 = 無制限。grid1flex は本家にはないFlutter版の可変モードで最大15行
   int get _bodyLines => switch (gridSize) {
         GridSizeOption.grid3x6 => 1,
         GridSizeOption.grid2x5 => 3,
         GridSizeOption.grid2x3 => 5,
         GridSizeOption.grid1x2 => 4,
-        GridSizeOption.full => 0,
+        GridSizeOption.grid1flex => 15,
         GridSizeOption.titleOnly => 0,
       };
 
@@ -57,7 +57,7 @@ class MemoCard extends ConsumerWidget {
         GridSizeOption.grid2x5 => 8,
         GridSizeOption.grid2x3 => 10,
         GridSizeOption.grid1x2 => 12,
-        GridSizeOption.full => 12,
+        GridSizeOption.grid1flex => 10,
         GridSizeOption.titleOnly => 6,
       };
 
@@ -74,8 +74,74 @@ class MemoCard extends ConsumerWidget {
     return result;
   }
 
+  // タイトルのみモード: HStack 1行スタイル（本家準拠）
+  Widget _buildTitleOnly() {
+    final hasTitle = memo.title.isNotEmpty;
+    final displayTitle = hasTitle ? memo.title : '無題';
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        clipBehavior: Clip.hardEdge,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(4),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 1,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                displayTitle,
+                style: TextStyle(
+                  fontSize: _titleFont,
+                  fontWeight:
+                      hasTitle ? FontWeight.w600 : FontWeight.w400,
+                  color: hasTitle
+                      ? Colors.black
+                      : Colors.grey.withValues(alpha: 0.5),
+                  height: 1.0,
+                  fontFamily: 'Hiragino Sans',
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            // 右端マーク: Pin / Lock（小さめ）
+            if (memo.isPinned) ...[
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.push_pin,
+                size: 9,
+                color: Color(0x99FF9500),
+              ),
+            ],
+            if (memo.isLocked) ...[
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.lock,
+                size: 9,
+                color: Color(0x99FF9500),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // タイトルのみモードは別レイアウト
+    if (gridSize == GridSizeOption.titleOnly) {
+      return _buildTitleOnly();
+    }
     // 本家準拠: タイトル空なら "(タイトルなし)" を薄く、本文は常に memo.content
     final hasTitle = memo.title.isNotEmpty;
     final displayTitle = hasTitle ? memo.title : '(タイトルなし)';
@@ -183,38 +249,46 @@ class MemoCard extends ConsumerWidget {
     return GestureDetector(
       onTap: onTap,
       // 子タグバッジは右下にカード端からはみ出して表示
-      // StackFit.expand で cardBody がセル全体を埋めるようにする（縮まない）
-      child: Stack(
-        fit: StackFit.expand,
-        clipBehavior: Clip.none,
-        children: [
-          cardBody,
-          if (childTagBadge != null)
-            Positioned(
-              right: 0,
-              bottom: -2, // カードに少しめり込ませる
-              child: IgnorePointer(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 5, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: TagColors.getColor(childTagBadge.colorIndex),
-                    borderRadius: BorderRadius.circular(20), // capsule
-                  ),
-                  child: Text(
-                    _truncated(childTagBadge.name),
-                    style: const TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w600,
-                      fontFamily: 'Hiragino Sans',
-                      color: Colors.black,
-                      height: 1.0,
+      // 親の高さ制約が有限ならカードがセル全体を埋め(StackFit.expand)、
+      // 無限なら内容に合わせて縮む(StackFit.loose) — 両ケースに対応
+      child: LayoutBuilder(
+        builder: (ctx, constraints) {
+          final hasBoundedHeight = constraints.maxHeight.isFinite;
+          return Stack(
+            fit: hasBoundedHeight ? StackFit.expand : StackFit.loose,
+            clipBehavior: Clip.none,
+            children: [
+              hasBoundedHeight
+                  ? cardBody
+                  : SizedBox(width: double.infinity, child: cardBody),
+              if (childTagBadge != null)
+                Positioned(
+                  right: 0,
+                  bottom: -2, // カードに少しめり込ませる
+                  child: IgnorePointer(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: TagColors.getColor(childTagBadge.colorIndex),
+                        borderRadius: BorderRadius.circular(20), // capsule
+                      ),
+                      child: Text(
+                        _truncated(childTagBadge.name),
+                        style: const TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Hiragino Sans',
+                          color: Colors.black,
+                          height: 1.0,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }

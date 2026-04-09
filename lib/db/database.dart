@@ -70,6 +70,13 @@ class AppDatabase extends _$AppDatabase {
     return (await getMemoById(id))!;
   }
 
+  /// 全メモ件数を取得
+  Future<int> countMemos() async {
+    final exp = memos.id.count();
+    final row = await (selectOnly(memos)..addColumns([exp])).getSingle();
+    return row.read(exp) ?? 0;
+  }
+
   /// メモを更新
   Future<void> updateMemo({
     required String id,
