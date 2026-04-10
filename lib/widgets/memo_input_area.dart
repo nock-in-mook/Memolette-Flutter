@@ -465,8 +465,11 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               // \u30B7\u30E3\u30C9\u30A6\u306A\u3057\uFF08Swift\u7248\u6E96\u62E0\uFF09
             ),
             child: GestureDetector(
-              // ヘッダー/ツールバー等テキスト欄以外をタップしたらコンテキストメニューを消す
-              onTap: _hideContextMenu,
+              // ヘッダー/ツールバー等テキスト欄以外をタップしたらコンテキストメニューを消す + ルーレット閉じる
+              onTap: () {
+                _hideContextMenu();
+                if (_rouletteOpen) setState(() => _rouletteOpen = false);
+              },
               behavior: HitTestBehavior.translucent,
               child: Column(
               children: [
@@ -485,11 +488,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             ),
             ),
           ),
-          // ルーレット（タイトル下端から入力欄下端まで）
+          // ルーレット（タイトル下端から。高さは通常時相当に固定: 316-42=274）
           Positioned(
             right: 0,
             top: 42,
-            bottom: 0,
+            bottom: widget.isExpanded ? null : 0,
+            height: widget.isExpanded ? 274 : null,
             child: allTagsAsync.when(
               data: (allTags) => _buildRoulette(allTags),
               loading: () => const SizedBox(),
@@ -1166,7 +1170,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   Widget _buildContent() {
     return Expanded(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 9),
         child: TextField(
           controller: _contentController,
           focusNode: _contentFocusNode,
@@ -1184,6 +1188,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               ContextMenuController.removeAny();
               _lastContextMenuShown = null;
             }
+            // ルーレットが開いていたら閉じる
+            if (_rouletteOpen) setState(() => _rouletteOpen = false);
           },
           inputFormatters: [
             // 5万字超過は自動カット + トースト通知 (連射防止)
@@ -1192,9 +1198,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               onLimit: _showLimitReached,
             ),
           ],
-          // 17pt、行間 1.25 (控えめ)、角張った PingFang JP
+          // 16pt、行間 1.25 (控えめ)、角張った PingFang JP
           style: const TextStyle(
-            fontSize: 17,
+            fontSize: 16,
             height: 1.25,
             fontFamily: 'PingFang JP',
             color: Colors.black87,
