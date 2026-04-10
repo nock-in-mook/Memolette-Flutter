@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../constants/design_constants.dart';
@@ -19,6 +20,12 @@ class MemoInputArea extends ConsumerStatefulWidget {
   final VoidCallback onClosed;
   final String? selectedParentTagId;
   final String? selectedChildTagId;
+  /// インクリメントすると本文入力欄にフォーカスを要求する (新規作成ボタン用)
+  final int focusRequest;
+  /// 最大化中かどうか (親がレイアウトを変える)
+  final bool isExpanded;
+  /// 最大化トグル (親が状態を持つ)
+  final VoidCallback? onToggleExpanded;
 
   const MemoInputArea({
     super.key,
@@ -27,6 +34,9 @@ class MemoInputArea extends ConsumerStatefulWidget {
     required this.onClosed,
     this.selectedParentTagId,
     this.selectedChildTagId,
+    this.focusRequest = 0,
+    this.isExpanded = false,
+    this.onToggleExpanded,
   });
 
   @override
@@ -34,14 +44,120 @@ class MemoInputArea extends ConsumerStatefulWidget {
 }
 
 class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
+  // 本文の最大文字数（Swift版準拠）
+  static const int _maxContentLength = 50000;
+  // Undo/Redo履歴の最大段数
+  static const int _maxUndoSnapshots = 50;
+
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
+  final _titleFocusNode = FocusNode();
+  final _contentFocusNode = FocusNode();
+  bool get _isInputFocused =>
+      _titleFocusNode.hasFocus || _contentFocusNode.hasFocus;
   List<Tag> _attachedTags = [];
   bool _hasMemo = false;
   bool _rouletteOpen = false;
+  // 閲覧モード: 既存メモをカードからタップして開いた直後はキーボードを出さず
+  // テキストを表示するだけ。本文/タイトルをタップすると編集モードへ遷移 (本家準拠)
+  bool _isViewMode = false;
   // メモ未作成時にルーレットで先に選んだタグの保持先（事前選択状態）
   Tag? _pendingParentTag;
   Tag? _pendingChildTag;
+
+  // Undo/Redo: undoStack の top が常に「現在の状態」
+  // Undo するには最低 2 要素必要(現在＋ひとつ前)
+  final List<_InputSnapshot> _undoStack = [];
+  final List<_InputSnapshot> _redoStack = [];
+  bool _suppressUndo = false; // Undo/Redo 適用中は履歴を積まない
+
+  bool get _canUndo => _undoStack.length > 1;
+  bool get _canRedo => _redoStack.isNotEmpty;
+
+  _InputSnapshot _currentSnapshot() => _InputSnapshot(
+        title: _titleController.text,
+        content: _contentController.text,
+        parentTagId: _parentTag?.id,
+        childTagId: _childTag?.id,
+      );
+
+  void _pushUndoIfChanged() {
+    if (_suppressUndo) return;
+    final cur = _currentSnapshot();
+    if (_undoStack.isNotEmpty && _undoStack.last == cur) return;
+    _undoStack.add(cur);
+    if (_undoStack.length > _maxUndoSnapshots) _undoStack.removeAt(0);
+    _redoStack.clear();
+  }
+
+  void _resetUndoHistory() {
+    _undoStack
+      ..clear()
+      ..add(_currentSnapshot());
+    _redoStack.clear();
+  }
+
+  Future<void> _undo() async {
+    if (!_canUndo) return;
+    final current = _undoStack.removeLast();
+    _redoStack.add(current);
+    final past = _undoStack.last;
+    await _applySnapshot(past);
+  }
+
+  Future<void> _redo() async {
+    if (!_canRedo) return;
+    final next = _redoStack.removeLast();
+    _undoStack.add(next);
+    await _applySnapshot(next);
+  }
+
+  Future<void> _applySnapshot(_InputSnapshot s) async {
+    _suppressUndo = true;
+    try {
+      _titleController.text = s.title;
+      _contentController.text = s.content;
+      // タグの復元: メモが既存ならDB操作、未作成ならpending
+      final allTags =
+          ref.read(allTagsProvider).value ?? const <Tag>[];
+      Tag? findTag(String? id) {
+        if (id == null) return null;
+        for (final t in allTags) {
+          if (t.id == id) return t;
+        }
+        return null;
+      }
+
+      final newParent = findTag(s.parentTagId);
+      final newChild = findTag(s.childTagId);
+
+      if (widget.editingMemoId != null) {
+        final db = ref.read(databaseProvider);
+        // 既存タグを全部外して付け直す
+        for (final t in _attachedTags) {
+          await db.removeTagFromMemo(widget.editingMemoId!, t.id);
+        }
+        if (newParent != null) {
+          await db.addTagToMemo(widget.editingMemoId!, newParent.id);
+        }
+        if (newChild != null) {
+          await db.addTagToMemo(widget.editingMemoId!, newChild.id);
+        }
+        _attachedTags = await db.getTagsForMemo(widget.editingMemoId!);
+        await db.updateMemo(
+          id: widget.editingMemoId!,
+          title: s.title,
+          content: s.content,
+        );
+      } else {
+        _pendingParentTag = newParent;
+        _pendingChildTag = newChild;
+      }
+      if (mounted) setState(() {});
+    } finally {
+      _suppressUndo = false;
+    }
+  }
 
   /// 表示用の親タグ（メモ作成済みなら添付タグ、未作成ならpending）
   Tag? get _parentTag {
@@ -75,6 +191,18 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _resetUndoHistory();
+    _titleFocusNode.addListener(_onFocusChange);
+    _contentFocusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void didUpdateWidget(covariant MemoInputArea oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.editingMemoId != oldWidget.editingMemoId) {
@@ -84,30 +212,60 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
         _clearInput();
       }
     }
+    // 新規作成ボタンからのフォーカス要求
+    if (widget.focusRequest != oldWidget.focusRequest) {
+      _isViewMode = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _contentFocusNode.requestFocus();
+      });
+    }
   }
 
   Future<void> _loadMemo(String id) async {
     final db = ref.read(databaseProvider);
     final memo = await db.getMemoById(id);
     if (memo != null && mounted) {
+      _suppressUndo = true;
       _titleController.text = memo.title;
       _contentController.text = memo.content;
       _attachedTags = await db.getTagsForMemo(id);
-      setState(() => _hasMemo = true);
+      _suppressUndo = false;
+      _resetUndoHistory();
+      setState(() {
+        _hasMemo = true;
+        _isViewMode = true; // カードから開いたら最初は閲覧モード
+      });
     }
   }
 
   void _clearInput() {
+    _suppressUndo = true;
     _titleController.clear();
     _contentController.clear();
     _attachedTags = [];
     _pendingParentTag = null;
     _pendingChildTag = null;
-    setState(() => _hasMemo = false);
+    _suppressUndo = false;
+    _resetUndoHistory();
+    setState(() {
+      _hasMemo = false;
+      _isViewMode = false;
+    });
+  }
+
+  // 閲覧モードを抜けて編集モードへ。本文タップ等から呼ばれる
+  void _enterEditMode({bool focusContent = true, bool focusTitle = false}) {
+    setState(() => _isViewMode = false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (focusTitle) _titleFocusNode.requestFocus();
+      if (focusContent) _contentFocusNode.requestFocus();
+    });
   }
 
   /// 入力内容を即座に保存
   void _onChanged() {
+    _pushUndoIfChanged();
     if (widget.editingMemoId == null) {
       if (_titleController.text.isNotEmpty ||
           _contentController.text.isNotEmpty) {
@@ -121,6 +279,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
       title: _titleController.text,
       content: _contentController.text,
     );
+    if (mounted) setState(() {}); // Undo/Redoボタンの状態更新用
   }
 
   Future<void> _createAndSave() async {
@@ -145,16 +304,80 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
     setState(() => _hasMemo = true);
   }
 
+  // 確定: キーボードを閉じるだけ。メモは残す（本家準拠）
   void _confirm() {
+    FocusScope.of(context).unfocus();
+  }
+
+  // メモを閉じる: 入力欄をクリア + onClosed コールバック
+  void _closeMemo() {
     FocusScope.of(context).unfocus();
     _clearInput();
     widget.onClosed();
+  }
+
+  // 本文だけを消す (消しゴムボタン): タイトル/タグはそのまま
+  Future<void> _clearBody() async {
+    if (_contentController.text.isEmpty) return;
+    final ok = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('本文を全て消します'),
+        content: const Text('本文をクリアします。タイトルとタグはそのままです。'),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('キャンセル'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('クリア'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    _contentController.clear();
+    _onChanged();
+    setState(() {});
+  }
+
+  // 5万字到達トースト (連射防止: 直近の表示から3秒以内は無視)
+  DateTime? _lastLimitToastAt;
+  void _showLimitReached() {
+    final now = DateTime.now();
+    if (_lastLimitToastAt != null &&
+        now.difference(_lastLimitToastAt!) < const Duration(seconds: 3)) {
+      return;
+    }
+    _lastLimitToastAt = now;
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        duration: Duration(milliseconds: 2000),
+        content: Text('1メモあたり 50,000 文字までです'),
+      ),
+    );
+  }
+
+  void _copyContent() {
+    if (_contentController.text.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: _contentController.text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        duration: Duration(milliseconds: 1200),
+        content: Text('コピーしました'),
+      ),
+    );
   }
 
   @override
   void dispose() {
     _titleController.dispose();
     _contentController.dispose();
+    _titleFocusNode.dispose();
+    _contentFocusNode.dispose();
     super.dispose();
   }
 
@@ -164,7 +387,8 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
     return Container(
       margin: const EdgeInsets.fromLTRB(10, 6, 0, 2),
-      height: 316,
+      // 通常は固定 316、最大化中は親のサイズに従う
+      height: widget.isExpanded ? null : 316,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -212,7 +436,78 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
               error: (_, _) => const SizedBox(),
             ),
           ),
+          // 消しゴムボタン (本文左下)
+          Positioned(
+            left: 6,
+            bottom: 40,
+            child: _buildEraserButton(),
+          ),
+          // 最大化/縮小ボタン (入力欄の右下角ぴったり)
+          // 最大化中はキーボード上にフロートするので非表示
+          if (!_rouletteOpen && !widget.isExpanded)
+            Positioned(
+              right: 14, // 入力欄の margin(10) + 4px 内側
+              bottom: 40,
+              child: _buildExpandButton(),
+            ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEraserButton() {
+    final hasContent = _contentController.text.isNotEmpty;
+    final isFocusedOnContent = _contentFocusNode.hasFocus;
+    return GestureDetector(
+      onTap: hasContent ? _clearBody : null,
+      child: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: (isFocusedOnContent && hasContent)
+              ? Colors.orange.withValues(alpha: 0.6)
+              : const Color.fromRGBO(142, 142, 147, 0.08),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 0.5,
+              offset: const Offset(-0.5, 0.5),
+            ),
+          ],
+        ),
+        child: const _EraserGlyph(),
+      ),
+    );
+  }
+
+  Widget _buildExpandButton() {
+    return GestureDetector(
+      onTap: widget.onToggleExpanded,
+      child: Container(
+        width: 21,
+        height: 21,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.blue.withValues(alpha: 0.6),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 2,
+              offset: const Offset(-1, 1),
+            ),
+          ],
+        ),
+        child: Transform.rotate(
+          angle: 1.5708, // 90度回転
+          child: Icon(
+            widget.isExpanded
+                ? Icons.close_fullscreen
+                : Icons.open_in_full,
+            size: 11,
+            color: Colors.white,
+          ),
+        ),
       ),
     );
   }
@@ -533,6 +828,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
           _pendingChildTag = selectedTag;
         }
       });
+      _pushUndoIfChanged();
       return;
     }
 
@@ -549,6 +845,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
       await db.addTagToMemo(widget.editingMemoId!, id);
     }
     _attachedTags = await db.getTagsForMemo(widget.editingMemoId!);
+    _pushUndoIfChanged();
     setState(() {});
   }
 
@@ -600,10 +897,18 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
           Expanded(
             child: TextField(
               controller: _titleController,
+              focusNode: _titleFocusNode,
               onChanged: (_) => _onChanged(),
+              readOnly: _isViewMode,
+              onTap: _isViewMode
+                  ? () => _enterEditMode(
+                      focusContent: false, focusTitle: true)
+                  : null,
               style: const TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w600,
+                fontFamily: 'PingFang JP',
+                color: Colors.black87,
               ),
               decoration: InputDecoration(
                 hintText: '\u30BF\u30A4\u30C8\u30EB\uFF08\u4EFB\u610F\uFF09',
@@ -801,8 +1106,26 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
         padding: const EdgeInsets.symmetric(horizontal: 10),
         child: TextField(
           controller: _contentController,
+          focusNode: _contentFocusNode,
           onChanged: (_) => _onChanged(),
-          style: const TextStyle(fontSize: 15, height: 1.5),
+          readOnly: _isViewMode,
+          onTap: _isViewMode
+              ? () => _enterEditMode(focusContent: true)
+              : null,
+          inputFormatters: [
+            // 5万字超過は自動カット + トースト通知 (連射防止)
+            _LimitWithToastFormatter(
+              maxLength: _maxContentLength,
+              onLimit: _showLimitReached,
+            ),
+          ],
+          // 17pt、行間 1.25 (控えめ)、角張った PingFang JP
+          style: const TextStyle(
+            fontSize: 17,
+            height: 1.25,
+            fontFamily: 'PingFang JP',
+            color: Colors.black87,
+          ),
           decoration: const InputDecoration(
             hintText: '\u30E1\u30E2\u3092\u5165\u529B...',
             border: InputBorder.none,
@@ -853,26 +1176,105 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
             ),
           ),
           const Spacer(),
-          Icon(Icons.undo, size: 16, color: Colors.grey[400]),
-          const SizedBox(width: 10),
-          Icon(Icons.redo, size: 16, color: Colors.grey[400]),
-          const SizedBox(width: 12),
+          // Undo (本家: arrow.uturn.backward, blue when enabled)
           GestureDetector(
-            onTap: () {},
-            child: Text('\u30B3\u30D4\u30FC',
-                style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+            behavior: HitTestBehavior.opaque,
+            onTap: _canUndo ? _undo : null,
+            child: Icon(
+              CupertinoIcons.arrow_uturn_left,
+              size: 16,
+              color: _canUndo
+                  ? const Color(0xFF007AFF)
+                  : Colors.grey.shade400,
+            ),
           ),
           const SizedBox(width: 12),
-          if (_hasMemo)
+          // Redo (本家: arrow.uturn.forward)
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _canRedo ? _redo : null,
+            child: Icon(
+              CupertinoIcons.arrow_uturn_right,
+              size: 16,
+              color: _canRedo
+                  ? const Color(0xFF007AFF)
+                  : Colors.grey.shade400,
+            ),
+          ),
+          const SizedBox(width: 12),
+          // コピー (本家: doc.on.doc + テキスト)
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _contentController.text.isEmpty ? null : _copyContent,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  CupertinoIcons.doc_on_doc,
+                  size: 14,
+                  color: _contentController.text.isEmpty
+                      ? Colors.grey.shade400
+                      : const Color(0xFF007AFF),
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  'コピー',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: _contentController.text.isEmpty
+                        ? Colors.grey.shade400
+                        : const Color(0xFF007AFF),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          // フォーカス中: 確定 (キーボード閉じるだけ)
+          // 非フォーカス + メモ/タイトルあり: メモを閉じる (クリア)
+          if (_isInputFocused)
             GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: _confirm,
               child: Row(
-                children: [
-                  Icon(Icons.check, size: 14, color: Colors.blueAccent),
-                  const SizedBox(width: 2),
-                  const Text('\u78BA\u5B9A',
-                      style: TextStyle(
-                          fontSize: 14, color: Colors.blueAccent)),
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(
+                    CupertinoIcons.checkmark_circle,
+                    size: 16,
+                    color: Color(0xFF007AFF),
+                  ),
+                  SizedBox(width: 3),
+                  Text(
+                    '確定',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF007AFF),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (_hasMemo || _titleController.text.isNotEmpty)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _closeMemo,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(
+                    CupertinoIcons.xmark_circle,
+                    size: 16,
+                    color: Color(0xFF007AFF),
+                  ),
+                  SizedBox(width: 3),
+                  Text(
+                    'メモを閉じる',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF007AFF),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -888,6 +1290,98 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _clearInput();
     widget.onClosed();
   }
+}
+
+// 消しゴムグリフ: CustomPainterで斜めの長方形を描く
+// (Material Icons に eraser がないため自前)
+class _EraserGlyph extends StatelessWidget {
+  const _EraserGlyph();
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: const Size(28, 28),
+      painter: _EraserPainter(),
+    );
+  }
+}
+
+class _EraserPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.translate(size.width / 2, size.height / 2);
+    canvas.scale(0.8); // 枠に対して一回り小さく
+    canvas.rotate(0.785); // +45度
+
+    final sleeve = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(-5, -7, 10, 11),
+      const Radius.circular(1.2),
+    );
+    final tip = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(-4.5, 4, 9, 4),
+      const Radius.circular(0.8),
+    );
+
+    // 線画のみ (本家準拠: シンプルな白線)
+    final line = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6
+      ..color = Colors.white;
+    canvas.drawRRect(sleeve, line);
+    canvas.drawRRect(tip, line);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// 文字数上限フォーマッタ。超過時は LengthLimitingTextInputFormatter と同じく
+// 末尾を切り捨て、合わせて onLimit を呼んでトーストなどで通知
+class _LimitWithToastFormatter extends TextInputFormatter {
+  final int maxLength;
+  final VoidCallback onLimit;
+  _LimitWithToastFormatter({required this.maxLength, required this.onLimit});
+
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    if (newValue.text.characters.length > maxLength) {
+      onLimit();
+      // 末尾を切り捨て (グラフィムクラスタ単位)
+      final truncated =
+          newValue.text.characters.take(maxLength).toString();
+      return TextEditingValue(
+        text: truncated,
+        selection: TextSelection.collapsed(offset: truncated.length),
+      );
+    }
+    return newValue;
+  }
+}
+
+// 入力欄のUndo/Redo履歴1スナップショット
+class _InputSnapshot {
+  final String title;
+  final String content;
+  final String? parentTagId;
+  final String? childTagId;
+  const _InputSnapshot({
+    required this.title,
+    required this.content,
+    required this.parentTagId,
+    required this.childTagId,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is _InputSnapshot &&
+      other.title == title &&
+      other.content == content &&
+      other.parentTagId == parentTagId &&
+      other.childTagId == childTagId;
+
+  @override
+  int get hashCode => Object.hash(title, content, parentTagId, childTagId);
 }
 
 class _TrayWithTabPainter extends CustomPainter {

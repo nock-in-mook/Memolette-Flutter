@@ -16,7 +16,6 @@ import '../widgets/memo_input_area.dart';
 import '../widgets/move_to_top_icon.dart';
 import '../widgets/new_tag_sheet.dart';
 import '../widgets/trapezoid_tab_shape.dart';
-import 'memo_edit_screen.dart';
 import 'quick_sort_screen.dart';
 import 'settings_screen.dart';
 import 'todo_lists_screen.dart';
@@ -232,10 +231,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   List<String>? _savedTabOrder;
   // 入力エリア用
   String? _editingMemoId;
+  // 新規作成ボタンを押すたびに増えるカウンタ → MemoInputArea がフォーカスを取る
+  int _focusInputTrigger = 0;
+  // 入力エリアの最大化状態
+  bool _isInputExpanded = false;
   // 検索 (ヘッダの全フォルダ横断検索)
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   bool get _isSearchActive => _searchQuery.isNotEmpty;
+
+  // 他の操作 (タブ切替/メモを開く/新規作成/etc) のときに自動でクリア
+  void _clearSearchIfActive() {
+    if (_searchQuery.isEmpty) return;
+    _searchController.clear();
+    _searchQuery = '';
+    // setState は呼び出し側でする (余計な rebuild を避ける)
+  }
 
   // フォルダ内検索 (虫眼鏡ボタンから入る、現在のフォルダのみが対象)
   bool _isInFolderSearch = false;
@@ -339,6 +350,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 bottom: MediaQuery.of(context).viewInsets.bottom + 6,
                 child: _buildKeyboardAccessory(),
               ),
+            // 最大化中 + キーボード表示中: 縮小ボタンを収納ボタンの左にフロート
+            if (_isInputExpanded &&
+                MediaQuery.of(context).viewInsets.bottom > 0)
+              Positioned(
+                right: 10 + 36 + 8, // 収納ボタン (36) の左に8px間隔
+                bottom: MediaQuery.of(context).viewInsets.bottom + 6,
+                child: _buildFloatingMinimizeButton(),
+              ),
           ],
         ),
       ),
@@ -369,6 +388,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  // 最大化中にキーボード収納ボタンの左に出るフロート縮小ボタン
+  Widget _buildFloatingMinimizeButton() {
+    return GestureDetector(
+      onTap: () => setState(() => _isInputExpanded = false),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: Colors.blue.withValues(alpha: 0.7),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: const Icon(Icons.close_fullscreen,
+            size: 18, color: Colors.white),
+      ),
+    );
+  }
+
   Widget _buildMainContent(List<Tag> parentTags,
       AsyncValue<List<Tag>> parentTagsAsync, Color currentColor) {
     return Padding(
@@ -379,35 +423,64 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
         child: Column(
           children: [
-            // 1. 検索バー
-            _buildSearchBar(),
-            // 2. メモ入力エリア（常駐）
-            MemoInputArea(
-              editingMemoId: _editingMemoId,
-              onMemoCreated: (id) => setState(() => _editingMemoId = id),
-              onClosed: () => setState(() => _editingMemoId = null),
-              selectedParentTagId: _currentParentTagId(parentTags),
-              selectedChildTagId: _selectedChildTagId,
-            ),
-            // 3. 機能バー（爆速・ToDo・ドロワーハンドル）
-            _buildFunctionBar(),
-            // 4. 親タグタブ（検索/フォルダ内検索中は専用タブに切替）
-            if (_isSearchActive)
-              _wrapWithCloseButton(_buildSearchResultTab(), () {
-                _searchController.clear();
-                setState(() => _searchQuery = '');
-                FocusScope.of(context).unfocus();
-              })
-            else if (_isInFolderSearch)
-              _wrapWithCloseButton(_buildFolderSearchTab(), _exitFolderSearch)
-            else
-              parentTagsAsync.when(
-                data: (tags) => _buildTabBar(tags),
-                loading: () => const SizedBox(height: 40),
-                error: (_, _) => const SizedBox(height: 40),
+            // 1. 検索バー (最大化中は隠す)
+            if (!_isInputExpanded) _buildSearchBar(),
+            // 2. メモ入力エリア（常駐 / 最大化中は Expanded で残り全部使う）
+            if (_isInputExpanded)
+              Expanded(
+                child: MemoInputArea(
+                  editingMemoId: _editingMemoId,
+                  onMemoCreated: (id) {
+                    _clearSearchIfActive();
+                    setState(() => _editingMemoId = id);
+                  },
+                  onClosed: () => setState(() => _editingMemoId = null),
+                  selectedParentTagId: _currentParentTagId(parentTags),
+                  selectedChildTagId: _selectedChildTagId,
+                  focusRequest: _focusInputTrigger,
+                  isExpanded: true,
+                  onToggleExpanded: () =>
+                      setState(() => _isInputExpanded = false),
+                ),
+              )
+            else ...[
+              MemoInputArea(
+                editingMemoId: _editingMemoId,
+                onMemoCreated: (id) {
+                  _clearSearchIfActive();
+                  setState(() => _editingMemoId = id);
+                },
+                onClosed: () => setState(() => _editingMemoId = null),
+                selectedParentTagId: _currentParentTagId(parentTags),
+                selectedChildTagId: _selectedChildTagId,
+                focusRequest: _focusInputTrigger,
+                isExpanded: false,
+                onToggleExpanded: () =>
+                    setState(() => _isInputExpanded = true),
               ),
+              // 3. 機能バー（爆速・ToDo・ドロワーハンドル）
+              _buildFunctionBar(),
+              // 4. 親タグタブ（検索/フォルダ内検索中は専用タブに切替）
+              if (_isSearchActive)
+                _wrapWithCloseButton(_buildSearchResultTab(), () {
+                  _searchController.clear();
+                  setState(() => _searchQuery = '');
+                  FocusScope.of(context).unfocus();
+                })
+              else if (_isInFolderSearch)
+                _wrapWithCloseButton(
+                    _buildFolderSearchTab(), _exitFolderSearch)
+              else
+                parentTagsAsync.when(
+                  data: (tags) => _buildTabBar(tags),
+                  loading: () => const SizedBox(height: 40),
+                  error: (_, _) => const SizedBox(height: 40),
+                ),
+            ],
             // 5〜8. フォルダ本体（タブと一体化したカラー領域）
             // 下部ボタン類（ゴミ箱・上へ移動・メモ作成・グリッド数）はフォルダ内フロート
+            // 最大化中は隠す
+            if (!_isInputExpanded)
             Expanded(
               child: Container(
                 color: (_isSearchActive || _isInFolderSearch)
@@ -1748,11 +1821,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return false;
   }
 
+  // 新規作成: DB登録は入力時に MemoInputArea が行う。
+  // ここでは入力欄をクリアして本文にフォーカスを与えるだけ
   Future<void> _createNewMemo() async {
     if (await _checkMemoLimit()) return;
-    final db = ref.read(databaseProvider);
-    final memo = await db.createMemo();
-    if (mounted) setState(() => _editingMemoId = memo.id);
+    _clearSearchIfActive();
+    setState(() {
+      _editingMemoId = null;
+      _focusInputTrigger++;
+    });
   }
 
   Future<void> _createMemoInFolder(List<Tag> parentTags) async {
@@ -1770,12 +1847,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (mounted) setState(() => _editingMemoId = memo.id);
   }
 
+  // メモタップ: 全画面エディタへ遷移するのではなく、上部の入力エリアに読み込む
+  // 入力エリアは閲覧モードで開き、本文タップで編集モードへ切替 (Swift 本家準拠)
   void _openMemo(Memo memo) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => MemoEditScreen(memoId: memo.id),
-      ),
-    );
+    // 閲覧回数を増やす (よく見る/最近見たに反映)
+    ref.read(databaseProvider).incrementViewCount(memo.id);
+    _clearSearchIfActive();
+    setState(() => _editingMemoId = memo.id);
   }
 
   /// 「すべて」「タグなし」「よく見る」タブ長押し: 並び替え + 色変更だけ

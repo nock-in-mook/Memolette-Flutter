@@ -59,6 +59,12 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => _seedClaudeSearchData(context, ref),
           ),
           ListTile(
+            leading: const Icon(Icons.text_snippet_outlined),
+            title: const Text('長文ダミーメモ追加'),
+            subtitle: const Text('1000〜10000文字 (1000刻み) を10件'),
+            onTap: () => _seedLongMemos(context, ref),
+          ),
+          ListTile(
             leading: const Icon(Icons.delete_sweep_outlined,
                 color: Colors.red),
             title: const Text('全データ削除',
@@ -358,6 +364,42 @@ class SettingsScreen extends ConsumerWidget {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Claude検索検証用ダミーデータを投入しました')),
+    );
+  }
+
+  // 長文メモ検証用: 1000〜10000文字を1000刻みで10件
+  Future<void> _seedLongMemos(
+      BuildContext context, WidgetRef ref) async {
+    final db = ref.read(databaseProvider);
+
+    // パラグラフのソース文（句読点・改行を含む自然な日本語）
+    const para = '今日は朝から雨が降っていて、傘を持って出かけた。'
+        '駅までの道で猫を見かけて、思わず立ち止まった。'
+        'コーヒーを買って電車に乗り、本を読みながら通勤した。'
+        '会社に着くと同僚が新しいプロジェクトの話をしていた。'
+        'ランチは近くのカフェで済ませ、午後は集中して資料作成に没頭した。\n\n';
+
+    String makeText(int targetChars) {
+      final buf = StringBuffer();
+      var i = 1;
+      while (buf.length < targetChars) {
+        buf.write('段落 $i: $para');
+        i++;
+      }
+      // 厳密に target に揃える
+      return buf.toString().substring(0, targetChars);
+    }
+
+    for (var n = 1000; n <= 10000; n += 1000) {
+      await db.createMemo(
+        title: '長文サンプル $n文字',
+        content: makeText(n),
+      );
+    }
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('長文ダミーメモ10件を追加しました')),
     );
   }
 
