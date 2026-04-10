@@ -235,6 +235,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   int _focusInputTrigger = 0;
   // 入力エリアの最大化状態
   bool _isInputExpanded = false;
+  // 入力エリアへの GlobalKey（フロート消しゴムから clearBody() を呼ぶ）
+  final _inputAreaKey = GlobalKey<MemoInputAreaState>();
   // 検索 (ヘッダの全フォルダ横断検索)
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -336,10 +338,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return Scaffold(
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: false, // キーボードでオーバーフローしないように
-      // 入力欄以外の任意の場所をタップしたらキーボードを閉じる
+      // 入力欄以外の任意の場所をタップしたらキーボード+コンテキストメニューを閉じる
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onTap: () => FocusScope.of(context).unfocus(),
+        onTap: () {
+          ContextMenuController.removeAny();
+          FocusManager.instance.primaryFocus?.unfocus();
+        },
         child: Stack(
           children: [
             _buildMainContent(parentTags, parentTagsAsync, currentColor),
@@ -357,6 +362,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 right: 10 + 36 + 8, // 収納ボタン (36) の左に8px間隔
                 bottom: MediaQuery.of(context).viewInsets.bottom + 6,
                 child: _buildFloatingMinimizeButton(),
+              ),
+            // 最大化中 + キーボード表示中: 消しゴムボタンを左にフロート
+            if (_isInputExpanded &&
+                MediaQuery.of(context).viewInsets.bottom > 0)
+              Positioned(
+                left: 16,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 6,
+                child: _buildFloatingEraserButton(),
               ),
           ],
         ),
@@ -388,10 +401,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  /// IMEコミット＋縮小
+  void _minimizeWithCommit() {
+    _inputAreaKey.currentState?.commitIME();
+    setState(() => _isInputExpanded = false);
+  }
+
   // 最大化中にキーボード収納ボタンの左に出るフロート縮小ボタン
   Widget _buildFloatingMinimizeButton() {
     return GestureDetector(
-      onTap: () => setState(() => _isInputExpanded = false),
+      onTap: _minimizeWithCommit,
       behavior: HitTestBehavior.opaque,
       child: Container(
         width: 36,
@@ -413,6 +432,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  // 最大化中にキーボード左上にフロートする消しゴムボタン
+  Widget _buildFloatingEraserButton() {
+    final state = _inputAreaKey.currentState;
+    final hasContent = state?.hasContent ?? false;
+    final isFocused = state?.isContentFocused ?? false;
+    return GestureDetector(
+      onTap: hasContent ? () => state?.clearBody() : null,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: (isFocused && hasContent)
+              ? Colors.orange.withValues(alpha: 0.6)
+              : const Color.fromRGBO(142, 142, 147, 0.15),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: const Center(
+          child: EraserGlyph(),
+        ),
+      ),
+    );
+  }
+
   Widget _buildMainContent(List<Tag> parentTags,
       AsyncValue<List<Tag>> parentTagsAsync, Color currentColor) {
     return Padding(
@@ -421,14 +471,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         padding: EdgeInsets.only(
           top: MediaQuery.of(context).viewPadding.top - 4,
         ),
-        child: Column(
+        child: LayoutBuilder(
+          builder: (context, constraints) => Column(
           children: [
-            // 1. 検索バー (最大化中は隠す)
-            if (!_isInputExpanded) _buildSearchBar(),
-            // 2. メモ入力エリア（常駐 / 最大化中は Expanded で残り全部使う）
+            // 1. 検索バー / 最大化中はミニバー (戻る + 設定のみ)
             if (_isInputExpanded)
-              Expanded(
+              _buildExpandedTopBar()
+            else
+              _buildSearchBar(),
+            // 2. メモ入力エリア
+            // 最大化中: トップバー分を引いた残りの85%（下に余白を残す）
+            if (_isInputExpanded)
+              SizedBox(
+                height: (constraints.maxHeight - 44) * 0.95,
                 child: MemoInputArea(
+                  key: _inputAreaKey,
                   editingMemoId: _editingMemoId,
                   onMemoCreated: (id) {
                     _clearSearchIfActive();
@@ -445,6 +502,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               )
             else ...[
               MemoInputArea(
+                key: _inputAreaKey,
                 editingMemoId: _editingMemoId,
                 onMemoCreated: (id) {
                   _clearSearchIfActive();
@@ -479,7 +537,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ],
             // 5〜8. フォルダ本体（タブと一体化したカラー領域）
             // 下部ボタン類（ゴミ箱・上へ移動・メモ作成・グリッド数）はフォルダ内フロート
-            // 最大化中は隠す
+            // 最大化中は非表示
             if (!_isInputExpanded)
             Expanded(
               child: Container(
@@ -627,6 +685,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
           ],
         ),
+      ),
     );
   }
 
@@ -737,6 +796,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
             child: const Icon(Icons.settings_outlined,
                 size: 22, color: Color(0xFF007AFF)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 最大化中の上部バー（戻る矢印 + 確定ボタン）
+  Widget _buildExpandedTopBar() {
+    final isEditing = MediaQuery.of(context).viewInsets.bottom > 0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 2, 14, 4),
+      child: Row(
+        children: [
+          // 戻る（縮小）矢印
+          GestureDetector(
+            onTap: _minimizeWithCommit,
+            behavior: HitTestBehavior.opaque,
+            child: const SizedBox(
+              width: 36,
+              height: 36,
+              child: Center(
+                child: Icon(CupertinoIcons.back,
+                    size: 22, color: Color(0xFF007AFF)),
+              ),
+            ),
+          ),
+          const Spacer(),
+          // 確定ボタン（入力中のみアクティブ、押すとキーボード閉じる）
+          GestureDetector(
+            onTap: isEditing
+                ? () => FocusScope.of(context).unfocus()
+                : null,
+            behavior: HitTestBehavior.opaque,
+            child: Text(
+              '確定',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: isEditing
+                    ? const Color(0xFF007AFF)
+                    : Colors.grey.shade400,
+              ),
+            ),
           ),
         ],
       ),

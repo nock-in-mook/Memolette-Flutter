@@ -40,10 +40,18 @@ class MemoInputArea extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<MemoInputArea> createState() => _MemoInputAreaState();
+  ConsumerState<MemoInputArea> createState() => MemoInputAreaState();
 }
 
-class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
+class MemoInputAreaState extends ConsumerState<MemoInputArea> {
+  /// 外部から本文の有無を確認するゲッター
+  bool get hasContent => _contentController.text.isNotEmpty;
+  /// 外部から本文フォーカス状態を確認するゲッター
+  bool get isContentFocused => _contentFocusNode.hasFocus;
+
+  // コンテキストメニュー表示タイミング記録（長押し直後のタップで消さないため）
+  DateTime? _lastContextMenuShown;
+
   // 本文の最大文字数（Swift版準拠）
   static const int _maxContentLength = 50000;
   // Undo/Redo履歴の最大段数
@@ -207,7 +215,12 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
     super.didUpdateWidget(oldWidget);
     if (widget.editingMemoId != oldWidget.editingMemoId) {
       if (widget.editingMemoId != null) {
-        _loadMemo(widget.editingMemoId!);
+        // 自分で作成したメモなら再ロード不要（閲覧モードにしない）
+        if (widget.editingMemoId == _selfCreatedMemoId) {
+          _selfCreatedMemoId = null;
+        } else {
+          _loadMemo(widget.editingMemoId!);
+        }
       } else {
         _clearInput();
       }
@@ -282,6 +295,9 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
     if (mounted) setState(() {}); // Undo/Redoボタンの状態更新用
   }
 
+  // 自分で作成したメモのID（_loadMemoで閲覧モードにしないため）
+  String? _selfCreatedMemoId;
+
   Future<void> _createAndSave() async {
     final db = ref.read(databaseProvider);
     final memo = await db.createMemo(
@@ -300,6 +316,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _attachedTags = await db.getTagsForMemo(memo.id);
     _pendingParentTag = null;
     _pendingChildTag = null;
+    _selfCreatedMemoId = memo.id;
     widget.onMemoCreated(memo.id);
     setState(() => _hasMemo = true);
   }
@@ -309,6 +326,43 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
     FocusScope.of(context).unfocus();
   }
 
+  /// iOSコンテキストメニュー(Select All等)を消す
+  void _hideContextMenu() {
+    ContextMenuController.removeAny();
+  }
+
+  /// テキスト選択を解除する（コンテキストメニューを消すため）
+  void clearSelection() {
+    // タイトル側
+    if (_titleController.selection.baseOffset !=
+        _titleController.selection.extentOffset) {
+      _titleController.selection = TextSelection.collapsed(
+          offset: _titleController.selection.extentOffset);
+    }
+    // 本文側
+    if (_contentController.selection.baseOffset !=
+        _contentController.selection.extentOffset) {
+      _contentController.selection = TextSelection.collapsed(
+          offset: _contentController.selection.extentOffset);
+    }
+  }
+
+  /// IMEの変換中テキストを確定する（最大化/縮小前に呼ぶ）
+  void commitIME() {
+    // タイトル側のcomposing解除
+    if (_titleController.value.composing != TextRange.empty) {
+      _titleController.value = _titleController.value.copyWith(
+        composing: TextRange.empty,
+      );
+    }
+    // 本文側のcomposing解除
+    if (_contentController.value.composing != TextRange.empty) {
+      _contentController.value = _contentController.value.copyWith(
+        composing: TextRange.empty,
+      );
+    }
+  }
+
   // メモを閉じる: 入力欄をクリア + onClosed コールバック
   void _closeMemo() {
     FocusScope.of(context).unfocus();
@@ -316,8 +370,9 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
     widget.onClosed();
   }
 
-  // 本文だけを消す (消しゴムボタン): タイトル/タグはそのまま
-  Future<void> _clearBody() async {
+  /// 本文だけを消す (消しゴムボタン): タイトル/タグはそのまま
+  /// 公開: home_screen のフロート消しゴムから呼べるようにする
+  Future<void> clearBody() async {
     if (_contentController.text.isEmpty) return;
     final ok = await showCupertinoDialog<bool>(
       context: context,
@@ -409,7 +464,11 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
               ),
               // \u30B7\u30E3\u30C9\u30A6\u306A\u3057\uFF08Swift\u7248\u6E96\u62E0\uFF09
             ),
-            child: Column(
+            child: GestureDetector(
+              // ヘッダー/ツールバー等テキスト欄以外をタップしたらコンテキストメニューを消す
+              onTap: _hideContextMenu,
+              behavior: HitTestBehavior.translucent,
+              child: Column(
               children: [
                 _buildHeader(),
                 Container(
@@ -424,6 +483,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 _buildToolbar(),
               ],
             ),
+            ),
           ),
           // ルーレット（タイトル下端から入力欄下端まで）
           Positioned(
@@ -436,15 +496,14 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
               error: (_, _) => const SizedBox(),
             ),
           ),
-          // 消しゴムボタン (本文左下)
+          // 消しゴムボタン (本文左下、常に表示)
           Positioned(
             left: 6,
             bottom: 40,
             child: _buildEraserButton(),
           ),
-          // 最大化/縮小ボタン (入力欄の右下角ぴったり)
-          // 最大化中はキーボード上にフロートするので非表示
-          if (!_rouletteOpen && !widget.isExpanded)
+          // 最大化/縮小ボタン (入力欄の右下角ぴったり、常に表示)
+          if (!_rouletteOpen)
             Positioned(
               right: 14, // 入力欄の margin(10) + 4px 内側
               bottom: 40,
@@ -459,7 +518,7 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
     final hasContent = _contentController.text.isNotEmpty;
     final isFocusedOnContent = _contentFocusNode.hasFocus;
     return GestureDetector(
-      onTap: hasContent ? _clearBody : null,
+      onTap: hasContent ? clearBody : null,
       child: Container(
         width: 28,
         height: 28,
@@ -476,14 +535,18 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
             ),
           ],
         ),
-        child: const _EraserGlyph(),
+        child: const EraserGlyph(),
       ),
     );
   }
 
   Widget _buildExpandButton() {
     return GestureDetector(
-      onTap: widget.onToggleExpanded,
+      onTap: () {
+        // 変換中のIMEをコミットしてからトグル（下線残りバグ防止）
+        commitIME();
+        widget.onToggleExpanded?.call();
+      },
       child: Container(
         width: 21,
         height: 21,
@@ -1109,9 +1172,19 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
           focusNode: _contentFocusNode,
           onChanged: (_) => _onChanged(),
           readOnly: _isViewMode,
-          onTap: _isViewMode
-              ? () => _enterEditMode(focusContent: true)
-              : null,
+          onTap: () {
+            if (_isViewMode) {
+              _enterEditMode(focusContent: true);
+            }
+            // 長押しメニュー表示直後（300ms以内）は消さない
+            // それ以降のタップでメニューを消す（編集は続行）
+            if (_lastContextMenuShown != null &&
+                DateTime.now().difference(_lastContextMenuShown!) >
+                    const Duration(milliseconds: 300)) {
+              ContextMenuController.removeAny();
+              _lastContextMenuShown = null;
+            }
+          },
           inputFormatters: [
             // 5万字超過は自動カット + トースト通知 (連射防止)
             _LimitWithToastFormatter(
@@ -1131,6 +1204,13 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
             border: InputBorder.none,
             hintStyle: TextStyle(color: Colors.grey),
           ),
+          contextMenuBuilder: (context, editableTextState) {
+            // メニュー表示タイミングを記録
+            _lastContextMenuShown = DateTime.now();
+            return AdaptiveTextSelectionToolbar.editableText(
+              editableTextState: editableTextState,
+            );
+          },
           maxLines: null,
           expands: true,
           textAlignVertical: TextAlignVertical.top,
@@ -1294,19 +1374,19 @@ class _MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
 // 消しゴムグリフ: CustomPainterで斜めの長方形を描く
 // (Material Icons に eraser がないため自前)
-class _EraserGlyph extends StatelessWidget {
-  const _EraserGlyph();
+class EraserGlyph extends StatelessWidget {
+  const EraserGlyph();
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
       size: const Size(28, 28),
-      painter: _EraserPainter(),
+      painter: EraserPainter(),
     );
   }
 }
 
-class _EraserPainter extends CustomPainter {
+class EraserPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     canvas.translate(size.width / 2, size.height / 2);
