@@ -678,8 +678,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   height: 30,
                   width: double.infinity,
                   child: Center(
-                    child: Icon(CupertinoIcons.chevron_compact_up,
-                        size: 24, color: Colors.grey.withValues(alpha: 0.6)),
+                    child: const _ChevronIcon(up: true),
                   ),
                 ),
               ),
@@ -1076,8 +1075,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     behavior: HitTestBehavior.opaque,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Icon(CupertinoIcons.chevron_compact_up,
-                          size: 24, color: Colors.grey.withValues(alpha: 0.6)),
+                      child: const _ChevronIcon(up: true),
                     ),
                   ),
                   // 下シェブロン（入力欄最大化）
@@ -1086,8 +1084,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     behavior: HitTestBehavior.opaque,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Icon(CupertinoIcons.chevron_compact_down,
-                          size: 24, color: Colors.grey.withValues(alpha: 0.6)),
+                      child: const _ChevronIcon(up: false),
                     ),
                   ),
                 ],
@@ -1115,8 +1112,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               height: 28,
               width: double.infinity,
               child: Center(
-                child: Icon(CupertinoIcons.chevron_compact_down,
-                    size: 24, color: Colors.grey.withValues(alpha: 0.6)),
+                child: const _ChevronIcon(up: false),
               ),
             ),
           ),
@@ -4815,4 +4811,47 @@ class _ChildTagChip extends StatelessWidget {
       ),
     );
   }
+}
+
+/// カスタムシェブロン（太さ・サイズ自由）
+class _ChevronIcon extends StatelessWidget {
+  final bool up;
+  const _ChevronIcon({required this.up});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: const Size(20, 6),
+      painter: _ChevronPainter(up: up),
+    );
+  }
+}
+
+class _ChevronPainter extends CustomPainter {
+  final bool up;
+  _ChevronPainter({required this.up});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color.fromRGBO(142, 142, 147, 0.6)
+      ..strokeWidth = 3.5
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    final path = Path();
+    if (up) {
+      path.moveTo(2, size.height - 1);
+      path.lineTo(size.width / 2, 1);
+      path.lineTo(size.width - 2, size.height - 1);
+    } else {
+      path.moveTo(2, 1);
+      path.lineTo(size.width / 2, size.height - 1);
+      path.lineTo(size.width - 2, 1);
+    }
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ChevronPainter old) => old.up != up;
 }
