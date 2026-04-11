@@ -472,6 +472,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               ),
               // \u30B7\u30E3\u30C9\u30A6\u306A\u3057\uFF08Swift\u7248\u6E96\u62E0\uFF09
             ),
+            clipBehavior: Clip.hardEdge,
             child: GestureDetector(
               // ヘッダー/ツールバー等テキスト欄以外をタップしたらコンテキストメニューを消す + ルーレット閉じる
               onTap: () {
@@ -1352,7 +1353,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   );
 
   Widget _buildContent() {
-    return Expanded(
+    return Flexible(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 9),
         child: TextField(

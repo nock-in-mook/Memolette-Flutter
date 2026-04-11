@@ -235,12 +235,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   int _focusInputTrigger = 0;
   // 入力エリアの最大化状態
   bool _isInputExpanded = false;
+  // フォルダビューの全画面状態（引き上げ）
+  bool _isMemoListExpanded = false;
   // 入力エリアへの GlobalKey（フロート消しゴムから clearBody() を呼ぶ）
   final _inputAreaKey = GlobalKey<MemoInputAreaState>();
   // 検索 (ヘッダの全フォルダ横断検索)
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   String _searchQuery = '';
   bool get _isSearchActive => _searchQuery.isNotEmpty;
+  bool _isSearchFocused = false;
   // 最後にタップしたメモのID（薄水色ハイライト用）
   String? _highlightedMemoId;
 
@@ -290,6 +294,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void initState() {
     super.initState();
     _drawerCtrl = AnimationController.unbounded(vsync: this, value: 0);
+    _searchFocusNode.addListener(() {
+      setState(() => _isSearchFocused = _searchFocusNode.hasFocus);
+    });
   }
 
   @override
@@ -297,6 +304,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     _drawerCtrl.dispose();
     _tabBarScrollController.dispose();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _folderSearchController.dispose();
     super.dispose();
   }
@@ -605,34 +613,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         child: LayoutBuilder(
           builder: (context, constraints) => Column(
           children: [
-            // 1. 検索バー / 最大化中はミニバー (戻る + 設定のみ)
-            if (_isInputExpanded)
-              _buildExpandedTopBar()
-            else
-              _buildSearchBar(),
-            // 2. メモ入力エリア
-            // 最大化中: トップバー分を引いた残りの85%（下に余白を残す）
-            if (_isInputExpanded)
-              SizedBox(
-                height: (constraints.maxHeight - 44) * 0.95,
-                child: MemoInputArea(
-                  key: _inputAreaKey,
-                  editingMemoId: _editingMemoId,
-                  onMemoCreated: (id) {
-                    _clearSearchIfActive();
-                    setState(() => _editingMemoId = id);
-                  },
-                  onClosed: () => setState(() => _editingMemoId = null),
-                  selectedParentTagId: _currentParentTagId(parentTags),
-                  selectedChildTagId: _selectedChildTagId,
-                  focusRequest: _focusInputTrigger,
-                  isExpanded: true,
-                  onToggleExpanded: () =>
-                      setState(() => _isInputExpanded = false),
-                ),
-              )
-            else ...[
-              MemoInputArea(
+            // 1. 検索バー / 最大化中はミニバー / フォルダ引き上げ時は非表示
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeInOut,
+              height: _isMemoListExpanded ? 0 : null,
+              clipBehavior: Clip.hardEdge,
+              decoration: const BoxDecoration(),
+              child: _isInputExpanded
+                  ? _buildExpandedTopBar()
+                  : _buildSearchBar(),
+            ),
+            // 2. メモ入力エリア（高さをアニメーション）
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeInOut,
+              height: _isMemoListExpanded
+                  ? 0
+                  : _isInputExpanded
+                      ? (constraints.maxHeight - 44) * 0.92
+                      : 316,
+              clipBehavior: Clip.hardEdge,
+              decoration: const BoxDecoration(),
+              child: MemoInputArea(
                 key: _inputAreaKey,
                 editingMemoId: _editingMemoId,
                 onMemoCreated: (id) {
@@ -643,33 +646,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 selectedParentTagId: _currentParentTagId(parentTags),
                 selectedChildTagId: _selectedChildTagId,
                 focusRequest: _focusInputTrigger,
-                isExpanded: false,
+                isExpanded: _isInputExpanded,
                 onToggleExpanded: () =>
-                    setState(() => _isInputExpanded = true),
+                    setState(() => _isInputExpanded = !_isInputExpanded),
               ),
-              // 3. 機能バー（爆速・ToDo・ドロワーハンドル）
-              _buildFunctionBar(),
-              // 4. 親タグタブ（検索/フォルダ内検索中は専用タブに切替）
-              if (_isSearchActive)
-                _wrapWithCloseButton(_buildSearchResultTab(), () {
-                  _searchController.clear();
-                  setState(() => _searchQuery = '');
-                  FocusScope.of(context).unfocus();
-                })
-              else if (_isInFolderSearch)
-                _wrapWithCloseButton(
-                    _buildFolderSearchTab(), _exitFolderSearch)
-              else
-                parentTagsAsync.when(
-                  data: (tags) => _buildTabBar(tags),
-                  loading: () => const SizedBox(height: 40),
-                  error: (_, _) => const SizedBox(height: 40),
+            ),
+            // 2b. 入力欄最大化時: 下端シェブロン
+            if (_isInputExpanded && !_isMemoListExpanded)
+              GestureDetector(
+                onTap: () => setState(() => _isInputExpanded = false),
+                behavior: HitTestBehavior.opaque,
+                child: SizedBox(
+                  height: 30,
+                  width: double.infinity,
+                  child: Center(
+                    child: Icon(CupertinoIcons.chevron_compact_up,
+                        size: 18, color: Colors.grey.withValues(alpha: 0.5)),
+                  ),
                 ),
-            ],
+              ),
+            // 3. 機能バー（アニメーション付きで表示/非表示）
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeInOut,
+              height: (_isInputExpanded || _isMemoListExpanded) ? 0 : null,
+              clipBehavior: Clip.hardEdge,
+              decoration: const BoxDecoration(),
+              child: _buildFunctionBar(),
+            ),
+            // 4. 親タグタブ（アニメーション付き）
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeInOut,
+              height: _isInputExpanded ? 0 : null,
+              clipBehavior: Clip.hardEdge,
+              decoration: const BoxDecoration(),
+              child: _buildTabSection(parentTagsAsync),
+            ),
             // 5〜8. フォルダ本体（タブと一体化したカラー領域）
             // 下部ボタン類（ゴミ箱・上へ移動・メモ作成・グリッド数）はフォルダ内フロート
-            // 最大化中は非表示
+            // 入力欄最大化中は非表示
             if (!_isInputExpanded)
+
             Expanded(
               child: Container(
                 color: (_isSearchActive || _isInFolderSearch)
@@ -884,22 +902,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           SizedBox(
             width: 220,
             height: 32,
-            child: TextField(
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                TextField(
               controller: _searchController,
+              focusNode: _searchFocusNode,
               onChanged: (v) => setState(() => _searchQuery = v.trim()),
-              textAlign: TextAlign.center,
+              textAlign: (_isSearchActive || _isSearchFocused) ? TextAlign.left : TextAlign.center,
               textAlignVertical: TextAlignVertical.center,
               style: const TextStyle(fontSize: 13),
               decoration: InputDecoration(
                 isDense: true,
                 filled: true,
                 fillColor: Colors.grey[200],
-                hintText: 'メモを探す',
-                hintStyle: TextStyle(fontSize: 13, color: Colors.grey[500]),
-                prefixIcon:
-                    Icon(Icons.search, size: 16, color: Colors.grey[500]),
-                prefixIconConstraints: const BoxConstraints(
-                    minWidth: 28, minHeight: 28),
+                hintText: _isSearchActive ? '' : '', // Stackでプレースホルダーを表示するので空
                 suffixIcon: _isSearchActive
                     ? GestureDetector(
                         onTap: () {
@@ -913,7 +930,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     : null,
                 suffixIconConstraints: const BoxConstraints(
                     minWidth: 28, minHeight: 28),
-                contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                contentPadding: EdgeInsets.only(
+                    left: (_isSearchActive || _isSearchFocused) ? 10 : 0,
+                    top: 6, bottom: 6),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide.none,
@@ -927,6 +946,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   borderSide: BorderSide.none,
                 ),
               ),
+            ),
+                // プレースホルダー（虫メガネ + テキスト、ド真ん中）
+                if (!_isSearchActive && !_isSearchFocused)
+                  IgnorePointer(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.search, size: 16, color: Colors.grey[500]),
+                        const SizedBox(width: 4),
+                        Text('メモを探す',
+                            style: TextStyle(fontSize: 13, color: Colors.grey[500])),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
           const Spacer(),
@@ -955,8 +989,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             onTap: _minimizeWithCommit,
             behavior: HitTestBehavior.opaque,
             child: const SizedBox(
-              width: 36,
-              height: 36,
+              width: 32,
+              height: 32,
               child: Center(
                 child: Icon(CupertinoIcons.back,
                     size: 22, color: Color(0xFF007AFF)),
@@ -999,7 +1033,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const QuickSortScreen()),
             ),
-            child: const Icon(Icons.bolt, size: 22, color: Colors.orange),
+            child: Icon(Icons.bolt, size: 22,
+                color: Colors.orange.withValues(alpha: 0.7)),
           ),
           const SizedBox(width: 12),
           // ToDoリスト
@@ -1007,13 +1042,83 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const TodoListsScreen()),
             ),
-            child: const Icon(Icons.checklist, size: 22, color: Colors.green),
+            child: Icon(Icons.checklist, size: 22,
+                color: Colors.green.withValues(alpha: 0.8)),
           ),
-          const Spacer(),
-          // ドロワーハンドル（上下のシェブロン）
-          const Icon(Icons.expand_less, size: 20, color: Colors.grey),
+          // 中央: 上シェブロン（フォルダ引き上げ）+ 下シェブロン（入力欄最大化）
+          Expanded(
+            child: SizedBox(
+              height: 27,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // 上シェブロン（フォルダ引き上げ）
+                  GestureDetector(
+                    onTap: () => setState(() => _isMemoListExpanded = true),
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Icon(CupertinoIcons.chevron_compact_up,
+                          size: 16, color: Colors.grey.withValues(alpha: 0.5)),
+                    ),
+                  ),
+                  // 下シェブロン（入力欄最大化）
+                  GestureDetector(
+                    onTap: () => setState(() => _isInputExpanded = true),
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Icon(CupertinoIcons.chevron_compact_down,
+                          size: 16, color: Colors.grey.withValues(alpha: 0.5)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // 右のスペーサー（左右バランス用: 爆速22+間隔12+ToDo22=56pt）
+          const SizedBox(width: 56),
         ],
       ),
+    );
+  }
+
+  /// タブセクション（フォルダ引き上げ時はシェブロン付き）
+  Widget _buildTabSection(AsyncValue<List<Tag>> parentTagsAsync) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // フォルダ引き上げ時: 引き下げシェブロン
+        if (_isMemoListExpanded)
+          GestureDetector(
+            onTap: () => setState(() => _isMemoListExpanded = false),
+            behavior: HitTestBehavior.opaque,
+            child: SizedBox(
+              height: 28,
+              width: double.infinity,
+              child: Center(
+                child: Icon(CupertinoIcons.chevron_compact_down,
+                    size: 20, color: Colors.grey.withValues(alpha: 0.6)),
+              ),
+            ),
+          ),
+        // タブ
+        if (_isSearchActive)
+          _wrapWithCloseButton(_buildSearchResultTab(), () {
+            _searchController.clear();
+            setState(() => _searchQuery = '');
+            FocusScope.of(context).unfocus();
+          })
+        else if (_isInFolderSearch)
+          _wrapWithCloseButton(
+              _buildFolderSearchTab(), _exitFolderSearch)
+        else
+          parentTagsAsync.when(
+            data: (tags) => _buildTabBar(tags),
+            loading: () => const SizedBox(height: 40),
+            error: (_, _) => const SizedBox(height: 40),
+          ),
+      ],
     );
   }
 
