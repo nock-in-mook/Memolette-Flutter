@@ -82,6 +82,13 @@ class _TagDialViewState extends State<TagDialView>
       if (idx >= 0 && !_childDragging && !_childSettling) {
         _childRotation = idx * itemAngle;
       }
+    } else {
+      // 子タグなし: 0番目（「子タグなし」）にアニメーションでリセット
+      if (!_childDragging && !_childSettling && _childRotation != 0) {
+        _animateTo(0, isChild: true, notify: false,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOutCubic);
+      }
     }
   }
 
@@ -204,7 +211,7 @@ class _TagDialViewState extends State<TagDialView>
   }
 
   /// アニメーションでスナップ
-  void _animateTo(double target, {required bool isChild, Duration? duration, Curve? curve}) {
+  void _animateTo(double target, {required bool isChild, bool notify = true, Duration? duration, Curve? curve}) {
     final from = isChild ? _childRotation : _parentRotation;
     final controller = AnimationController(
       vsync: this,
@@ -227,19 +234,23 @@ class _TagDialViewState extends State<TagDialView>
         controller.dispose();
         // 選択通知
         if (isChild) {
-          final idx =
-              _snappedIndex(_childRotation, widget.childOptions.length);
-          if (idx < widget.childOptions.length) {
-            widget.onChildSelected(widget.childOptions[idx].id);
+          if (notify) {
+            final idx =
+                _snappedIndex(_childRotation, widget.childOptions.length);
+            if (idx < widget.childOptions.length) {
+              widget.onChildSelected(widget.childOptions[idx].id);
+            }
           }
           Future.delayed(const Duration(milliseconds: 500), () {
             if (mounted) setState(() => _childSettling = false);
           });
         } else {
-          final idx =
-              _snappedIndex(_parentRotation, widget.parentOptions.length);
-          if (idx < widget.parentOptions.length) {
-            widget.onParentSelected(widget.parentOptions[idx].id);
+          if (notify) {
+            final idx =
+                _snappedIndex(_parentRotation, widget.parentOptions.length);
+            if (idx < widget.parentOptions.length) {
+              widget.onParentSelected(widget.parentOptions[idx].id);
+            }
           }
           Future.delayed(const Duration(milliseconds: 500), () {
             if (mounted) setState(() => _parentSettling = false);

@@ -902,10 +902,39 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   }
 
   Future<void> _onTagSelected(String? id, bool isChild) async {
-    if (id == null) return;
     final db = ref.read(databaseProvider);
+
+    // 「タグなし」選択（id == null）→ タグを外す
+    if (id == null) {
+      if (widget.editingMemoId == null) {
+        setState(() {
+          if (!isChild) {
+            _pendingParentTag = null;
+            _pendingChildTag = null;
+          } else {
+            _pendingChildTag = null;
+          }
+        });
+      } else {
+        if (!isChild) {
+          // 親タグを全て外す → 子タグも外す
+          for (final tag in _attachedTags) {
+            await db.removeTagFromMemo(widget.editingMemoId!, tag.id);
+          }
+        } else {
+          // 子タグだけ外す
+          for (final tag in _attachedTags.where((t) => t.parentTagId != null)) {
+            await db.removeTagFromMemo(widget.editingMemoId!, tag.id);
+          }
+        }
+        _attachedTags = await db.getTagsForMemo(widget.editingMemoId!);
+      }
+      _pushUndoIfChanged();
+      if (mounted) setState(() {});
+      return;
+    }
+
     // タグの実体を取得（pending保持用）
-    // まずキャッシュから探し、無ければDB直接（新規作成直後はストリーム未反映なため）
     final allTags = ref.read(allTagsProvider).value ?? const <Tag>[];
     Tag? selectedTag;
     for (final t in allTags) {
@@ -934,7 +963,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
     // メモ作成済みの場合はDBに反映
     if (!isChild) {
+      // 親タグ変更: 既存の親タグを外す
       for (final tag in _attachedTags.where((t) => t.parentTagId == null)) {
+        await db.removeTagFromMemo(widget.editingMemoId!, tag.id);
+      }
+      // 子タグもリセット（親が変わったので）
+      for (final tag in _attachedTags.where((t) => t.parentTagId != null)) {
         await db.removeTagFromMemo(widget.editingMemoId!, tag.id);
       }
       await db.addTagToMemo(widget.editingMemoId!, id);
@@ -1049,31 +1083,70 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             child: Row(
               children: [
                 Flexible(
-                  child: TextField(
-                    controller: _titleController,
-                    focusNode: _titleFocusNode,
-                    onChanged: (_) => _onChanged(),
-                    readOnly: _isViewMode,
-                    onTap: _isViewMode
-                        ? () => _enterEditMode(
-                            focusContent: false, focusTitle: true)
-                        : null,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: 'PingFang JP',
-                      color: Colors.black87,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: '\u30BF\u30A4\u30C8\u30EB\uFF08\u4EFB\u610F\uFF09',
-                      hintStyle: TextStyle(
-                          color: Colors.grey.withValues(alpha: 0.4)),
-                      border: InputBorder.none,
-                      isDense: true,
-                      contentPadding:
-                          const EdgeInsets.symmetric(vertical: 4),
-                    ),
-                    maxLines: 1,
+                  child: Stack(
+                    children: [
+                      // 常にTextFieldを配置（フォーカス時に使う）
+                      Opacity(
+                        opacity: _titleFocusNode.hasFocus ? 1.0 : 0.0,
+                        child: TextField(
+                          controller: _titleController,
+                          focusNode: _titleFocusNode,
+                          onChanged: (_) => _onChanged(),
+                          readOnly: _isViewMode,
+                          onTap: _isViewMode
+                              ? () => _enterEditMode(
+                                  focusContent: false, focusTitle: true)
+                              : null,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'PingFang JP',
+                            color: Colors.black87,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: '\u30BF\u30A4\u30C8\u30EB\uFF08\u4EFB\u610F\uFF09',
+                            hintStyle: TextStyle(
+                                color: Colors.grey.withValues(alpha: 0.4)),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding:
+                                const EdgeInsets.symmetric(vertical: 4),
+                          ),
+                          maxLines: 1,
+                        ),
+                      ),
+                      // 非フォーカス時: Textで省略表示
+                      if (!_titleFocusNode.hasFocus)
+                        GestureDetector(
+                          onTap: () {
+                            if (_isViewMode) {
+                              _enterEditMode(focusContent: false, focusTitle: true);
+                            } else {
+                              _titleFocusNode.requestFocus();
+                            }
+                          },
+                          child: Container(
+                            height: 40,
+                            alignment: Alignment.centerLeft,
+                            color: Colors.transparent,
+                            child: Text(
+                              _titleController.text.isEmpty
+                                  ? '\u30BF\u30A4\u30C8\u30EB\uFF08\u4EFB\u610F\uFF09'
+                                  : _titleController.text,
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                fontFamily: 'PingFang JP',
+                                color: _titleController.text.isEmpty
+                                    ? Colors.grey.withValues(alpha: 0.4)
+                                    : Colors.black87,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 // タイトル×ボタン
@@ -1085,8 +1158,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                     },
                     child: Padding(
                       padding: const EdgeInsets.only(left: 2),
-                      child: Icon(Icons.close, size: 14,
-                          color: Colors.grey.withValues(alpha: 0.4)),
+                      child: Icon(CupertinoIcons.xmark_circle_fill, size: 16,
+                          color: Colors.grey.withValues(alpha: 0.35)),
                     ),
                   ),
               ],
@@ -1146,9 +1219,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                           }
                           if (mounted) setState(() {});
                         },
-                        child: Icon(Icons.cancel,
-                            size: 12,
-                            color: Colors.grey.withValues(alpha: 0.5)),
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 16),
+                          child: Icon(Icons.cancel,
+                              size: 12,
+                              color: Colors.grey.withValues(alpha: 0.5)),
+                        ),
                       ),
                     ],
                   ),
