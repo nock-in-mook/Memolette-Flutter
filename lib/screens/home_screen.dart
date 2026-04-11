@@ -104,6 +104,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   GridSizeOption _gridSize = GridSizeOption.grid2x3;
   // 「よく見る」フォルダ専用グリッドサイズ
   FrequentGridOption _frequentGridSize = FrequentGridOption.grid2x5;
+  // フォルダ本体の高さを記憶（通常モード/最大化モード別）
+  // - normal: 最大化時のカード高さ計算の基準として使う
+  // - expanded: 最大化中の実行数表示「2×N」を計算するために使う
+  double? _normalFolderHeight;
+  double? _expandedFolderHeight;
   // フォルダ並び替えモード
   bool _isReorderMode = false;
   // メモ複数選択モード（削除 or トップに移動）
@@ -631,11 +636,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         child: LayoutBuilder(
           builder: (context, constraints) => Column(
           children: [
-            // 1. 検索バー / 最大化中はミニバー / フォルダ引き上げ時は非表示
+            // 1. 検索バー / 入力欄最大化中はミニバー
+            // フォルダ最大化中も検索バーは残す（+ボタンは入力欄最大化を開く動作に切替）
             AnimatedContainer(
               duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
               curve: Curves.easeInOut,
-              height: _isMemoListExpanded ? 0 : null,
+              height: null,
               clipBehavior: Clip.hardEdge,
               decoration: const BoxDecoration(),
               child: _isInputExpanded
@@ -1063,32 +1069,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 color: Colors.green.withValues(alpha: 0.8)),
           ),
           // 中央: 上シェブロン（フォルダ引き上げ）+ 下シェブロン（入力欄最大化）
+          // タップ判定は十分広めに（縦44pt以上、横44pt以上を確保）
           Expanded(
-            child: SizedBox(
-              height: 27,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // 上シェブロン（フォルダ引き上げ）
-                  GestureDetector(
-                    onTap: () => setState(() => _isMemoListExpanded = true),
-                    behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: const _ChevronIcon(up: true),
-                    ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // 上シェブロン（フォルダ引き上げ）
+                GestureDetector(
+                  onTap: () => setState(() => _isMemoListExpanded = true),
+                  behavior: HitTestBehavior.opaque,
+                  child: const SizedBox(
+                    width: 56,
+                    height: 44,
+                    child: Center(child: _ChevronIcon(up: true)),
                   ),
-                  // 下シェブロン（入力欄最大化）
-                  GestureDetector(
-                    onTap: () => setState(() => _isInputExpanded = true),
-                    behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: const _ChevronIcon(up: false),
-                    ),
+                ),
+                // 下シェブロン（入力欄最大化）
+                GestureDetector(
+                  onTap: () => setState(() => _isInputExpanded = true),
+                  behavior: HitTestBehavior.opaque,
+                  child: const SizedBox(
+                    width: 56,
+                    height: 44,
+                    child: Center(child: _ChevronIcon(up: false)),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           // 右のスペーサー（左右バランス用: 爆速22+間隔12+ToDo22=56pt）
@@ -1833,6 +1839,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         selectedIds: _selectedMemoIds,
         onToggleSelect: _toggleMemoSelection,
         editingMemoId: _editingMemoId,
+        cardHeightReference: _isMemoListExpanded ? _normalFolderHeight : null,
+        onAvailableHeight: _onFolderAvailableHeight,
       );
     } else if (_selectedTabKey == kUntaggedTabKey) {
       return _MemoGridView(
@@ -1844,6 +1852,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         selectedIds: _selectedMemoIds,
         onToggleSelect: _toggleMemoSelection,
         editingMemoId: _editingMemoId,
+        cardHeightReference: _isMemoListExpanded ? _normalFolderHeight : null,
+        onAvailableHeight: _onFolderAvailableHeight,
       );
     } else {
       final parentId = _currentParentTagId(parentTags);
@@ -1860,9 +1870,56 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         onToggleSelect: _toggleMemoSelection,
         editingMemoId: _editingMemoId,
         wrapBuilder: (memo, card) => _wrapMemoInContextMenu(memo, card),
+        cardHeightReference: _isMemoListExpanded ? _normalFolderHeight : null,
+        onAvailableHeight: _onFolderAvailableHeight,
       );
     }
   }
+
+  /// _MemoGridView から渡される実際の利用可能高さを通常/最大化別に保存。
+  /// 値が変わった場合のみ setState して、最大化時の行数表示を更新する。
+  void _onFolderAvailableHeight(double h) {
+    if (_isMemoListExpanded) {
+      if (_expandedFolderHeight != h) {
+        setState(() => _expandedFolderHeight = h);
+      }
+    } else {
+      if (_normalFolderHeight != h) {
+        setState(() => _normalFolderHeight = h);
+      }
+    }
+  }
+
+  /// 任意の GridSizeOption について、現在の状態に応じたラベルを返す。
+  /// - 通常時: opt.label をそのまま返す
+  /// - 最大化時: その選択肢を採用した場合の実行数で「cols×N」を返す
+  String _gridLabelFor(GridSizeOption opt) {
+    if (!_isMemoListExpanded) return opt.label;
+    if (opt == GridSizeOption.titleOnly || opt == GridSizeOption.grid1flex) {
+      return opt.label;
+    }
+    final normalH = _normalFolderHeight;
+    final expandedH = _expandedFolderHeight;
+    if (normalH == null || expandedH == null) return opt.label;
+    final baseRows = switch (opt) {
+      GridSizeOption.grid3x6 => 6,
+      GridSizeOption.grid2x5 => 5,
+      GridSizeOption.grid2x3 => 3,
+      GridSizeOption.grid1x2 => 2,
+      _ => 0,
+    };
+    if (baseRows == 0) return opt.label;
+    const spacing = 8.0;
+    const peek = 0.2;
+    final cardH = (normalH - spacing * (baseRows + peek)) / (baseRows + peek);
+    if (cardH <= 0) return opt.label;
+    final fitRows = ((expandedH + spacing) / (cardH + spacing)).floor();
+    final rows = fitRows < baseRows ? baseRows : fitRows;
+    return '${opt.columns}×$rows';
+  }
+
+  /// ボトムバーのグリッドサイズボタン用ラベル（現在選択中の表示）
+  String _gridSizeLabel() => _gridLabelFor(_gridSize);
 
   // ========================================
   // 8. フォルダ内フロート ボトムバー
@@ -2055,7 +2112,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             builder: (btnContext) {
               final label = _isFrequentTab
                   ? _frequentGridSize.label
-                  : _gridSize.label;
+                  : _gridSizeLabel();
               return GestureDetector(
                 onTap: () => _showGridSizeMenu(btnContext),
                 child: Container(
@@ -2140,6 +2197,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         return _GridSizeMenuOverlay(
           current: _gridSize,
           buttonRect: btnRect,
+          labelOverrides: _isMemoListExpanded
+              ? {
+                  for (final o in GridSizeOption.values)
+                    o: _gridLabelFor(o),
+                }
+              : null,
         );
       },
       transitionBuilder: (_, anim, _, child) {
@@ -2192,10 +2255,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Future<void> _createNewMemo() async {
     if (await _checkMemoLimit()) return;
     _clearSearchIfActive();
-    setState(() {
-      _editingMemoId = null;
-      _focusInputTrigger++;
-    });
+    if (_isMemoListExpanded) {
+      // フォルダ最大化中の+タップ: メモタップ時と同じく
+      // アニメなしで入力欄最大化状態に遷移
+      _suppressAnimation = true;
+      setState(() {
+        _editingMemoId = null;
+        _focusInputTrigger++;
+        _isMemoListExpanded = false;
+        _isInputExpanded = true;
+        _openedFromMemoList = true;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _suppressAnimation = false;
+      });
+    } else {
+      setState(() {
+        _editingMemoId = null;
+        _focusInputTrigger++;
+      });
+    }
   }
 
   Future<void> _createMemoInFolder(List<Tag> parentTags) async {
@@ -3116,23 +3195,23 @@ class _SearchSections extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // セクションヘッダー (タグバッジ + 件数)
+                    // セクションヘッダー: 左寄せ（タグバッジ + 件数）
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.only(top: 2, bottom: 8),
                       child: Row(
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
+                                horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
                               color: TagColors.getColor(s.colorIndex),
-                              borderRadius: BorderRadius.circular(6),
+                              borderRadius: BorderRadius.circular(7),
                             ),
                             child: Text(
                               s.name,
                               style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
                                 fontFamily: 'Hiragino Sans',
                                 color: Colors.black,
                                 height: 1.0,
@@ -3555,6 +3634,15 @@ class _MemoGridView extends StatelessWidget {
 
   final String? editingMemoId;
 
+  /// フォルダ最大化時のカード高さ計算用に使う基準高さ。
+  /// 指定があると `mainAxisExtent` の計算には constraints.maxHeight ではなくこちらを使う。
+  /// （カードサイズを通常時と一致させたまま、行数だけ自然に増やす）
+  final double? cardHeightReference;
+
+  /// LayoutBuilder で得られた実際の `constraints.maxHeight` を親に通知するコールバック。
+  /// 親側は通常モード時の値を保存しておき、最大化時に `cardHeightReference` として戻す。
+  final ValueChanged<double>? onAvailableHeight;
+
   const _MemoGridView({
     required this.stream,
     required this.gridSize,
@@ -3565,6 +3653,8 @@ class _MemoGridView extends StatelessWidget {
     this.selectedIds = const <String>{},
     this.onToggleSelect,
     this.editingMemoId,
+    this.cardHeightReference,
+    this.onAvailableHeight,
   });
 
   Widget _buildCard(Memo memo) {
@@ -3702,9 +3792,19 @@ class _MemoGridView extends StatelessWidget {
                 );
               }
 
-              // 通常: rows×cols でフォルダ高さに合わせて自動計算
-              final mainExtent =
-                  _computeMainAxisExtent(constraints.maxHeight);
+              // 親に最新の利用可能高さを通知（通常モード時の値を覚えてもらう）
+              if (onAvailableHeight != null) {
+                final h = constraints.maxHeight;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  onAvailableHeight!(h);
+                });
+              }
+              // 通常: rows×cols でフォルダ高さに合わせて自動計算。
+              // 最大化時は cardHeightReference（=通常時の高さ）を使うことで
+              // カードサイズは保ったまま自然に行数だけ増える
+              final mainExtent = _computeMainAxisExtent(
+                cardHeightReference ?? constraints.maxHeight,
+              );
               return GridView.builder(
                 padding: EdgeInsets.only(bottom: bottomPad),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -3734,10 +3834,13 @@ class _MemoGridView extends StatelessWidget {
 class _GridSizeMenuOverlay extends StatelessWidget {
   final GridSizeOption current;
   final Rect buttonRect;
+  /// 各選択肢のラベル上書き（最大化時の動的「cols×N」表示用）
+  final Map<GridSizeOption, String>? labelOverrides;
 
   const _GridSizeMenuOverlay({
     required this.current,
     required this.buttonRect,
+    this.labelOverrides,
   });
 
   @override
@@ -3819,7 +3922,7 @@ class _GridSizeMenuOverlay extends StatelessWidget {
                     ),
                     for (final opt in options)
                       _MenuRow(
-                        label: opt.label,
+                        label: labelOverrides?[opt] ?? opt.label,
                         isCurrent: opt == current,
                         onTap: () => Navigator.of(context).pop(opt),
                       ),
