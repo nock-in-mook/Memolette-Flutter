@@ -883,6 +883,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             child: TextField(
               controller: _searchController,
               onChanged: (v) => setState(() => _searchQuery = v.trim()),
+              textAlign: TextAlign.center,
               textAlignVertical: TextAlignVertical.center,
               style: const TextStyle(fontSize: 13),
               decoration: InputDecoration(
