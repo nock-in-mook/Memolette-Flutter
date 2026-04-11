@@ -488,12 +488,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             ),
             ),
           ),
-          // ルーレット（タイトル下端から。高さは通常時相当に固定: 316-42=274）
+          // ルーレット（タグ欄の右端から出る。top: 0、bottom: フッター上端）
           Positioned(
             right: 0,
-            top: 42,
-            bottom: widget.isExpanded ? null : 0,
-            height: widget.isExpanded ? 274 : null,
+            top: 0,
+            bottom: widget.isExpanded ? null : 35, // フッター34 + 仕切り線1
+            height: widget.isExpanded ? (316 - 35) : null,
             child: allTagsAsync.when(
               data: (allTags) => _buildRoulette(allTags),
               loading: () => const SizedBox(),
@@ -512,6 +512,19 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               right: 14, // 入力欄の margin(10) + 4px 内側
               bottom: 40,
               child: _buildExpandButton(),
+            ),
+          // 台形タブ閉じ時のタップ受付（ルーレット内に開き時の受付がある）
+          if (!_rouletteOpen)
+            Positioned(
+              right: 0,
+              top: 0,
+              width: 24,
+              height: 40,
+              child: GestureDetector(
+                onTap: () => setState(() => _rouletteOpen = true),
+                behavior: HitTestBehavior.opaque,
+                child: const SizedBox.expand(),
+              ),
             ),
         ],
       ),
@@ -634,29 +647,37 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 onTap: () => setState(() => _rouletteOpen = !_rouletteOpen),
                 behavior: HitTestBehavior.opaque,
                 child: CustomPaint(
-                  painter: _TrayWithTabPainter(
-                    color: const Color.fromRGBO(142, 142, 147, 1),
-                    tabWidth: tabW,
-                    tabHeight: 22,
-                    tabRadius: 6,
-                    bodyRadius: 10,
-                    innerRadius: 10,
-                    bodyPeek: _rouletteOpen ? 0 : peekAmount,
-                  ),
+                  painter: _rouletteOpen
+                      ? _TrayWithTabPainter(
+                          color: const Color.fromRGBO(142, 142, 147, 1),
+                          tabWidth: tabW,
+                          tabHeight: 22,
+                          tabRadius: 6,
+                          bodyRadius: 10,
+                          innerRadius: 10,
+                          bodyPeek: 0,
+                        )
+                      : _TrayClosedTabPainter(
+                          color: const Color.fromRGBO(142, 142, 147, 1),
+                          tabWidth: tabW + peekAmount,
+                          tabHeight: 40,
+                          tabNarrow: 28,
+                          radius: 3,
+                        ),
                   child: SizedBox(
                     width: trayTotalWidth,
                     child: Column(
                       children: [
-                        // ラベル帯
+                        // ラベル帯（展開時22pt、閉じ時は台形40pt）
                         SizedBox(
-                          height: 22,
+                          height: _rouletteOpen ? 22 : 40,
                           child: Stack(
                             children: [
-                              // 三角マーク（左端）
+                              // 三角マーク（展開時: 22pt中央、閉じ時: 40pt中央）
                               Positioned(
                                 left: 4,
                                 top: 0,
-                                bottom: 0,
+                                bottom: _rouletteOpen ? 0 : 0,
                                 child: Center(
                                   child: Text(
                                     _rouletteOpen ? '\u25B6' : '\u25C0',
@@ -667,12 +688,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                                   ),
                                 ),
                               ),
-                              // 親タグ・子タグラベル（右端からの距離で配置）
+                              // 親タグ・子タグラベル（上22ptの範囲に中央寄せ）
                               if (_rouletteOpen) ...[
                                 Positioned(
                                   right: 221,
                                   top: 0,
-                                  bottom: 0,
+                                  height: 22,
                                   child: Center(
                                     child: Text(
                                       '\u89AAタグ',
@@ -687,7 +708,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                                 Positioned(
                                   right: 104,
                                   top: 0,
-                                  bottom: 0,
+                                  height: 22,
                                   child: Center(
                                     child: Text(
                                       '\u5B50タグ',
@@ -1004,14 +1025,14 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             margin: const EdgeInsets.symmetric(horizontal: 8),
             color: const Color.fromRGBO(142, 142, 147, 0.35),
           ),
-          // タグ表示エリア: 行の縦方向いっぱいを埋めるContainerで囲んで
-          // アイコン上下の隙間もタップ判定に含める（見た目はコンパクト）
+          // タグ表示エリア: ルーレットタブ分の幅を確保（右に25px余白）
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: _openRoulette,
             child: Container(
               height: 40,
-              alignment: Alignment.center,
+              padding: const EdgeInsets.only(right: 25),
+              alignment: Alignment.centerLeft,
               color: Colors.transparent,
               child: _parentTag == null
                   ? const Icon(Icons.sell_outlined, size: 16,
@@ -1470,6 +1491,99 @@ class _InputSnapshot {
   int get hashCode => Object.hash(title, content, parentTagId, childTagId);
 }
 
+/// 開き時: 台形タブがトレー本体の左上から左に飛び出す
+///
+///      ___
+///     /   |
+///    /    |──────────────┐
+///   /     |  トレー本体    |
+///   \     |              |
+///    \    |──────────────┘
+///     \___|
+///
+/// 台形の右上頂点 = トレー本体の左上頂点
+class _TrayWithTrapezoidTabPainter extends CustomPainter {
+  final Color color;
+  final double tabWidth;    // 台形の横幅（左への飛び出し量）
+  final double tabHeight;   // 台形の右辺（底辺）高さ = 40
+  final double tabNarrow;   // 台形の左辺（先端）高さ = 28
+  final double tabRadius;   // 台形の角丸
+  final double bodyRadius;  // 本体の左下角丸
+
+  _TrayWithTrapezoidTabPainter({
+    required this.color,
+    required this.tabWidth,
+    required this.tabHeight,
+    required this.tabNarrow,
+    required this.tabRadius,
+    required this.bodyRadius,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final inset = (tabHeight - tabNarrow) / 2;
+    // 本体左辺X = tabWidth（台形の右辺位置）
+    final bodyLeftX = tabWidth;
+    // ベジェ曲線の制御点オフセット（先端の丸み具合）
+    const r = 4.0;
+
+    // 斜辺の傾き: inset / bodyLeftX
+    final slope = inset / bodyLeftX;
+    // ベジェ終点を斜辺の延長線上に置く
+    final bx = r;
+    final by = inset - bx * slope;
+
+    final path = Path();
+
+    // 台形先端の上: ベジェ曲線で滑らかに角を丸める
+    path.moveTo(0, inset + r);
+    path.quadraticBezierTo(0, inset, bx, by);
+
+    // 台形上辺の斜辺 → 本体の左上頂点
+    path.lineTo(bodyLeftX, 0);
+
+    // 本体上辺 → 右上
+    path.lineTo(size.width, 0);
+
+    // 右辺（下まで）
+    path.lineTo(size.width, size.height);
+
+    // 本体下辺 → 左下角丸
+    path.lineTo(bodyLeftX + bodyRadius, size.height);
+    path.arcTo(
+      Rect.fromLTWH(bodyLeftX, size.height - bodyRadius * 2,
+          bodyRadius * 2, bodyRadius * 2),
+      pi / 2, pi / 2, false,
+    );
+
+    // 本体左辺（台形下端まで）
+    path.lineTo(bodyLeftX, tabHeight);
+
+    // 台形下辺の斜辺 → 先端下: ベジェ曲線で滑らかに（対称）
+    path.lineTo(bx, tabHeight - inset + bx * slope);
+    path.quadraticBezierTo(0, tabHeight - inset, 0, tabHeight - inset - r);
+
+    path.close();
+
+    // シャドウ
+    canvas.save();
+    canvas.translate(-2, 0);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+    canvas.restore();
+
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrayWithTrapezoidTabPainter old) =>
+      old.color != color;
+}
+
 class _TrayWithTabPainter extends CustomPainter {
   final Color color;
   final double tabWidth;
@@ -1546,6 +1660,89 @@ class _TrayWithTabPainter extends CustomPainter {
       old.color != color;
 }
 
+/// 閉じ時の台形タブ: 右辺=タグ欄高さ(40pt)、左辺=少し狭く(28pt)、角丸
+/// 台形タブの形状でhit testを切り抜くClipper
+class _TrapezoidClipper extends CustomClipper<Path> {
+  final double tabWidth;
+  final double tabHeight;
+  final double tabNarrow;
+
+  _TrapezoidClipper({
+    required this.tabWidth,
+    required this.tabHeight,
+    required this.tabNarrow,
+  });
+
+  @override
+  Path getClip(Size size) {
+    final inset = (tabHeight - tabNarrow) / 2;
+    return Path()
+      ..moveTo(0, inset)
+      ..lineTo(tabWidth, 0)
+      ..lineTo(tabWidth, tabHeight)
+      ..lineTo(0, tabHeight - inset)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant _TrapezoidClipper oldClipper) => false;
+}
+
+class _TrayClosedTabPainter extends CustomPainter {
+  final Color color;
+  final double tabWidth;   // 台形の横幅
+  final double tabHeight;  // 右辺（底辺）の高さ = タグ欄の高さ
+  final double tabNarrow;  // 左辺（先端）の高さ
+  final double radius;     // 角丸半径
+
+  _TrayClosedTabPainter({
+    required this.color,
+    required this.tabWidth,
+    required this.tabHeight,
+    required this.tabNarrow,
+    required this.radius,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final inset = (tabHeight - tabNarrow) / 2;
+    const r = 4.0;
+    final slope = inset / tabWidth;
+    final bx = r;
+    final by = inset - bx * slope;
+
+    final path = Path();
+    // 左上（先端上）: ベジェ曲線で滑らかに
+    path.moveTo(0, inset + r);
+    path.quadraticBezierTo(0, inset, bx, by);
+    // 右上
+    path.lineTo(tabWidth, 0);
+    // 右辺
+    path.lineTo(tabWidth, tabHeight);
+    // 左下（先端下）: ベジェ曲線で滑らかに（対称）
+    path.lineTo(bx, tabHeight - inset + bx * slope);
+    path.quadraticBezierTo(0, tabHeight - inset, 0, tabHeight - inset - r);
+    path.close();
+
+    // シャドウ
+    canvas.save();
+    canvas.translate(-2, 0);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.15)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+    canvas.restore();
+
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrayClosedTabPainter old) =>
+      old.color != color || old.tabHeight != tabHeight;
+}
+
 class _DialArcShadowPainter extends CustomPainter {
   final double dialHeight;
   static const double radius = 350;
@@ -1556,7 +1753,7 @@ class _DialArcShadowPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final cx = radius + 2;
     final cy = dialHeight / 2;
-    final maxSin = min(1.0, cy / radius);
+    final maxSin = min(1.0, (cy + 4) / radius);
     final maxAngle = asin(maxSin);
 
     final arcPath = Path()

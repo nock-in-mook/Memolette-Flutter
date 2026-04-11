@@ -642,7 +642,8 @@ class _TagDialPainter extends CustomPainter {
 
   void _drawEdgeArc(Canvas canvas, double radius, double lineWidth,
       {required (double, double, double) brightness}) {
-    final halfHeight = cy;
+    // 少し余分に描画してトレー端まで円弧を到達させる
+    final halfHeight = cy + 4;
     final maxSin = min(1.0, halfHeight / radius);
     final maxAngle = asin(maxSin);
 
