@@ -1040,50 +1040,56 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
     return Container(
       height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.only(left: 10, right: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // タイトル欄（残りスペースを使う）
           Expanded(
-            child: TextField(
-              controller: _titleController,
-              focusNode: _titleFocusNode,
-              onChanged: (_) => _onChanged(),
-              readOnly: _isViewMode,
-              onTap: _isViewMode
-                  ? () => _enterEditMode(
-                      focusContent: false, focusTitle: true)
-                  : null,
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'PingFang JP',
-                color: Colors.black87,
-              ),
-              decoration: InputDecoration(
-                hintText: '\u30BF\u30A4\u30C8\u30EB\uFF08\u4EFB\u610F\uFF09',
-                hintStyle: TextStyle(
-                    color: Colors.grey.withValues(alpha: 0.4)),
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(vertical: 4),
-                // タイトル×ボタンをsuffixIconで表示（テキストの後ろ）
-                suffixIcon: _titleController.text.isNotEmpty
-                    ? GestureDetector(
-                        onTap: () {
-                          _titleController.clear();
-                          _onChanged();
-                        },
-                        child: Icon(Icons.close, size: 14,
-                            color: Colors.grey.withValues(alpha: 0.4)),
-                      )
-                    : null,
-                suffixIconConstraints:
-                    const BoxConstraints(minWidth: 20, minHeight: 20),
-              ),
-              maxLines: 1,
+            child: Row(
+              children: [
+                Flexible(
+                  child: TextField(
+                    controller: _titleController,
+                    focusNode: _titleFocusNode,
+                    onChanged: (_) => _onChanged(),
+                    readOnly: _isViewMode,
+                    onTap: _isViewMode
+                        ? () => _enterEditMode(
+                            focusContent: false, focusTitle: true)
+                        : null,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'PingFang JP',
+                      color: Colors.black87,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: '\u30BF\u30A4\u30C8\u30EB\uFF08\u4EFB\u610F\uFF09',
+                      hintStyle: TextStyle(
+                          color: Colors.grey.withValues(alpha: 0.4)),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding:
+                          const EdgeInsets.symmetric(vertical: 4),
+                    ),
+                    maxLines: 1,
+                  ),
+                ),
+                // タイトル×ボタン
+                if (_titleController.text.isNotEmpty)
+                  GestureDetector(
+                    onTap: () {
+                      _titleController.clear();
+                      _onChanged();
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 2),
+                      child: Icon(Icons.close, size: 14,
+                          color: Colors.grey.withValues(alpha: 0.4)),
+                    ),
+                  ),
+              ],
             ),
           ),
           // 縦線セパレータ
@@ -1101,7 +1107,6 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               onTap: _openRoulette,
               child: Container(
                 height: 40,
-                padding: const EdgeInsets.only(right: 10),
                 alignment: Alignment.center,
                 color: Colors.transparent,
                 child: const Icon(Icons.sell_outlined, size: 16,
@@ -1109,16 +1114,14 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               ),
             )
           else
-            // タグ選択済: 最大幅40%で制限、中身は可変
+            // タグ選択済: 中身に合わせて可変、最大幅40%で制限
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _openRoulette,
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: maxTagWidth),
-                child: Container(
+                child: SizedBox(
                   height: 40,
-                  alignment: Alignment.centerLeft,
-                  color: Colors.transparent,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.center,
