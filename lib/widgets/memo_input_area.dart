@@ -1107,6 +1107,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               onTap: _openRoulette,
               child: Container(
                 height: 40,
+                padding: const EdgeInsets.only(right: 10),
                 alignment: Alignment.center,
                 color: Colors.transparent,
                 child: const Icon(Icons.sell_outlined, size: 16,
