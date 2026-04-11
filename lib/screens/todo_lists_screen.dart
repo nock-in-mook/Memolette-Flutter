@@ -1,443 +1,517 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' hide Column;
 import 'package:uuid/uuid.dart';
 
-import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/text_menu_dismisser.dart';
+import '../widgets/trapezoid_tab_shape.dart';
 import 'todo_list_screen.dart';
 
-// ========================================
-// ToDoリスト一覧プロバイダー
-// ========================================
-final todoListsProvider = StreamProvider<List<TodoList>>((ref) {
-  final db = ref.watch(databaseProvider);
-  return (db.select(db.todoLists)
-        ..orderBy([
-          (t) => OrderingTerm(expression: t.isPinned, mode: OrderingMode.desc),
-          (t) => OrderingTerm(
-              expression: t.manualSortOrder, mode: OrderingMode.desc),
-          (t) => OrderingTerm(expression: t.updatedAt, mode: OrderingMode.desc),
-        ]))
-      .watch();
-});
-
-/// 特定リストのルートアイテムプロバイダー
-final rootItemsProvider =
-    StreamProvider.family<List<TodoItem>, String>((ref, listId) {
-  final db = ref.watch(databaseProvider);
-  return (db.select(db.todoItems)
-        ..where(
-            (t) => t.listId.equals(listId) & t.parentId.isNull())
-        ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
-      .watch();
-});
+const _uuid = Uuid();
 
 /// ToDoリスト一覧画面
-class TodoListsScreen extends ConsumerWidget {
+/// 本家 TodoListsView 準拠: 単一の緑「TODO」台形タブ + 緑背景の全画面
+class TodoListsScreen extends ConsumerStatefulWidget {
   const TodoListsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final listsAsync = ref.watch(todoListsProvider);
+  ConsumerState<TodoListsScreen> createState() => _TodoListsScreenState();
+}
 
+class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
+  // 本家 TodoListsView の緑色（red:0.55, green:0.82, blue:0.55）
+  static const Color _todoTabColor = Color(0xFF8CD18C);
+
+  Stream<List<TodoList>> _watchLists() {
+    final db = ref.read(databaseProvider);
+    return (db.select(db.todoLists)
+          ..orderBy([
+            (t) =>
+                OrderingTerm(expression: t.isPinned, mode: OrderingMode.desc),
+            (t) => OrderingTerm(
+                expression: t.manualSortOrder, mode: OrderingMode.desc),
+            (t) => OrderingTerm(
+                expression: t.updatedAt, mode: OrderingMode.desc),
+          ]))
+        .watch();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        title: const Text('ToDo'),
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-      ),
-      body: listsAsync.when(
-        data: (lists) => lists.isEmpty
-            ? _buildEmptyState(context, ref)
-            : _buildListGrid(context, ref, lists),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('エラー: $e')),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showCreateDialog(context, ref),
-        backgroundColor: Colors.blueAccent,
-        child: const Icon(Icons.add, color: Colors.white),
+      backgroundColor: Colors.white,
+      body: Padding(
+        padding: EdgeInsets.only(
+          top: MediaQuery.of(context).viewPadding.top - 4,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ツールバー（閉じる + 新規ボタン）
+            _buildToolbar(),
+            // TODOタブ
+            _buildTodoTab(),
+            // 緑色のフォルダ本体（リストがあれば一覧、なければ空状態）
+            Expanded(
+              child: Container(
+                color: _todoTabColor,
+                child: StreamBuilder<List<TodoList>>(
+                  stream: _watchLists(),
+                  builder: (context, snap) {
+                    final lists = snap.data ?? const <TodoList>[];
+                    if (lists.isEmpty) return _buildEmptyState();
+                    return _buildListGrid(lists);
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildEmptyState(BuildContext context, WidgetRef ref) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+  /// 最小限のリスト一覧（本家と同じ2列・簡素カード）
+  Widget _buildListGrid(List<TodoList> lists) {
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
+      itemCount: lists.length,
+      itemBuilder: (context, index) {
+        final list = lists[index];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: GestureDetector(
+            onTap: () => _openList(list.id),
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 3,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  const Icon(CupertinoIcons.bookmark_fill,
+                      size: 16, color: Colors.orange),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      list.title.isEmpty ? '無題のリスト' : list.title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Hiragino Sans',
+                        color: Colors.black87,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _openList(String id) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, _, _) => TodoListScreen(listId: id),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
+    );
+  }
+
+  Widget _buildToolbar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 2, 14, 4),
+      child: Row(
         children: [
-          Icon(Icons.checklist, size: 80, color: Colors.grey[300]),
-          const SizedBox(height: 16),
-          Text('ToDoリストがありません',
-              style: TextStyle(fontSize: 18, color: Colors.grey[500])),
-          const SizedBox(height: 8),
-          Text('＋ボタンで最初のリストを作成しましょう',
-              style: TextStyle(fontSize: 14, color: Colors.grey[400])),
+          // 閉じる
+          GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            behavior: HitTestBehavior.opaque,
+            child: const SizedBox(
+              width: 56,
+              height: 32,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '閉じる',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Color(0xFF007AFF),
+                    fontFamily: 'Hiragino Sans',
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const Spacer(),
+          // 新規ボタン
+          GestureDetector(
+            onTap: _createListAndOpen,
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF007AFF), width: 1.5),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(CupertinoIcons.add,
+                      size: 14, color: Color(0xFF007AFF)),
+                  SizedBox(width: 4),
+                  Text(
+                    '新規',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF007AFF),
+                      fontFamily: 'Hiragino Sans',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildListGrid(
-      BuildContext context, WidgetRef ref, List<TodoList> lists) {
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: GridView.builder(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-          childAspectRatio: 0.85,
+  /// 空状態（本家 emptyView 準拠）
+  /// アイコン + テキスト + 「リストを作成」白ボタン、上下にSpacerでやや上寄せ
+  Widget _buildEmptyState() {
+    return Column(
+      children: [
+        const Spacer(),
+        Icon(
+          CupertinoIcons.checkmark_square,
+          size: 48,
+          color: Colors.white.withValues(alpha: 0.5),
         ),
-        itemCount: lists.length,
-        itemBuilder: (context, index) {
-          final list = lists[index];
-          return _TodoListCard(
-            list: list,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => TodoListScreen(listId: list.id),
-              ),
-            ),
-            onLongPress: () => _showListActions(context, ref, list),
-          );
-        },
-      ),
-    );
-  }
-
-  void _showCreateDialog(BuildContext context, WidgetRef ref) {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(CornerRadius.dialog),
+        const SizedBox(height: 24),
+        Text(
+          'ToDoリストはまだありません',
+          style: TextStyle(
+            fontSize: 17,
+            fontFamily: 'Hiragino Sans',
+            color: Colors.white.withValues(alpha: 0.85),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('新規ToDoリスト',
-                  style:
-                      TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: '例: 買い物リスト',
-                  border: OutlineInputBorder(
-                    borderRadius:
-                        BorderRadius.circular(CornerRadius.button),
-                  ),
+        ),
+        const SizedBox(height: 24),
+        GestureDetector(
+          onTap: _createListAndOpen,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
                 ),
-                onSubmitted: (value) {
-                  if (value.trim().isNotEmpty) {
-                    _createList(ref, value.trim());
-                    Navigator.pop(context);
-                  }
-                },
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('キャンセル'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        if (controller.text.trim().isNotEmpty) {
-                          _createList(ref, controller.text.trim());
-                          Navigator.pop(context);
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blueAccent,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('作成'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _createList(WidgetRef ref, String title) async {
-    final db = ref.read(databaseProvider);
-    final id = const Uuid().v4();
-    await db.into(db.todoLists).insert(TodoListsCompanion.insert(
-      id: id,
-      title: Value(title),
-    ));
-  }
-
-  void _showListActions(
-      BuildContext context, WidgetRef ref, TodoList list) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        margin: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(CornerRadius.dialog),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(
-                list.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-                color: list.isPinned ? Colors.orange : null,
-              ),
-              title: Text(list.isPinned ? '固定を解除' : 'トップに固定'),
-              onTap: () {
-                final db = ref.read(databaseProvider);
-                (db.update(db.todoLists)
-                      ..where((t) => t.id.equals(list.id)))
-                    .write(TodoListsCompanion(
-                        isPinned: Value(!list.isPinned)));
-                Navigator.pop(context);
-              },
+              ],
             ),
-            ListTile(
-              leading: Icon(
-                list.isLocked ? Icons.lock : Icons.lock_outline,
-                color: list.isLocked ? Colors.red : null,
-              ),
-              title: Text(list.isLocked ? 'ロック解除' : '削除防止ロック'),
-              onTap: () {
-                final db = ref.read(databaseProvider);
-                (db.update(db.todoLists)
-                      ..where((t) => t.id.equals(list.id)))
-                    .write(TodoListsCompanion(
-                        isLocked: Value(!list.isLocked)));
-                Navigator.pop(context);
-              },
-            ),
-            if (!list.isLocked)
-              ListTile(
-                leading:
-                    const Icon(Icons.delete_outline, color: Colors.red),
-                title: const Text('削除',
-                    style: TextStyle(color: Colors.red)),
-                onTap: () {
-                  Navigator.pop(context);
-                  _confirmDelete(context, ref, list);
-                },
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _confirmDelete(
-      BuildContext context, WidgetRef ref, TodoList list) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(CornerRadius.dialog),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.warning_amber_rounded,
-                size: 48, color: Colors.orange),
-            const SizedBox(height: 12),
-            Text('「${list.title}」を削除しますか？',
-                style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            const Text('リスト内の全タスクも削除されます'),
-            const SizedBox(height: 16),
-            Row(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('キャンセル'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () {
-                      final db = ref.read(databaseProvider);
-                      // アイテムも削除
-                      (db.delete(db.todoItems)
-                            ..where(
-                                (t) => t.listId.equals(list.id)))
-                          .go();
-                      (db.delete(db.todoLists)
-                            ..where((t) => t.id.equals(list.id)))
-                          .go();
-                      Navigator.pop(context);
-                    },
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red),
-                    child: const Text('削除',
-                        style: TextStyle(color: Colors.white)),
+                Icon(CupertinoIcons.add, size: 16, color: _todoTabColor),
+                const SizedBox(width: 6),
+                Text(
+                  'リストを作成',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'Hiragino Sans',
+                    color: _todoTabColor,
                   ),
                 ),
               ],
             ),
-          ],
+          ),
+        ),
+        const Spacer(),
+        const Spacer(),
+      ],
+    );
+  }
+
+  /// 新規リスト作成ダイアログを表示
+  Future<void> _createListAndOpen() async {
+    final title = await showGeneralDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'newTodoList',
+      barrierColor: Colors.black.withValues(alpha: 0.4),
+      transitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (ctx, _, _) => const _NewListDialog(),
+      transitionBuilder: (_, anim, _, child) =>
+          FadeTransition(opacity: anim, child: child),
+    );
+    if (title == null || title.isEmpty) return;
+    final db = ref.read(databaseProvider);
+    final id = _uuid.v4();
+    await db.into(db.todoLists).insert(TodoListsCompanion.insert(
+          id: id,
+          title: Value(title),
+        ));
+    if (!mounted) return;
+    // 即時遷移（スライドアニメなし）
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, _, _) => TodoListScreen(listId: id),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
+    );
+  }
+
+  // ダイアログクラスは末尾で定義
+  Widget _buildTodoTab() {
+    // タブ自体は左寄せ、本家準拠で1.08倍スケール（選択中相当）
+    return Padding(
+      padding: const EdgeInsets.only(left: 8, top: 6),
+      child: Align(
+        alignment: Alignment.bottomLeft,
+        child: Transform.scale(
+          scale: 1.08,
+          alignment: Alignment.bottomCenter,
+          child: CustomPaint(
+            painter: const TrapezoidTabPainter(
+              color: _todoTabColor,
+              shadows: [
+                Shadow(
+                  color: Color(0x66000000),
+                  offset: Offset(-3, 3),
+                  blurRadius: 5,
+                ),
+              ],
+            ),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(CupertinoIcons.checkmark_square,
+                      size: 14, color: Colors.black),
+                  SizedBox(width: 6),
+                  Text(
+                    'TODO',
+                    strutStyle: StrutStyle(
+                      fontSize: 14,
+                      height: 1.0,
+                      forceStrutHeight: true,
+                      leading: 0,
+                    ),
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.0,
+                      fontFamily: 'Hiragino Sans',
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-/// ToDoリストカード（グリッド用）
-class _TodoListCard extends ConsumerWidget {
-  final TodoList list;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
-
-  const _TodoListCard({
-    required this.list,
-    required this.onTap,
-    required this.onLongPress,
-  });
+/// 新規ToDoリスト作成ダイアログ
+/// 本家 newListDialogOverlay 準拠
+class _NewListDialog extends StatefulWidget {
+  const _NewListDialog();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final rootItemsAsync = ref.watch(rootItemsProvider(list.id));
+  State<_NewListDialog> createState() => _NewListDialogState();
+}
 
-    return GestureDetector(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: Container(
-        decoration: BoxDecoration(
+class _NewListDialogState extends State<_NewListDialog> {
+  final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _commit() {
+    final t = _controller.text.trim();
+    if (t.isEmpty) return;
+    Navigator.of(context).pop(t);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Material(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(CornerRadius.card),
-          boxShadow: [AppShadows.card()],
-        ),
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ヘッダ
-            Row(
+          borderRadius: BorderRadius.circular(16),
+          elevation: 8,
+          shadowColor: Colors.black.withValues(alpha: 0.3),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                if (list.isPinned)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 4),
-                    child: Icon(Icons.push_pin,
-                        size: 14, color: Colors.orange),
+                // ヘッダー
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 24, 20, 16),
+                  child: Column(
+                    children: [
+                      Icon(CupertinoIcons.checkmark_square,
+                          size: 32, color: Colors.blue),
+                      SizedBox(height: 8),
+                      Text(
+                        '新しいリスト',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'Hiragino Sans',
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'リストのタイトルを入力してください',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Color(0x993C3C43),
+                          fontFamily: 'Hiragino Sans',
+                        ),
+                      ),
+                    ],
                   ),
-                if (list.isLocked)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 4),
-                    child: Icon(Icons.lock, size: 14, color: Colors.red),
-                  ),
-                Expanded(
-                  child: Text(
-                    list.title,
+                ),
+                // テキスト入力
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: TextField(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    onTap: TextMenuDismisser.wrap(null),
+                    contextMenuBuilder: TextMenuDismisser.builder,
                     style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w600),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                      fontSize: 16,
+                      fontFamily: 'Hiragino Sans',
+                    ),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.all(12),
+                      hintText: '例: 買い物リスト',
+                      hintStyle: TextStyle(
+                        fontSize: 16,
+                        color: Colors.black.withValues(alpha: 0.3),
+                        fontFamily: 'Hiragino Sans',
+                      ),
+                      filled: true,
+                      fillColor: const Color(0x14787880), // tertiarySystemFill
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    onChanged: (_) => setState(() {}),
+                    onSubmitted: (_) => _commit(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  height: 0.5,
+                  color: Colors.black.withValues(alpha: 0.15),
+                ),
+                // 作成ボタン
+                GestureDetector(
+                  onTap:
+                      _controller.text.trim().isEmpty ? null : _commit,
+                  behavior: HitTestBehavior.opaque,
+                  child: SizedBox(
+                    height: 48,
+                    child: Center(
+                      child: Text(
+                        '作成する',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'Hiragino Sans',
+                          color: _controller.text.trim().isEmpty
+                              ? Colors.grey
+                              : Colors.blue,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Container(
+                  height: 0.5,
+                  color: Colors.black.withValues(alpha: 0.15),
+                ),
+                // キャンセルボタン
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  behavior: HitTestBehavior.opaque,
+                  child: const SizedBox(
+                    height: 48,
+                    child: Center(
+                      child: Text(
+                        'キャンセル',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          fontFamily: 'Hiragino Sans',
+                          color: Color(0x993C3C43),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-
-            // プレビュー（ルートアイテム5件）
-            Expanded(
-              child: rootItemsAsync.when(
-                data: (items) {
-                  final preview = items.take(5).toList();
-                  final done = items.where((i) => i.isDone).length;
-                  final total = items.length;
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ...preview.map((item) => Padding(
-                            padding: const EdgeInsets.only(bottom: 2),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  item.isDone
-                                      ? Icons.check_box
-                                      : Icons.check_box_outline_blank,
-                                  size: 16,
-                                  color: item.isDone
-                                      ? Colors.green
-                                      : Colors.grey,
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    item.title,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: item.isDone
-                                          ? Colors.grey
-                                          : Colors.black87,
-                                      decoration: item.isDone
-                                          ? TextDecoration.lineThrough
-                                          : null,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )),
-                      const Spacer(),
-                      // 完了カウント
-                      if (total > 0)
-                        Text(
-                          total == done
-                              ? '全完了'
-                              : '$done/$total 完了',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: total == done
-                                ? Colors.green
-                                : Colors.grey[500],
-                            fontWeight: total == done
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                          ),
-                        ),
-                    ],
-                  );
-                },
-                loading: () => const SizedBox(),
-                error: (_, _) => const SizedBox(),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

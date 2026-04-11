@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/text_menu_dismisser.dart';
 import 'frosted_alert_dialog.dart';
 import 'new_tag_sheet.dart';
 import 'tag_dial_view.dart';
@@ -56,9 +57,6 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   Future<void> selectFromHistory(TagHistory item) => _selectFromHistory(item);
   /// 履歴パネルを閉じる
   void closeTagHistory() => setState(() => _showTagHistory = false);
-
-  // コンテキストメニュー表示タイミング記録（長押し直後のタップで消さないため）
-  DateTime? _lastContextMenuShown;
 
   // 本文の最大文字数（Swift版準拠）
   static const int _maxContentLength = 50000;
@@ -1094,10 +1092,11 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                           focusNode: _titleFocusNode,
                           onChanged: (_) => _onChanged(),
                           readOnly: _isViewMode,
-                          onTap: _isViewMode
+                          contextMenuBuilder: TextMenuDismisser.builder,
+                          onTap: TextMenuDismisser.wrap(_isViewMode
                               ? () => _enterEditMode(
                                   focusContent: false, focusTitle: true)
-                              : null,
+                              : null),
                           style: const TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w700,
@@ -1361,21 +1360,13 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           focusNode: _contentFocusNode,
           onChanged: (_) => _onChanged(),
           readOnly: _isViewMode,
-          onTap: () {
+          onTap: TextMenuDismisser.wrap(() {
             if (_isViewMode) {
               _enterEditMode(focusContent: true);
             }
-            // 長押しメニュー表示直後（300ms以内）は消さない
-            // それ以降のタップでメニューを消す（編集は続行）
-            if (_lastContextMenuShown != null &&
-                DateTime.now().difference(_lastContextMenuShown!) >
-                    const Duration(milliseconds: 300)) {
-              ContextMenuController.removeAny();
-              _lastContextMenuShown = null;
-            }
             // ルーレットが開いていたら閉じる
             if (_rouletteOpen) _closeRoulette();
-          },
+          }),
           inputFormatters: [
             // 5万字超過は自動カット + トースト通知 (連射防止)
             _LimitWithToastFormatter(
@@ -1396,13 +1387,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             border: InputBorder.none,
             hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.4)),
           ),
-          contextMenuBuilder: (context, editableTextState) {
-            // メニュー表示タイミングを記録
-            _lastContextMenuShown = DateTime.now();
-            return AdaptiveTextSelectionToolbar.editableText(
-              editableTextState: editableTextState,
-            );
-          },
+          contextMenuBuilder: TextMenuDismisser.builder,
           maxLines: null,
           expands: true,
           textAlignVertical: TextAlignVertical.top,

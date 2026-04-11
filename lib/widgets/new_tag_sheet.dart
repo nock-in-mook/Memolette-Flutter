@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/text_menu_dismisser.dart';
 import 'trapezoid_tab_shape.dart';
 
 /// タグシート（Swift版 NewTagSheetView 準拠）
@@ -313,6 +314,8 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
         TextField(
           controller: _nameController,
           maxLength: _maxNameLength,
+          onTap: TextMenuDismisser.wrap(null),
+          contextMenuBuilder: TextMenuDismisser.builder,
           // 自動フォーカスしない（Swift版同様、ユーザータップでキーボードが出る）
           style: const TextStyle(fontSize: 16),
           decoration: InputDecoration(

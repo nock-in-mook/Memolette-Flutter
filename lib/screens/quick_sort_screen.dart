@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/text_menu_dismisser.dart';
 
 // ========================================
 // 爆速モード（QuickSort）
@@ -588,6 +589,8 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                 ? TextField(
                     controller: _titleController,
                     autofocus: true,
+                    onTap: TextMenuDismisser.wrap(null),
+                    contextMenuBuilder: TextMenuDismisser.builder,
                     style: const TextStyle(
                         fontSize: 18, fontWeight: FontWeight.bold),
                     decoration: const InputDecoration(
@@ -629,6 +632,8 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                   ? TextField(
                       controller: _contentController,
                       autofocus: true,
+                      onTap: TextMenuDismisser.wrap(null),
+                      contextMenuBuilder: TextMenuDismisser.builder,
                       maxLines: null,
                       expands: true,
                       textAlignVertical: TextAlignVertical.top,

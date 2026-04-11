@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/text_menu_dismisser.dart';
 import '../widgets/memo_card.dart';
 import '../widgets/memo_input_area.dart';
 import '../widgets/move_to_top_icon.dart';
@@ -931,6 +932,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 TextField(
               controller: _searchController,
               focusNode: _searchFocusNode,
+              onTap: TextMenuDismisser.wrap(null),
+              contextMenuBuilder: TextMenuDismisser.builder,
               onChanged: (v) => setState(() => _searchQuery = v.trim()),
               textAlign: (_isSearchActive || _isSearchFocused) ? TextAlign.left : TextAlign.center,
               textAlignVertical: TextAlignVertical.center,
@@ -2873,6 +2876,8 @@ class _FolderSearchView extends ConsumerWidget {
             child: TextField(
               controller: controller,
               autofocus: true,
+              onTap: TextMenuDismisser.wrap(null),
+              contextMenuBuilder: TextMenuDismisser.builder,
               onChanged: onQueryChanged,
               textAlignVertical: TextAlignVertical.center,
               style: const TextStyle(fontSize: 14),
