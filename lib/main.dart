@@ -31,6 +31,7 @@ class MemolettApp extends StatelessWidget {
           seedColor: Colors.blueAccent,
           brightness: Brightness.light,
         ),
+        fontFamily: 'PingFang JP',
         useMaterial3: true,
       ),
       home: const HomeScreen(),

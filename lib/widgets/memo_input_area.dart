@@ -48,6 +48,14 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   bool get hasContent => _contentController.text.isNotEmpty;
   /// 外部から本文フォーカス状態を確認するゲッター
   bool get isContentFocused => _contentFocusNode.hasFocus;
+  /// タグ履歴が表示中か
+  bool get showTagHistory => _showTagHistory;
+  /// タグ履歴アイテム
+  List<TagHistory> get tagHistoryItems => _tagHistoryItems;
+  /// 履歴からタグを選択（外部から呼べる）
+  Future<void> selectFromHistory(TagHistory item) => _selectFromHistory(item);
+  /// 履歴パネルを閉じる
+  void closeTagHistory() => setState(() => _showTagHistory = false);
 
   // コンテキストメニュー表示タイミング記録（長押し直後のタップで消さないため）
   DateTime? _lastContextMenuShown;
@@ -468,7 +476,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               // ヘッダー/ツールバー等テキスト欄以外をタップしたらコンテキストメニューを消す + ルーレット閉じる
               onTap: () {
                 _hideContextMenu();
-                if (_rouletteOpen) setState(() => _rouletteOpen = false);
+                if (_rouletteOpen) _closeRoulette();
               },
               behavior: HitTestBehavior.translucent,
               child: Column(
@@ -521,7 +529,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               width: 24,
               height: 40,
               child: GestureDetector(
-                onTap: () => setState(() => _rouletteOpen = true),
+                onTap: _openRoulette,
                 behavior: HitTestBehavior.opaque,
                 child: const SizedBox.expand(),
               ),
@@ -644,7 +652,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               top: 0,
               bottom: 0,
               child: GestureDetector(
-                onTap: () => setState(() => _rouletteOpen = !_rouletteOpen),
+                onTap: () => _rouletteOpen ? _closeRoulette() : _openRoulette(),
                 behavior: HitTestBehavior.opaque,
                 child: CustomPaint(
                   painter: _rouletteOpen
@@ -731,7 +739,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                                   alignment: Alignment.centerRight,
                                   child: GestureDetector(
                                     behavior: HitTestBehavior.opaque,
-                                    onTap: () => setState(() => _rouletteOpen = false),
+                                    onTap: _closeRoulette,
                                     child: Transform.translate(
                                       offset: const Offset(-8, 0),
                                       child: SizedBox(
@@ -817,12 +825,16 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                                 top: 9,
                                 child: GestureDetector(
                                   behavior: HitTestBehavior.opaque,
-                                  onTap: () {},
+                                  onTap: _toggleTagHistory,
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(Icons.chevron_right, size: 12,
-                                          color: Colors.white.withValues(alpha: 0.8)),
+                                      Icon(
+                                        _showTagHistory
+                                            ? Icons.keyboard_arrow_down
+                                            : Icons.chevron_right,
+                                        size: 12,
+                                        color: Colors.white.withValues(alpha: 0.8)),
                                       const SizedBox(width: 3),
                                       Text(
                                         '\u5C65\u6B74',
@@ -941,7 +953,55 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   void _openRoulette() {
     if (_rouletteOpen) return;
     FocusScope.of(context).unfocus();
-    setState(() => _rouletteOpen = true);
+    setState(() {
+      _rouletteOpen = true;
+      _showTagHistory = false;
+    });
+  }
+
+  /// ルーレットを閉じる（タグ履歴を記録）
+  void _closeRoulette() {
+    if (!_rouletteOpen) return;
+    // タグが選択されていたら履歴に記録
+    final parentId = _parentTag?.id;
+    if (parentId != null) {
+      final db = ref.read(databaseProvider);
+      db.recordTagHistory(parentId, childTagId: _childTag?.id);
+    }
+    setState(() {
+      _rouletteOpen = false;
+      _showTagHistory = false;
+    });
+  }
+
+  // タグ履歴の表示フラグ
+  bool _showTagHistory = false;
+  List<TagHistory> _tagHistoryItems = [];
+
+  /// 履歴表示トグル
+  Future<void> _toggleTagHistory() async {
+    if (_showTagHistory) {
+      setState(() => _showTagHistory = false);
+    } else {
+      final db = ref.read(databaseProvider);
+      final items = await db.getRecentTagHistory();
+      setState(() {
+        _tagHistoryItems = items;
+        _showTagHistory = true;
+      });
+    }
+  }
+
+  /// 履歴からタグを選択
+  Future<void> _selectFromHistory(TagHistory item) async {
+    final db = ref.read(databaseProvider);
+    // 親タグを選択
+    await _onTagSelected(item.parentTagId, false);
+    // 子タグがあれば選択
+    if (item.childTagId != null) {
+      await _onTagSelected(item.childTagId!, true);
+    }
+    setState(() => _showTagHistory = false);
   }
 
   /// 親タグ追加シートを開く
@@ -975,13 +1035,16 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   }
 
   Widget _buildHeader() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final maxTagWidth = screenWidth * 0.40;
+
     return Container(
       height: 40,
-      // 上下paddingは0に。Row全体（40pt）をタグ欄のタップ判定として使う
       padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // タイトル欄（残りスペースを使う）
           Expanded(
             child: TextField(
               controller: _titleController,
@@ -994,85 +1057,100 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                   : null,
               style: const TextStyle(
                 fontSize: 17,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
                 fontFamily: 'PingFang JP',
                 color: Colors.black87,
               ),
               decoration: InputDecoration(
                 hintText: '\u30BF\u30A4\u30C8\u30EB\uFF08\u4EFB\u610F\uFF09',
-                hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.4)),
+                hintStyle: TextStyle(
+                    color: Colors.grey.withValues(alpha: 0.4)),
                 border: InputBorder.none,
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                contentPadding:
+                    const EdgeInsets.symmetric(vertical: 4),
+                // タイトル×ボタンをsuffixIconで表示（テキストの後ろ）
+                suffixIcon: _titleController.text.isNotEmpty
+                    ? GestureDetector(
+                        onTap: () {
+                          _titleController.clear();
+                          _onChanged();
+                        },
+                        child: Icon(Icons.close, size: 14,
+                            color: Colors.grey.withValues(alpha: 0.4)),
+                      )
+                    : null,
+                suffixIconConstraints:
+                    const BoxConstraints(minWidth: 20, minHeight: 20),
               ),
               maxLines: 1,
             ),
           ),
-          // \u30BF\u30A4\u30C8\u30EB\u00D7\u30DC\u30BF\u30F3
-          if (_titleController.text.isNotEmpty)
-            GestureDetector(
-              onTap: () {
-                _titleController.clear();
-                _onChanged();
-              },
-              child: const Icon(Icons.close, size: 16,
-                  color: Color.fromRGBO(142, 142, 147, 0.3)),
-            ),
-          // \u7E26\u7DDA\u30BB\u30D1\u30EC\u30FC\u30BF\uFF08\u5E38\u6642\u8868\u793A\uFF09
+          // 縦線セパレータ
           Container(
             width: 1,
             height: 24,
-            margin: const EdgeInsets.symmetric(horizontal: 8),
+            margin: const EdgeInsets.symmetric(horizontal: 6),
             color: const Color.fromRGBO(142, 142, 147, 0.35),
           ),
-          // タグ表示エリア: ルーレットタブ分の幅を確保（右に25px余白）
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _openRoulette,
-            child: Container(
-              height: 40,
-              padding: const EdgeInsets.only(right: 25),
-              alignment: Alignment.centerLeft,
-              color: Colors.transparent,
-              child: _parentTag == null
-                  ? const Icon(Icons.sell_outlined, size: 16,
-                      color: Color.fromRGBO(142, 142, 147, 0.45))
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        _buildTagDisplay(),
-                        const SizedBox(width: 4),
-                        // ×ボタンも縦方向いっぱいを埋める
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () async {
-                            _pendingParentTag = null;
-                            _pendingChildTag = null;
-                            if (widget.editingMemoId != null) {
-                              final db = ref.read(databaseProvider);
-                              for (final tag in _attachedTags) {
-                                await db.removeTagFromMemo(
-                                    widget.editingMemoId!, tag.id);
-                              }
-                              _attachedTags = await db
-                                  .getTagsForMemo(widget.editingMemoId!);
+          // タグ表示エリア
+          if (_parentTag == null)
+            // タグ未選択: アイコンのみ
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _openRoulette,
+              child: Container(
+                height: 40,
+                padding: const EdgeInsets.only(right: 10),
+                alignment: Alignment.center,
+                color: Colors.transparent,
+                child: const Icon(Icons.sell_outlined, size: 16,
+                    color: Color.fromRGBO(142, 142, 147, 0.45)),
+              ),
+            )
+          else
+            // タグ選択済: 最大幅40%で制限、中身は可変
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _openRoulette,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxTagWidth),
+                child: Container(
+                  height: 40,
+                  alignment: Alignment.centerLeft,
+                  color: Colors.transparent,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Flexible(child: _buildTagDisplay()),
+                      const SizedBox(width: 2),
+                      // タグ×ボタン
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () async {
+                          _pendingParentTag = null;
+                          _pendingChildTag = null;
+                          if (widget.editingMemoId != null) {
+                            final db = ref.read(databaseProvider);
+                            for (final tag in _attachedTags) {
+                              await db.removeTagFromMemo(
+                                  widget.editingMemoId!, tag.id);
                             }
-                            if (mounted) setState(() {});
-                          },
-                          child: Container(
-                            height: 40,
-                            alignment: Alignment.center,
-                            color: Colors.transparent,
-                            child: Icon(Icons.cancel,
-                                size: 14,
-                                color: Colors.grey.withValues(alpha: 0.5)),
-                          ),
-                        ),
-                      ],
-                    ),
+                            _attachedTags = await db
+                                .getTagsForMemo(widget.editingMemoId!);
+                          }
+                          if (mounted) setState(() {});
+                        },
+                        child: Icon(Icons.cancel,
+                            size: 12,
+                            color: Colors.grey.withValues(alpha: 0.5)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -1085,45 +1163,48 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     final parentColor = TagColors.getColor(parent.colorIndex);
 
     if (child != null) {
-      // Swift版 HStack(alignment: .bottom, spacing: -4) 相当
-      // 親の右端と子の左端を4ptだけX軸でオーバーラップ。
-      // 親の右paddingが10ptあるので、4pt重なっても親の文字には到達しない。
       final childColor = TagColors.getColor(child.colorIndex);
-      final parentLabel = _truncateByWidth(parent.name, 10);
-      final childLabel = _truncateByWidth(child.name, 10);
       return Row(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // 親タグ（trailing padding 10pt が「めり込み余白」になる）
-          Container(
-            padding: const EdgeInsets.fromLTRB(7, 4, 10, 4),
-            decoration: BoxDecoration(
-              color: parentColor,
-              borderRadius: BorderRadius.circular(CornerRadius.parentTag),
-            ),
-            child: Text(
-              parentLabel,
-              style: _parentTagTextStyle,
-              strutStyle: _parentStrutStyle,
-              textHeightBehavior: _tightHeightBehavior,
-            ),
-          ),
-          // 子タグ（4pt左にズラして親の右paddingに重ねる / 白枠線）
-          Transform.translate(
-            offset: const Offset(-4, 0),
+          // 親タグ
+          Flexible(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              padding: const EdgeInsets.fromLTRB(5, 3, 8, 3),
               decoration: BoxDecoration(
-                color: childColor,
-                borderRadius: BorderRadius.circular(CornerRadius.badge),
-                border: Border.all(color: Colors.white, width: 1.5),
+                color: parentColor,
+                borderRadius: BorderRadius.circular(CornerRadius.parentTag),
               ),
               child: Text(
-                childLabel,
-                style: _childTagTextStyle,
-                strutStyle: _childStrutStyle,
+                parent.name,
+                style: _parentTagTextStyle,
+                strutStyle: _parentStrutStyle,
                 textHeightBehavior: _tightHeightBehavior,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          // 子タグ（4pt左にズラして親に重ねる / 白枠線）
+          Flexible(
+            child: Transform.translate(
+              offset: const Offset(-4, 0),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: childColor,
+                  borderRadius: BorderRadius.circular(CornerRadius.badge),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
+                child: Text(
+                  child.name,
+                  style: _childTagTextStyle,
+                  strutStyle: _childStrutStyle,
+                  textHeightBehavior: _tightHeightBehavior,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ),
           ),
@@ -1133,23 +1214,25 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
     // 親タグのみ
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
       decoration: BoxDecoration(
         color: parentColor,
         borderRadius: BorderRadius.circular(CornerRadius.parentTag),
       ),
       child: Text(
-        _truncateByWidth(parent.name, 12),
+        parent.name,
         style: _parentTagTextStyle,
         strutStyle: _parentStrutStyle,
         textHeightBehavior: _tightHeightBehavior,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
 
   // タグバッジ用のテキストスタイル（SF Pro Rounded、行高1.0で中央寄せ）
   static const TextStyle _parentTagTextStyle = TextStyle(
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: FontWeight.w600,
     fontFamily: '.SF Pro Rounded',
     fontFamilyFallback: ['SF Pro Rounded', 'Hiragino Sans'],
@@ -1159,7 +1242,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   );
 
   static const TextStyle _childTagTextStyle = TextStyle(
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: FontWeight.w500,
     fontFamily: '.SF Pro Rounded',
     fontFamilyFallback: ['SF Pro Rounded', 'Hiragino Sans'],
@@ -1169,14 +1252,14 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   );
 
   static const StrutStyle _parentStrutStyle = StrutStyle(
-    fontSize: 13,
+    fontSize: 11,
     height: 1.0,
     forceStrutHeight: true,
     leading: 0,
   );
 
   static const StrutStyle _childStrutStyle = StrutStyle(
-    fontSize: 11,
+    fontSize: 10,
     height: 1.0,
     forceStrutHeight: true,
     leading: 0,
@@ -1210,7 +1293,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               _lastContextMenuShown = null;
             }
             // ルーレットが開いていたら閉じる
-            if (_rouletteOpen) setState(() => _rouletteOpen = false);
+            if (_rouletteOpen) _closeRoulette();
           },
           inputFormatters: [
             // 5万字超過は自動カット + トースト通知 (連射防止)
@@ -1223,13 +1306,14 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           style: const TextStyle(
             fontSize: 16,
             height: 1.25,
+            fontWeight: FontWeight.w500,
             fontFamily: 'PingFang JP',
             color: Colors.black87,
           ),
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             hintText: '\u30E1\u30E2\u3092\u5165\u529B...',
             border: InputBorder.none,
-            hintStyle: TextStyle(color: Colors.grey),
+            hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.4)),
           ),
           contextMenuBuilder: (context, editableTextState) {
             // メニュー表示タイミングを記録

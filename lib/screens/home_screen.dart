@@ -463,6 +463,135 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  /// タグ履歴リスト（フォルダタブ右上にオーバーレイ）
+  Widget _buildTagHistoryList() {
+    final state = _inputAreaKey.currentState;
+    final items = state?.tagHistoryItems ?? [];
+    final allTags = ref.watch(allTagsProvider).value ?? const <Tag>[];
+
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 220, maxHeight: 180),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ヘッダー
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 6, 6, 4),
+            child: Row(
+              children: [
+                const Text('タグ履歴',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: '.SF Pro Rounded',
+                    )),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => state?.closeTagHistory(),
+                  child: Icon(CupertinoIcons.xmark_circle_fill,
+                      size: 16,
+                      color: Colors.grey.withValues(alpha: 0.5)),
+                ),
+              ],
+            ),
+          ),
+          // リスト
+          if (items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text('まだ履歴がありません',
+                  style: TextStyle(fontSize: 12, color: Colors.grey)),
+            )
+          else
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+                itemCount: items.length,
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  final parentTag = allTags
+                      .where((t) => t.id == item.parentTagId)
+                      .firstOrNull;
+                  if (parentTag == null) return const SizedBox.shrink();
+                  final childTag = item.childTagId != null
+                      ? allTags
+                          .where((t) => t.id == item.childTagId)
+                          .firstOrNull
+                      : null;
+
+                  return GestureDetector(
+                    onTap: () => state?.selectFromHistory(item),
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // 親タグバッジ
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: TagColors.getColor(parentTag.colorIndex),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              parentTag.name,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: '.SF Pro Rounded',
+                              ),
+                            ),
+                          ),
+                          // 子タグバッジ
+                          if (childTag != null) ...[
+                            const SizedBox(width: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: TagColors.getColor(childTag.colorIndex),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: Colors.grey.withValues(alpha: 0.3),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Text(
+                                childTag.name,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  fontFamily: '.SF Pro Rounded',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMainContent(List<Tag> parentTags,
       AsyncValue<List<Tag>> parentTagsAsync, Color currentColor) {
     return Padding(
@@ -649,6 +778,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                               _currentParentTagId(parentTags)!),
                         ),
                       ),
+                    // タグ履歴オーバーレイ（ルーレット展開中のみ）
+                    if (_inputAreaKey.currentState?.showTagHistory ?? false)
+                      Positioned(
+                        right: 8,
+                        top: -10,
+                        child: _buildTagHistoryList(),
+                      ),
                     // 並び替え中: フォルダ本体に説明 + ボタン
                     if (_isReorderMode)
                       Positioned.fill(
@@ -794,8 +930,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const SettingsScreen()),
             ),
-            child: const Icon(Icons.settings_outlined,
-                size: 22, color: Color(0xFF007AFF)),
+            child: const Icon(CupertinoIcons.gear_big,
+                size: 26, color: Color(0xFF007AFF)),
           ),
         ],
       ),

@@ -439,6 +439,13 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  /// タグ履歴を新しい順で取得
+  Future<List<TagHistory>> getRecentTagHistory() async {
+    return (select(tagHistories)
+          ..orderBy([(t) => OrderingTerm.desc(t.usedAt)]))
+        .get();
+  }
+
   // ========================================
   // ダミーデータ挿入（開発用）
   // ========================================

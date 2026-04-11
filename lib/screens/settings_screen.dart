@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/database_provider.dart';
 import 'font_lab_screen.dart';
+import 'font_weight_lab_screen.dart';
 import 'icon_lab_screen.dart';
+import 'settings_icon_lab_screen.dart';
 
 /// 設定画面
 class SettingsScreen extends ConsumerWidget {
@@ -41,6 +43,24 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           ListTile(
+            leading: const Icon(Icons.settings_outlined),
+            title: const Text('設定アイコンラボ'),
+            subtitle: const Text('設定ボタンの候補アイコンを比較'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsIconLabScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.format_bold),
+            title: const Text('フォントウェイトラボ'),
+            subtitle: const Text('タイトル・本文の太さを比較'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const FontWeightLabScreen()),
+            ),
+          ),
+          ListTile(
             leading: const Icon(Icons.dataset_outlined),
             title: const Text('ダミーデータ投入'),
             subtitle: const Text('タグとメモを一括追加'),
@@ -63,6 +83,12 @@ class SettingsScreen extends ConsumerWidget {
             title: const Text('長文ダミーメモ追加'),
             subtitle: const Text('1000〜10000文字 (1000刻み) を10件'),
             onTap: () => _seedLongMemos(context, ref),
+          ),
+          ListTile(
+            leading: const Icon(Icons.title),
+            title: const Text('長タイトル＋長タグ名ダミー'),
+            subtitle: const Text('タイトル・タグ名が長いメモを各種追加'),
+            onTap: () => _seedLongTitleTagMemos(context, ref),
           ),
           ListTile(
             leading: const Icon(Icons.delete_sweep_outlined,
@@ -401,6 +427,81 @@ class SettingsScreen extends ConsumerWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('長文ダミーメモ10件を追加しました')),
     );
+  }
+
+  Future<void> _seedLongTitleTagMemos(
+      BuildContext context, WidgetRef ref) async {
+    final db = ref.read(databaseProvider);
+
+    // 長い名前の親タグ
+    final longParent = await db.createTag(
+        name: 'プログラミング学習ノート集', colorIndex: 17);
+    final longParent2 = await db.createTag(
+        name: '毎日の体調管理と食事記録', colorIndex: 21);
+
+    // 長い名前の子タグ
+    final longChild1 = await db.createTag(
+        name: 'Flutterウィジェット設計メモ',
+        colorIndex: 19,
+        parentTagId: longParent.id);
+    final longChild2 = await db.createTag(
+        name: 'Dart非同期処理パターン集',
+        colorIndex: 23,
+        parentTagId: longParent.id);
+    final longChild3 = await db.createTag(
+        name: '朝昼晩の栄養バランスチェック',
+        colorIndex: 25,
+        parentTagId: longParent2.id);
+
+    // 1. 長タイトル + 親タグのみ
+    final m1 = await db.createMemo(
+      title: '来週の月曜日までに提出しなければならないレポートの下書きメモ',
+      content: '第1章: はじめに\n第2章: 調査方法\n第3章: 結果と考察\n\nまだ第2章の途中。',
+    );
+    await db.addTagToMemo(m1.id, longParent.id);
+
+    // 2. 長タイトル + 親タグ + 子タグ
+    final m2 = await db.createMemo(
+      title: 'StatefulWidgetのライフサイクルを完全に理解するための実験ログ',
+      content: 'initState → didChangeDependencies → build → didUpdateWidget → dispose\nそれぞれのタイミングでprintして確認する。',
+    );
+    await db.addTagToMemo(m2.id, longParent.id);
+    await db.addTagToMemo(m2.id, longChild1.id);
+
+    // 3. 長タイトル + 親タグ + 子タグ（別の組み合わせ）
+    final m3 = await db.createMemo(
+      title: 'async/awaitとFuture.thenの使い分けについて考えたことのまとめ',
+      content: 'async/awaitの方が読みやすいが、並列実行にはFuture.waitが必要。\nエラーハンドリングはtry-catchで統一する方針にした。',
+    );
+    await db.addTagToMemo(m3.id, longParent.id);
+    await db.addTagToMemo(m3.id, longChild2.id);
+
+    // 4. 長タイトル + タグなし
+    final m4 = await db.createMemo(
+      title: '今日スーパーで見かけた珍しい野菜の名前を忘れないようにメモしておく',
+      content: 'ロマネスコ？ビーツ？名前が思い出せない…緑色のフラクタルっぽいやつ。',
+    );
+
+    // 5. 長タイトル + 別の親タグ + 子タグ
+    final m5 = await db.createMemo(
+      title: '一週間の食事を写真付きで記録して振り返るための習慣化チャレンジ',
+      content: '月曜: 朝パン、昼弁当、夜カレー\n火曜: 朝グラノーラ、昼ラーメン、夜鍋',
+    );
+    await db.addTagToMemo(m5.id, longParent2.id);
+    await db.addTagToMemo(m5.id, longChild3.id);
+
+    // 6. 超長タイトル
+    final m6 = await db.createMemo(
+      title: 'このタイトルはとても長くて画面に収まりきらないかもしれないけれどテスト用なので気にしない',
+      content: 'テスト用メモ。',
+    );
+    await db.addTagToMemo(m6.id, longParent.id);
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('長タイトル＋長タグ名ダミーを追加しました')),
+      );
+    }
   }
 
   Future<void> _wipeAllData(BuildContext context, WidgetRef ref) async {

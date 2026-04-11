@@ -102,12 +102,12 @@ class MemoCard extends ConsumerWidget {
                 style: TextStyle(
                   fontSize: _titleFont,
                   fontWeight:
-                      hasTitle ? FontWeight.w600 : FontWeight.w400,
+                      hasTitle ? FontWeight.w700 : FontWeight.w400,
                   color: hasTitle
                       ? Colors.black
                       : Colors.grey.withValues(alpha: 0.5),
                   height: 1.0,
-                  fontFamily: 'Hiragino Sans',
+                  fontFamily: 'PingFang JP',
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -185,7 +185,7 @@ class MemoCard extends ConsumerWidget {
                   style: TextStyle(
                     fontSize: _titleFont,
                     fontWeight:
-                        hasTitle ? FontWeight.w600 : FontWeight.w400,
+                        hasTitle ? FontWeight.w700 : FontWeight.w400,
                     color: hasTitle
                         ? Colors.black
                         : Colors.grey.withValues(alpha: 0.5),
@@ -202,6 +202,7 @@ class MemoCard extends ConsumerWidget {
                         displayBody,
                         style: TextStyle(
                           fontSize: _bodyFont,
+                          fontWeight: FontWeight.w500,
                           color: Colors.grey[600],
                           height: 1.4,
                         ),
@@ -278,7 +279,7 @@ class MemoCard extends ConsumerWidget {
                         style: const TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w600,
-                          fontFamily: 'Hiragino Sans',
+                          fontFamily: 'PingFang JP',
                           color: Colors.black,
                           height: 1.0,
                         ),
