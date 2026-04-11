@@ -1,69 +1,70 @@
 # 引き継ぎメモ
 
 ## 現在の状況
-- セッション#10完了: 最大化レイアウト・台形タブ・フォント統一・シェブロン引き上げ・タグ操作改善
-- ブランチ `feature/todo` を作成済み（次セッションでToDo機能実装予定）
+- セッション#11完了: フォルダ最大化ブラッシュアップ + ToDo一覧/詳細画面の原型実装
+- ブランチ: `feature/todo`
 
-## 今回（セッション#10）完了したこと
+## 今回（セッション#11）完了したこと
 
-### 最大化レイアウト改修
-- 入力欄最大化: Expandedから95%高さに変更、戻る矢印+確定ボタン表示
-- フォルダ引き上げ: シェブロン▲で全画面化、▼で入力欄最大化
-- フォルダ全画面からメモタップ→アニメなしで入力欄最大化（擬似全画面表示）
-- 戻るボタン→アニメなしでフォルダ全画面に復帰
-- 全レイアウト遷移にAnimatedContainer 180msアニメーション
-- シェブロンをCustomPaint化（太さ3.5pt、角度120度、角丸先端）
+### フォルダ最大化のブラッシュアップ
+- 最大化中も検索バーを残す（+ボタンは入力欄最大化遷移へ）
+- 最大化時のグリッド: カードサイズはそのままに行数だけ動的に増加
+- グリッド選択肢ラベルも最大化時は動的に「cols×N」表示（例: 2×5 → 2×9）
+- 機能バー中央シェブロンのタップ判定を 56×44pt に拡大
+- 検索結果セクションヘッダー（親タグ+件数）を本家準拠サイズに調整
 
-### ルーレット台形タブ
-- 閉じ時: 台形タブ（タグ欄40ptに合わせた角丸台形、ベジェ曲線で自然なカーブ）
-- 開き時: 従来の四角タブ（hit test制約のため）
-- 台形先端の角丸: arcTo→quadraticBezierToで膨らまない自然な丸み
-- ルーレット位置: top:0（ヘッダー上端）、bottom:フッター上端
-- 円弧の上下端がトレーに完全に刺さるよう+4pxマージン追加
-- ルーレット外タップで閉じる、台形タブのタップ開閉
+### ToDo一覧画面 (todo_lists_screen.dart)
+- 緑「TODO」台形タブ + 緑色全画面背景（白背景＋上部ツールバー）
+- リッチ新規作成ダイアログ（アイコン+タイトル+説明+TextField+作成ボタン）
+- 簡易リスト一覧（タップ可能な白カード、しおりアイコン+タイトル）
+- 空状態UI（アイコン+「ToDoリストはまだありません」+「リストを作成」白ボタン）
+- 遷移アニメ無効化（即時表示）
 
-### タグ操作修正
-- タグなし選択: 親タグ全外し+子タグも外す動作追加
-- 親タグ変更時: 子タグもDBから自動外し
-- 子ルーレット: 親タグ変更時にアニメーション付きで「子タグなし」にリセット
-- タグ履歴: ルーレット閉じ時に自動記録、履歴ボタンで一覧表示、タップで適用
+### ToDo詳細画面 (todo_list_screen.dart)
+- ヘッダー: 戻るボタン（角丸背景）+ 中央「ToDo リスト」タイトル
+- タイトル行: しおりアイコン+タイトル+「タグなし」ピル
+- タイトル下: 「○/○ 完了」進捗テキスト
+- 右上: 円グラフ（パーセント表示）+「✓リセット」ボタン
+- 仕切り線: タイトル下/項目間（黒0.08）
+- 項目行: systemGreen 10% 帯、左右16ptマージン、チェックボックス40pt
+- チェックボックス: iOS systemGreen (#34C759)
+- テキスト: 18pt w700 PingFang JP
+- 項目編集: タップでインライン入力、空のまま確定で削除
+- **連続入力**: Enterで次の行を即作成して入力継続。空のままEnterで終了
+- +ボタン: アイコン26pt（systemGreen 50%）+ テキスト14pt w600 (60%)
 
-### フォント・UI統一
-- アプリ全体のデフォルトフォントをPingFang JPに設定
-- タイトルw700、本文w500に統一（入力欄・メモカード両方）
-- メモカードのHiragino Sans→PingFang JPに変更
-- 設定アイコン: gear_big 26pt、黒色
-- メモ追加/設定ボタン: 青→黒に変更
+### TextMenuDismisserヘルパー (lib/utils/text_menu_dismisser.dart)
+- iOSのコピー/ペーストポップアップが消えない問題を全TextFieldで対策
+- 全10箇所のTextFieldに `onTap: TextMenuDismisser.wrap(...)` + `contextMenuBuilder: TextMenuDismisser.builder` を適用
+- メモリに「新規TextFieldは必ず付ける」ルールを記録
 
-### ヘッダーUI改善
-- タグ欄: 可変幅（Container alignment問題修正）、最大幅40%制限
-- タグバッジ: フォント縮小（親11pt、子10pt）、パディング縮小、省略対応
-- タイトル×ボタン: xmark_circle_fill、非フォーカス時はTextで「…」省略表示
-- タグ×ボタン: 右に16px余白（ルーレットタブとの衝突回避）
-- 検索欄: プレースホルダーをStackでド真ん中、入力中は左寄せ
+### 連続入力の安定化（重要）
+- 当初: 親State上で _editFocusNode/_editController を使い回し → 行切替時にランダムでフォーカスが入らない
+- 解決: 編集中の TextField を独自 StatefulWidget `_EditingItemField` にラップ
+- 行ごとに新しい State インスタンス → initState で確実にフォーカス取得
+- ValueKey('edit_${item.id}') で行が変わったら必ず作り直される
+- メモリに「連続入力UIは独自StatefulWidget化」ルールを記録
 
 ### バグ修正
-- 新規メモ変換確定でキーボードが引っ込む問題
-- IME変換中の最大化/縮小で下線が残る問題
-- コンテキストメニュー(Select All等)がタップで消えない問題
-- 閲覧中メモを薄オレンジでハイライト（全場面対応）
-- テキスト入力欄の下方向スクロール余白100pt追加
-- 消しゴムダイアログテキストを本家に統一
-
-### ラボ追加
-- フォントウェイトラボ（w100〜w900比較）
-- 設定アイコンラボ（16種類比較）
-- 長タイトル+長タグ名ダミーメモ追加機能
+- 仕切り線と最初の項目の間に隙間ができる問題 → MediaQuery.removePadding(removeTop)
 
 ## 次のアクション
 
-### 次セッション: ToDo機能（feature/todoブランチ）
-1. **ToDoリスト一覧画面**: リストのCRUD、ピン固定、ロック
-2. **ToDoリスト詳細画面**: アイテムの階層構造、チェック、ドラッグ並び替え
-3. **ToDoアイテム**: 期限、メモ、完了状態
-4. **Swift版参照**: TodoListsView.swift, TodoListView.swift, TodoItem.swift, TodoList.swift
+### ToDo機能の続き（feature/todoブランチ）
+1. **階層構造**: 子アイテムの追加・展開/折りたたみ（最大5階層、Swift版 depth 0〜4）
+2. **ドラッグ並び替え**: 同じ親内のみ移動可（Swift版は List.onMove）
+3. **メモ機能**: 各項目に補足メモ（1行プレビュー＋タップ展開）
+4. **タグ機能**: ToDoリスト・項目にタグ付け
+5. **削除モード**: スワイプ削除、選択削除モード（親選択で子孫連鎖）
+6. **詳細サマリ**: 一覧画面のカードに進捗ドーナツ・ルートアイテムプレビュー追加
+7. **長押しメニュー**: 一覧でピン固定/ロック/削除/トップに移動
 
-### その他残タスク
+### キーボード関連の既知の問題
+- 連続追加時、キーボードが一瞬閉じて開き直すジッタがまだ残る（Swift版でも完全には解決できなかった）
+- `resizeToAvoidBottomInset: false` を試したが副作用あり、現状は付けていない
+- ListView下部余白200ptで多少緩和。scrollPadding 100pt で +ボタンも見える位置に
+
+### その他残タスク（メモ機能側）
 - URL自動検出リンク（閲覧モードのみ、MD対応後）
 - タグ削除時のロック中メモ自動移動通知
 - 特殊タブ色の永続化
@@ -73,22 +74,21 @@
 - **ビルド回避策**: `/tmp/memolette-run` に rsync コピーしてビルド (Google Drive 上だと codesign エラー)
 - **シミュレータ**: Flutter版 `29B0ACCA-D4C6-4A55-BD2F-CDB13CF5917C`
 - **すりガラス標準値**: blur sigma 12, 白 alpha 0.65
-- **AnimatedContainerオーバーフロー**: デバッグモード限定の赤い帯。clipBehavior: Clip.hardEdgeで視覚的に隠すが、RenderFlexエラーは残る。リリースビルドでは出ない
-- **台形タブhit test**: 展開時はルーレット本体のPositionedがhit testを食うため、台形タブの下半分が反応しない制約あり。閉じ時は別途GestureDetectorで対応済み
+- **AnimatedContainerオーバーフロー**: デバッグモード限定の赤い帯。リリースビルドでは出ない
+- **TextField新規追加**: 必ず `TextMenuDismisser` を使うこと（メモリ参照）
+- **連続入力UI**: 独自 StatefulWidget で行を分離（メモリ参照）
 
 ## ファイル構成（追加・変更分）
 ```
 lib/
-  main.dart                     — fontFamily: PingFang JP追加
   screens/
-    home_screen.dart             — 最大化/引き上げ/アニメーション/シェブロン/検索欄/タグ履歴UI
-    settings_screen.dart         — ラボ追加、ダミーデータ追加
-    font_weight_lab_screen.dart  — 新規: フォントウェイトラボ
-    settings_icon_lab_screen.dart — 新規: 設定アイコンラボ
+    home_screen.dart             — 最大化時検索バー残し、動的グリッド、シェブロンタップ判定拡大、検索結果ヘッダー
+    todo_lists_screen.dart       — 全面書き換え: 緑TODOタブ、新規作成リッチダイアログ、リスト一覧
+    todo_list_screen.dart        — 全面書き換え: タイトル/円グラフ/項目CRUD/連続入力 + _EditingItemField
+    quick_sort_screen.dart       — TextMenuDismisser適用
   widgets/
-    memo_card.dart               — PingFang JP統一、w700/w500、ハイライト対応
-    memo_input_area.dart         — 台形タブ、タグ操作修正、ヘッダーUI改善、バグ修正多数
-    tag_dial_view.dart           — 子ルーレットアニメリセット、円弧+4px
-  db/
-    database.dart                — getRecentTagHistory追加
+    memo_input_area.dart         — TextMenuDismisser適用（既存ロジックを置換）
+    new_tag_sheet.dart           — TextMenuDismisser適用
+  utils/
+    text_menu_dismisser.dart     — 新規: TextField用ヘルパー
 ```

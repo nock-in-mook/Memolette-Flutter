@@ -28,10 +28,8 @@ class TodoListScreen extends ConsumerStatefulWidget {
 }
 
 class _TodoListScreenState extends ConsumerState<TodoListScreen> {
-  // 編集中アイテム
+  // 編集中アイテム（実体は _EditingItemField が担当）
   String? _editingItemId;
-  final TextEditingController _editController = TextEditingController();
-  final FocusNode _editFocusNode = FocusNode();
 
   // タイトル編集
   bool _isEditingTitle = false;
@@ -40,8 +38,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
 
   @override
   void dispose() {
-    _editController.dispose();
-    _editFocusNode.dispose();
     _titleController.dispose();
     _titleFocusNode.dispose();
     super.dispose();
@@ -67,9 +63,9 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   // ========================================
   // CRUD
   // ========================================
+  /// 新しい空行を作成して編集状態に入る
   Future<void> _createItem() async {
     final db = ref.read(databaseProvider);
-    // 既存件数を取得して sortOrder を末尾に
     final existing = await (db.select(db.todoItems)
           ..where((t) => t.listId.equals(widget.listId) & t.parentId.isNull()))
         .get();
@@ -80,31 +76,40 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           title: const Value(''),
           sortOrder: Value(existing.length),
         ));
-    setState(() {
-      _editingItemId = id;
-      _editController.text = '';
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _editFocusNode.requestFocus();
-    });
+    if (!mounted) return;
+    setState(() => _editingItemId = id);
+    // _EditingItemField の initState で自動的にフォーカスが入る
   }
 
-  Future<void> _commitEdit() async {
-    final id = _editingItemId;
-    if (id == null) return;
-    final text = _editController.text.trim();
-    final db = ref.read(databaseProvider);
-    if (text.isEmpty) {
-      // 空のまま確定 → 削除
-      await (db.delete(db.todoItems)..where((t) => t.id.equals(id))).go();
-    } else {
-      await (db.update(db.todoItems)..where((t) => t.id.equals(id)))
-          .write(TodoItemsCompanion(
-        title: Value(text),
-        updatedAt: Value(DateTime.now()),
-      ));
+  /// 編集中の項目を保存（_EditingItemField から呼ばれる）
+  /// chainNext=true（Enter押下時）かつ非空なら次の行を作って連続入力
+  bool _isCommitting = false;
+  Future<void> _commitEditWithText(String text, {bool chainNext = false}) async {
+    if (_isCommitting) return;
+    _isCommitting = true;
+    try {
+      final id = _editingItemId;
+      if (id == null) return;
+      final trimmed = text.trim();
+      final db = ref.read(databaseProvider);
+      final wasEmpty = trimmed.isEmpty;
+      if (wasEmpty) {
+        await (db.delete(db.todoItems)..where((t) => t.id.equals(id))).go();
+      } else {
+        await (db.update(db.todoItems)..where((t) => t.id.equals(id)))
+            .write(TodoItemsCompanion(
+          title: Value(trimmed),
+          updatedAt: Value(DateTime.now()),
+        ));
+      }
+      if (!mounted) return;
+      setState(() => _editingItemId = null);
+      if (chainNext && !wasEmpty) {
+        await _createItem();
+      }
+    } finally {
+      _isCommitting = false;
     }
-    setState(() => _editingItemId = null);
   }
 
   Future<void> _toggleDone(TodoItem item) async {
@@ -461,8 +466,12 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         final isEmpty = items.isEmpty;
         // アイテム行は左右フルブリード（仕切り線と緑枠の端を一致させる）。
         // 上下padding0、項目間の区切りは透明な1pxスペースで表現
-        return ListView.builder(
-          padding: const EdgeInsets.only(bottom: 80),
+        // 下部余白を大きく取り、連続追加でリストが上下動するのを少しでも軽減
+        return MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          child: ListView.builder(
+          padding: const EdgeInsets.only(bottom: 200),
           itemCount: items.length + 1, // 末尾に+ボタン
           itemBuilder: (context, index) {
             if (index == items.length) {
@@ -473,6 +482,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
             }
             return _buildItemRow(items[index]);
           },
+          ),
         );
       },
     );
@@ -520,34 +530,17 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           // タイトル or 入力欄
           Expanded(
             child: isEditing
-                ? TextField(
-                    controller: _editController,
-                    focusNode: _editFocusNode,
-                    autofocus: true,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontFamily: 'Hiragino Sans',
-                      color: Colors.black,
-                    ),
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    onTap: TextMenuDismisser.wrap(null),
-                    contextMenuBuilder: TextMenuDismisser.builder,
-                    onSubmitted: (_) => _commitEdit(),
-                    onTapOutside: (_) => _commitEdit(),
+                ? _EditingItemField(
+                    // ValueKey で行が変わったら StatefulWidget も新規になる →
+                    // initState が必ず走り、新しい FocusNode が確実にフォーカスを取る
+                    key: ValueKey('edit_${item.id}'),
+                    initialText: item.title,
+                    onCommit: (text) => _commitEditWithText(text),
+                    onCommitChain: (text) => _commitEditWithText(text, chainNext: true),
                   )
                 : GestureDetector(
                     onTap: () {
-                      setState(() {
-                        _editingItemId = item.id;
-                        _editController.text = item.title;
-                      });
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        _editFocusNode.requestFocus();
-                      });
+                      setState(() => _editingItemId = item.id);
                     },
                     behavior: HitTestBehavior.opaque,
                     child: Text(
@@ -572,28 +565,117 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   }
 
   Widget _buildAddButton({required bool emptyState}) {
+    // 本家準拠: アイコンは22pt+34x34フレーム、色は systemGreen at 0.5/0.6
+    const Color sysGreen = Color(0xFF34C759);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       child: GestureDetector(
         onTap: _createItem,
         behavior: HitTestBehavior.opaque,
         child: Row(
           children: [
-            Icon(CupertinoIcons.add_circled_solid,
-                size: 22, color: _todoTabColor),
+            SizedBox(
+              width: 34,
+              height: 34,
+              child: Center(
+                child: Icon(
+                  CupertinoIcons.add_circled_solid,
+                  size: 26,
+                  color: sysGreen.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
             const SizedBox(width: 8),
             Text(
               emptyState ? '最初の項目を追加しましょう' : '項目を追加',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 fontFamily: 'Hiragino Sans',
-                color: _todoTabColor,
+                color: sysGreen.withValues(alpha: 0.6),
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 編集中の単一行 TextField を独自 StatefulWidget で持つ。
+/// 行ごとに新しいインスタンスが生成され、initState で自身の FocusNode に
+/// 確実にフォーカスを取らせるため、連続追加でもタイミング問題が起きない。
+class _EditingItemField extends StatefulWidget {
+  final String initialText;
+  final void Function(String text) onCommit;
+  final void Function(String text) onCommitChain;
+
+  const _EditingItemField({
+    super.key,
+    required this.initialText,
+    required this.onCommit,
+    required this.onCommitChain,
+  });
+
+  @override
+  State<_EditingItemField> createState() => _EditingItemFieldState();
+}
+
+class _EditingItemFieldState extends State<_EditingItemField> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  bool _committed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialText);
+    _focusNode = FocusNode();
+    // ウィジェットがマウントされた次のフレームでフォーカス
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _doCommit({required bool chain}) {
+    if (_committed) return;
+    _committed = true;
+    if (chain) {
+      widget.onCommitChain(_controller.text);
+    } else {
+      widget.onCommit(_controller.text);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _controller,
+      focusNode: _focusNode,
+      style: const TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        fontFamily: 'Hiragino Sans',
+        color: Colors.black87,
+      ),
+      decoration: const InputDecoration(
+        isDense: true,
+        border: InputBorder.none,
+        contentPadding: EdgeInsets.zero,
+      ),
+      onTap: TextMenuDismisser.wrap(null),
+      contextMenuBuilder: TextMenuDismisser.builder,
+      textInputAction: TextInputAction.next,
+      scrollPadding: const EdgeInsets.only(bottom: 100),
+      onSubmitted: (_) => _doCommit(chain: true),
+      onTapOutside: (_) => _doCommit(chain: false),
     );
   }
 }
