@@ -241,6 +241,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   bool get _isSearchActive => _searchQuery.isNotEmpty;
+  // 最後にタップしたメモのID（薄水色ハイライト用）
+  String? _highlightedMemoId;
 
   // 他の操作 (タブ切替/メモを開く/新規作成/etc) のときに自動でクリア
   void _clearSearchIfActive() {
@@ -684,6 +686,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         query: _searchQuery,
                         onTapMemo: _openMemo,
                         onLongPressMemo: (m) => _showMemoActions(m),
+                        highlightedMemoId: _highlightedMemoId,
                       )
                     else if (_isInFolderSearch)
                       _FolderSearchView(
@@ -694,6 +697,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                             setState(() => _folderSearchQuery = v.trim()),
                         onTapMemo: _openMemo,
                         onLongPressMemo: (m) => _showMemoActions(m),
+                        highlightedMemoId: _highlightedMemoId,
                       )
                     else
                       // 左右スワイプでタブ切替（選択モード/並び替え中は無効）
@@ -1697,6 +1701,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         selectMode: _isSelectMode,
         selectedIds: _selectedMemoIds,
         onToggleSelect: _toggleMemoSelection,
+        editingMemoId: _editingMemoId,
       );
     }
     if (_selectedTabKey == kAllTabKey) {
@@ -1708,6 +1713,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         selectMode: _isSelectMode,
         selectedIds: _selectedMemoIds,
         onToggleSelect: _toggleMemoSelection,
+        editingMemoId: _editingMemoId,
       );
     } else if (_selectedTabKey == kUntaggedTabKey) {
       return _MemoGridView(
@@ -1718,6 +1724,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         selectMode: _isSelectMode,
         selectedIds: _selectedMemoIds,
         onToggleSelect: _toggleMemoSelection,
+        editingMemoId: _editingMemoId,
       );
     } else {
       final parentId = _currentParentTagId(parentTags);
@@ -1732,6 +1739,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         selectMode: _isSelectMode,
         selectedIds: _selectedMemoIds,
         onToggleSelect: _toggleMemoSelection,
+        editingMemoId: _editingMemoId,
         wrapBuilder: (memo, card) => _wrapMemoInContextMenu(memo, card),
       );
     }
@@ -2091,8 +2099,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _openMemo(Memo memo) {
     // 閲覧回数を増やす (よく見る/最近見たに反映)
     ref.read(databaseProvider).incrementViewCount(memo.id);
-    _clearSearchIfActive();
-    setState(() => _editingMemoId = memo.id);
+    // 検索中は検索結果を維持、それ以外は検索クリア
+    if (!_isSearchActive) _clearSearchIfActive();
+    setState(() {
+      _editingMemoId = memo.id;
+      _highlightedMemoId = memo.id;
+    });
   }
 
   /// 「すべて」「タグなし」「よく見る」タブ長押し: 並び替え + 色変更だけ
@@ -2620,6 +2632,7 @@ class _FolderSearchView extends ConsumerWidget {
   final ValueChanged<String> onQueryChanged;
   final void Function(Memo) onTapMemo;
   final void Function(Memo) onLongPressMemo;
+  final String? highlightedMemoId;
 
   const _FolderSearchView({
     required this.parentTagId,
@@ -2628,6 +2641,7 @@ class _FolderSearchView extends ConsumerWidget {
     required this.onQueryChanged,
     required this.onTapMemo,
     required this.onLongPressMemo,
+    this.highlightedMemoId,
   });
 
   @override
@@ -2769,6 +2783,7 @@ class _FolderSearchView extends ConsumerWidget {
                                   query: query,
                                   onTap: () => onTapMemo(hits[i]),
                                   onLongPress: () => onLongPressMemo(hits[i]),
+                                  isHighlighted: hits[i].id == highlightedMemoId,
                                 ),
                               ),
                             ),
@@ -2784,6 +2799,7 @@ class _FolderSearchView extends ConsumerWidget {
                                             onTapMemo(hits[i + 1]),
                                         onLongPress: () =>
                                             onLongPressMemo(hits[i + 1]),
+                                        isHighlighted: hits[i + 1].id == highlightedMemoId,
                                       ),
                                     )
                                   : const SizedBox.shrink(),
@@ -2812,11 +2828,13 @@ class _SearchResultsView extends ConsumerWidget {
   final String query;
   final void Function(Memo) onTapMemo;
   final void Function(Memo) onLongPressMemo;
+  final String? highlightedMemoId;
 
   const _SearchResultsView({
     required this.query,
     required this.onTapMemo,
     required this.onLongPressMemo,
+    this.highlightedMemoId,
   });
 
   @override
@@ -2854,6 +2872,7 @@ class _SearchResultsView extends ConsumerWidget {
           parentTags: parentTags,
           onTapMemo: onTapMemo,
           onLongPressMemo: onLongPressMemo,
+          highlightedMemoId: highlightedMemoId,
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -2868,6 +2887,7 @@ class _SearchSections extends ConsumerWidget {
   final List<Tag> parentTags;
   final void Function(Memo) onTapMemo;
   final void Function(Memo) onLongPressMemo;
+  final String? highlightedMemoId;
 
   const _SearchSections({
     required this.query,
@@ -2875,6 +2895,7 @@ class _SearchSections extends ConsumerWidget {
     required this.parentTags,
     required this.onTapMemo,
     required this.onLongPressMemo,
+    this.highlightedMemoId,
   });
 
   @override
@@ -3013,6 +3034,7 @@ class _SearchSections extends ConsumerWidget {
                                   onTap: () => onTapMemo(s.memos[i]),
                                   onLongPress: () =>
                                       onLongPressMemo(s.memos[i]),
+                                  isHighlighted: s.memos[i].id == highlightedMemoId,
                                 ),
                               ),
                             ),
@@ -3028,6 +3050,7 @@ class _SearchSections extends ConsumerWidget {
                                             onTapMemo(s.memos[i + 1]),
                                         onLongPress: () =>
                                             onLongPressMemo(s.memos[i + 1]),
+                                        isHighlighted: s.memos[i + 1].id == highlightedMemoId,
                                       ),
                                     )
                                   : const SizedBox.shrink(),
@@ -3062,12 +3085,14 @@ class _SearchMemoCard extends StatelessWidget {
   final String query;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+  final bool isHighlighted;
 
   const _SearchMemoCard({
     required this.memo,
     required this.query,
     required this.onTap,
     required this.onLongPress,
+    this.isHighlighted = false,
   });
 
   // 本文からマッチ行を中心としたスニペットを抽出（最大3行）
@@ -3142,7 +3167,9 @@ class _SearchMemoCard extends StatelessWidget {
       child: Container(
         clipBehavior: Clip.hardEdge,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isHighlighted
+              ? const Color(0xFFFFF3E0) // 薄いオレンジ
+              : Colors.white,
           borderRadius: BorderRadius.circular(10),
           boxShadow: [
             BoxShadow(
@@ -3184,6 +3211,7 @@ class _FrequentTabContent extends ConsumerWidget {
   final bool selectMode;
   final Set<String> selectedIds;
   final void Function(Memo)? onToggleSelect;
+  final String? editingMemoId;
 
   const _FrequentTabContent({
     required this.gridOption,
@@ -3193,6 +3221,7 @@ class _FrequentTabContent extends ConsumerWidget {
     this.selectMode = false,
     this.selectedIds = const <String>{},
     this.onToggleSelect,
+    this.editingMemoId,
   });
 
   // 本家 frequentColumnColors: rgb をそれぞれ × 0.92 した少し暗い色
@@ -3221,6 +3250,7 @@ class _FrequentTabContent extends ConsumerWidget {
       memo: memo,
       onTap: () => onTap(memo),
       gridSize: gridOption.cardGridSize,
+      isHighlighted: memo.id == editingMemoId,
     );
     if (selectMode) {
       final isSelected = selectedIds.contains(memo.id);
@@ -3388,6 +3418,8 @@ class _MemoGridView extends StatelessWidget {
   final Set<String> selectedIds;
   final void Function(Memo)? onToggleSelect;
 
+  final String? editingMemoId;
+
   const _MemoGridView({
     required this.stream,
     required this.gridSize,
@@ -3397,6 +3429,7 @@ class _MemoGridView extends StatelessWidget {
     this.selectMode = false,
     this.selectedIds = const <String>{},
     this.onToggleSelect,
+    this.editingMemoId,
   });
 
   Widget _buildCard(Memo memo) {
@@ -3438,6 +3471,7 @@ class _MemoGridView extends StatelessWidget {
                     onTap: () {},
                     parentTagId: parentTagId,
                     gridSize: gridSize,
+                    isHighlighted: memo.id == editingMemoId,
                   ),
                 ),
               ),
@@ -3453,6 +3487,7 @@ class _MemoGridView extends StatelessWidget {
       onTap: () => onTap(memo),
       parentTagId: parentTagId,
       gridSize: gridSize,
+      isHighlighted: memo.id == editingMemoId,
     );
     final wrapped = wrapBuilder != null ? wrapBuilder!(memo, card) : card;
     return KeyedSubtree(key: ValueKey('cell_${memo.id}'), child: wrapped);

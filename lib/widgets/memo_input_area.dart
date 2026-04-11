@@ -385,8 +385,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     final ok = await showCupertinoDialog<bool>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('本文を全て消します'),
-        content: const Text('本文をクリアします。タイトルとタグはそのままです。'),
+        title: const Text('本文をクリアします。よろしいですか？'),
+        content: const Text('タイトルとタグはそのまま残ります。'),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(ctx, false),
@@ -1406,6 +1406,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           expands: true,
           textAlignVertical: TextAlignVertical.top,
           keyboardType: TextInputType.multiline,
+          // 下に余白を確保して編集しやすくする（5行分≒100pt）
+          scrollPadding: const EdgeInsets.only(bottom: 100),
         ),
       ),
     );

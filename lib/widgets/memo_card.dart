@@ -14,6 +14,7 @@ class MemoCard extends ConsumerWidget {
   final VoidCallback onTap;
   final String? parentTagId;
   final GridSizeOption gridSize;
+  final bool isHighlighted;
 
   const MemoCard({
     super.key,
@@ -21,6 +22,7 @@ class MemoCard extends ConsumerWidget {
     required this.onTap,
     this.parentTagId,
     this.gridSize = GridSizeOption.grid2x3,
+    this.isHighlighted = false,
   });
 
   // 本家準拠: グリッドサイズに応じたフォントサイズ・行数・パディング
@@ -83,7 +85,7 @@ class MemoCard extends ConsumerWidget {
       child: Container(
         clipBehavior: Clip.hardEdge,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isHighlighted ? const Color(0xFFFFF3E0) : Colors.white,
           borderRadius: BorderRadius.circular(4),
           boxShadow: [
             BoxShadow(
@@ -162,7 +164,7 @@ class MemoCard extends ConsumerWidget {
     final cardBody = Container(
       clipBehavior: Clip.hardEdge,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isHighlighted ? const Color(0xFFFFF3E0) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
