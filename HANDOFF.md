@@ -1,124 +1,94 @@
 # 引き継ぎメモ
 
 ## 現在の状況
-- セッション#8完了: フォルダ周り大幅強化 + 検索 + 入力欄ブラッシュアップ
-- MemoEditScreen削除 → メモ閲覧/編集を入力エリアに統合 (本家準拠)
+- セッション#10完了: 最大化レイアウト・台形タブ・フォント統一・シェブロン引き上げ・タグ操作改善
+- ブランチ `feature/todo` を作成済み（次セッションでToDo機能実装予定）
 
-## 今回（セッション#8）完了したこと
+## 今回（セッション#10）完了したこと
 
-### 子タグドロワー
-- Unicode三角ハンドル (◀/▶) + Spring物理アニメ
-- ドロワー展開でメモグリッド/件数バーが下にスライド (AnimatedBuilder同期)
-- フォルダ切替時にドロワー自動収納
+### 最大化レイアウト改修
+- 入力欄最大化: Expandedから95%高さに変更、戻る矢印+確定ボタン表示
+- フォルダ引き上げ: シェブロン▲で全画面化、▼で入力欄最大化
+- フォルダ全画面からメモタップ→アニメなしで入力欄最大化（擬似全画面表示）
+- 戻るボタン→アニメなしでフォルダ全画面に復帰
+- 全レイアウト遷移にAnimatedContainer 180msアニメーション
+- シェブロンをCustomPaint化（太さ3.5pt、角度120度、角丸先端）
 
-### 件数バー
-- 子タグフィルター中「親-子」カプセルバッジ表示 (darkenedColor)
+### ルーレット台形タブ
+- 閉じ時: 台形タブ（タグ欄40ptに合わせた角丸台形、ベジェ曲線で自然なカーブ）
+- 開き時: 従来の四角タブ（hit test制約のため）
+- 台形先端の角丸: arcTo→quadraticBezierToで膨らまない自然な丸み
+- ルーレット位置: top:0（ヘッダー上端）、bottom:フッター上端
+- 円弧の上下端がトレーに完全に刺さるよう+4pxマージン追加
+- ルーレット外タップで閉じる、台形タブのタップ開閉
 
-### タグ編集UI統一
-- NewTagSheet に編集モード/特殊タブ色変更モードを統合
-- TagEditDialog 削除、_ColorPickerDialog 削除
+### タグ操作修正
+- タグなし選択: 親タグ全外し+子タグも外す動作追加
+- 親タグ変更時: 子タグもDBから自動外し
+- 子ルーレット: 親タグ変更時にアニメーション付きで「子タグなし」にリセット
+- タグ履歴: ルーレット閉じ時に自動記録、履歴ボタンで一覧表示、タップで適用
 
-### メモカード長押しメニュー
-- CupertinoContextMenu → レイアウトバグで断念 → ボトムシート+プレビュー方式
-- 本家準拠5項目: トップに移動/固定/コピー/ロック/削除
-- ロック中は「削除ロック中」disabled
+### フォント・UI統一
+- アプリ全体のデフォルトフォントをPingFang JPに設定
+- タイトルw700、本文w500に統一（入力欄・メモカード両方）
+- メモカードのHiragino Sans→PingFang JPに変更
+- 設定アイコン: gear_big 26pt、黒色
+- メモ追加/設定ボタン: 青→黒に変更
 
-### 複数選択モード (削除/トップ移動)
-- チェックマークUI (Row配置, crossAxisAlignment: stretch)
-- ガイドテキスト + 取消/実行ボタン (中央配置, 削除は赤背景白文字)
-- スクロール余白120px
+### ヘッダーUI改善
+- タグ欄: 可変幅（Container alignment問題修正）、最大幅40%制限
+- タグバッジ: フォント縮小（親11pt、子10pt）、パディング縮小、省略対応
+- タイトル×ボタン: xmark_circle_fill、非フォーカス時はTextで「…」省略表示
+- タグ×ボタン: 右に16px余白（ルーレットタブとの衝突回避）
+- 検索欄: プレースホルダーをStackでド真ん中、入力中は左寄せ
 
-### メモカード表示
-- Pin/Lock → 右上overlay (orange 0.6)
-- 子タグバッジ → 右下overlay (StackFit対応)
-- グリッドサイズ別 titleFont/bodyFont/bodyLines/cardPadding
-- タイトルのみモード (HStack 1行)
-- 本文 ellipsis (fade廃止)
+### バグ修正
+- 新規メモ変換確定でキーボードが引っ込む問題
+- IME変換中の最大化/縮小で下線が残る問題
+- コンテキストメニュー(Select All等)がタップで消えない問題
+- 閲覧中メモを薄オレンジでハイライト（全場面対応）
+- テキスト入力欄の下方向スクロール余白100pt追加
+- 消しゴムダイアログテキストを本家に統一
 
-### よく見るタブ
-- 2列レイアウト (よく見る/最近見た)
-- 専用 FrequentGridOption (2×5/2×3/2×可変/タイトルのみ)
-- カード高さ自動計算
-- ボトムバー: トップ移動/メモ作成 非表示
-- 長押しメニュー: トップに移動/固定 非表示
-- タブ長押し: 並び替え+色変更のみ
-
-### グリッドサイズ変更
-- 全文モード廃止 → 1×可変 (本文max15行, ListView lazy build)
-- よく見る用 2×可変
-
-### 検索
-- 全フォルダ横断検索: TextField化した検索バー + タグ別セクション + ハイライト
-- 全/半角・大小文字正規化 (normalizeForSearch)
-- フォルダ内検索: 虫眼鏡ボタン → 専用モード → 現フォルダのメモのみ検索
-- 検索モード閉じるボタン (タブ右端)
-- 検索自動クリア (メモ開く/新規作成/メモ作成時)
-
-### スワイプタブ切替
-- メモグリッド左右フリック → タブ切替 (両端ループ)
-- AnimatedSwitcher でスライドインアニメ (フリック時のみ, タップは即時)
-
-### 入力エリア
-- Undo/Redo: スナップショット方式 (本文+タイトル+タグ), max50段
-- 本文5万字制限 + SnackBar通知
-- 確定=フォーカス外すだけ / メモを閉じる=クリア (本家準拠)
-- 閲覧モード: カードタップでreadOnly表示, 本文タップで編集モード
-- MemoEditScreen削除, 入力エリアに統合
-- 最大化/縮小ボタン + キーボード上フロート縮小ボタン
-- 消しゴムボタン: CustomPainter線画 (スリーブ+ゴム先端)
-- PingFang JP + 行間1.25
-- 新規作成ボタン → 入力欄フォーカス (DB即作成しない)
-
-### その他
-- メモソート: isPinned → manualSortOrder → createdAt
-- DB: moveMemoToTop, moveMemosToTop, deleteMemos, countMemos, searchMemos
-- メモ全件数1万件上限
-- タブ重なり: _ZOrderedRow overlap パラメータ (現在0)
-- 設定: ダミーデータ各種 (子タグもりもり/Claude検索/長文)
+### ラボ追加
+- フォントウェイトラボ（w100〜w900比較）
+- 設定アイコンラボ（16種類比較）
+- 長タイトル+長タグ名ダミーメモ追加機能
 
 ## 次のアクション
 
-### 次セッションの優先候補
-1. **確定ボタン → 閲覧モード復帰**: 現在は確定=フォーカス外すだけだが「閲覧モードに戻す」がSwift準拠
-2. **文字数カウント表示**: showCharCountフラグでフロートバッジ
-3. **入力欄の拡大/縮小のSpringアニメーション**
-4. **MDトグル初回説明ダイアログ**: mdToggleFirstSeen
-5. **マークダウンプレビュー**: プレビューボタンで切替
-6. **メモ詳細画面 (全画面エディタ)**: 最大化ボタンの代替/拡張
+### 次セッション: ToDo機能（feature/todoブランチ）
+1. **ToDoリスト一覧画面**: リストのCRUD、ピン固定、ロック
+2. **ToDoリスト詳細画面**: アイテムの階層構造、チェック、ドラッグ並び替え
+3. **ToDoアイテム**: 期限、メモ、完了状態
+4. **Swift版参照**: TodoListsView.swift, TodoListView.swift, TodoItem.swift, TodoList.swift
 
-### フォルダ周り残タスク
+### その他残タスク
+- URL自動検出リンク（閲覧モードのみ、MD対応後）
 - タグ削除時のロック中メモ自動移動通知
-- 特殊タブ色の永続化 (現在はメモリのみ)
-
-### その他
-- 8. Firebase同期 / 9. iCloud同期 / 多言語対応
-- メモのピン留め/ロック機能の入力エリアからのUI
-- 検索結果モード内の検索バーでの絞り込み
+- 特殊タブ色の永続化
+- Firebase同期 / iCloud同期 / 多言語対応
 
 ## 技術メモ
 - **ビルド回避策**: `/tmp/memolette-run` に rsync コピーしてビルド (Google Drive 上だと codesign エラー)
-- **シミュレータ並べ**:
-  - Swift版（本家）: `021FC865-074D-4979-9556-1F2CEDF0F0F3`
-  - Flutter版: `29B0ACCA-D4C6-4A55-BD2F-CDB13CF5917C`
+- **シミュレータ**: Flutter版 `29B0ACCA-D4C6-4A55-BD2F-CDB13CF5917C`
 - **すりガラス標準値**: blur sigma 12, 白 alpha 0.65
-- **CupertinoContextMenu**: レイアウトバグ (keyboard+小領域で負制約クラッシュ) のため使用中止。ボトムシート+プレビュー方式に代替
-- **検索正規化**: normalizeForSearch() で全角ASCII→半角+小文字化。provider側でDartフィルタ
-- **MemoEditScreen**: 削除済み。メモ閲覧/編集は入力エリアに統合
+- **AnimatedContainerオーバーフロー**: デバッグモード限定の赤い帯。clipBehavior: Clip.hardEdgeで視覚的に隠すが、RenderFlexエラーは残る。リリースビルドでは出ない
+- **台形タブhit test**: 展開時はルーレット本体のPositionedがhit testを食うため、台形タブの下半分が反応しない制約あり。閉じ時は別途GestureDetectorで対応済み
 
 ## ファイル構成（追加・変更分）
 ```
 lib/
+  main.dart                     — fontFamily: PingFang JP追加
   screens/
-    home_screen.dart           — 大改修。検索・スワイプ・選択モード・よく見るタブ等
-    memo_edit_screen.dart      — 削除
-    settings_screen.dart       — ダミーデータ各種追加
+    home_screen.dart             — 最大化/引き上げ/アニメーション/シェブロン/検索欄/タグ履歴UI
+    settings_screen.dart         — ラボ追加、ダミーデータ追加
+    font_weight_lab_screen.dart  — 新規: フォントウェイトラボ
+    settings_icon_lab_screen.dart — 新規: 設定アイコンラボ
   widgets/
-    memo_card.dart             — 子タグバッジ・Pin/Lock overlay・gridSize別フォント
-    memo_input_area.dart       — Undo/Redo・閲覧モード・最大化・消しゴム
-    new_tag_sheet.dart         — 編集/特殊タブ色変更モード統合
-    tag_edit_dialog.dart       — 削除
+    memo_card.dart               — PingFang JP統一、w700/w500、ハイライト対応
+    memo_input_area.dart         — 台形タブ、タグ操作修正、ヘッダーUI改善、バグ修正多数
+    tag_dial_view.dart           — 子ルーレットアニメリセット、円弧+4px
   db/
-    database.dart              — searchMemos, moveMemoToTop, countMemos 等追加
-  providers/
-    database_provider.dart     — normalizeForSearch, searchMemosProvider 等追加
+    database.dart                — getRecentTagHistory追加
 ```
