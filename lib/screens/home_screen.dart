@@ -237,6 +237,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _isInputExpanded = false;
   // フォルダビューの全画面状態（引き上げ）
   bool _isMemoListExpanded = false;
+  // フォルダ全画面からメモを開いた（戻る→フォルダ全画面に復帰）
+  bool _openedFromMemoList = false;
+  // アニメーション無効フラグ（即座に切り替えたい時）
+  bool _suppressAnimation = false;
   // 入力エリアへの GlobalKey（フロート消しゴムから clearBody() を呼ぶ）
   final _inputAreaKey = GlobalKey<MemoInputAreaState>();
   // 検索 (ヘッダの全フォルダ横断検索)
@@ -414,7 +418,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// IMEコミット＋縮小
   void _minimizeWithCommit() {
     _inputAreaKey.currentState?.commitIME();
-    setState(() => _isInputExpanded = false);
+    if (_openedFromMemoList) {
+      // フォルダ全画面からメモを開いていた → アニメなしでフォルダ全画面に戻す
+      _suppressAnimation = true;
+      setState(() {
+        _isInputExpanded = false;
+        _isMemoListExpanded = true;
+        _openedFromMemoList = false;
+        _editingMemoId = null;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _suppressAnimation = false;
+      });
+    } else {
+      setState(() => _isInputExpanded = false);
+    }
   }
 
   // 最大化中にキーボード収納ボタンの左に出るフロート縮小ボタン
@@ -615,7 +633,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           children: [
             // 1. 検索バー / 最大化中はミニバー / フォルダ引き上げ時は非表示
             AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
+              duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
               curve: Curves.easeInOut,
               height: _isMemoListExpanded ? 0 : null,
               clipBehavior: Clip.hardEdge,
@@ -626,7 +644,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
             // 2. メモ入力エリア（高さをアニメーション）
             AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
+              duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
               curve: Curves.easeInOut,
               height: _isMemoListExpanded
                   ? 0
@@ -661,13 +679,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   width: double.infinity,
                   child: Center(
                     child: Icon(CupertinoIcons.chevron_compact_up,
-                        size: 18, color: Colors.grey.withValues(alpha: 0.5)),
+                        size: 24, color: Colors.grey.withValues(alpha: 0.6)),
                   ),
                 ),
               ),
             // 3. 機能バー（アニメーション付きで表示/非表示）
             AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
+              duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
               curve: Curves.easeInOut,
               height: (_isInputExpanded || _isMemoListExpanded) ? 0 : null,
               clipBehavior: Clip.hardEdge,
@@ -676,7 +694,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
             // 4. 親タグタブ（アニメーション付き）
             AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
+              duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
               curve: Curves.easeInOut,
               height: _isInputExpanded ? 0 : null,
               clipBehavior: Clip.hardEdge,
@@ -1059,7 +1077,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Icon(CupertinoIcons.chevron_compact_up,
-                          size: 16, color: Colors.grey.withValues(alpha: 0.5)),
+                          size: 24, color: Colors.grey.withValues(alpha: 0.6)),
                     ),
                   ),
                   // 下シェブロン（入力欄最大化）
@@ -1069,7 +1087,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Icon(CupertinoIcons.chevron_compact_down,
-                          size: 16, color: Colors.grey.withValues(alpha: 0.5)),
+                          size: 24, color: Colors.grey.withValues(alpha: 0.6)),
                     ),
                   ),
                 ],
@@ -1098,7 +1116,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               width: double.infinity,
               child: Center(
                 child: Icon(CupertinoIcons.chevron_compact_down,
-                    size: 20, color: Colors.grey.withValues(alpha: 0.6)),
+                    size: 24, color: Colors.grey.withValues(alpha: 0.6)),
               ),
             ),
           ),
@@ -2206,10 +2224,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     ref.read(databaseProvider).incrementViewCount(memo.id);
     // 検索中は検索結果を維持、それ以外は検索クリア
     if (!_isSearchActive) _clearSearchIfActive();
-    setState(() {
-      _editingMemoId = memo.id;
-      _highlightedMemoId = memo.id;
-    });
+
+    if (_isMemoListExpanded) {
+      // フォルダ全画面からメモを開く → アニメなしで入力欄最大化
+      _suppressAnimation = true;
+      setState(() {
+        _editingMemoId = memo.id;
+        _highlightedMemoId = memo.id;
+        _isMemoListExpanded = false;
+        _isInputExpanded = true;
+        _openedFromMemoList = true;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _suppressAnimation = false;
+      });
+    } else {
+      setState(() {
+        _editingMemoId = memo.id;
+        _highlightedMemoId = memo.id;
+      });
+    }
   }
 
   /// 「すべて」「タグなし」「よく見る」タブ長押し: 並び替え + 色変更だけ
