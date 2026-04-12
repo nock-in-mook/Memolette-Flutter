@@ -543,7 +543,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   }
 
   // ========================================
-  // アイテムリスト（階層対応）
+  // アイテムリスト（階層対応 + ドラッグ並び替え）
   // ========================================
   Widget _buildItemList() {
     return StreamBuilder<List<TodoItem>>(
@@ -554,22 +554,40 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         return MediaQuery.removePadding(
           context: context,
           removeTop: true,
-          child: ListView.builder(
+          child: ReorderableListView.builder(
             padding: const EdgeInsets.only(bottom: 200),
+            buildDefaultDragHandles: true,
+            proxyDecorator: (child, index, animation) {
+              return Material(
+                elevation: 4,
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+                child: child,
+              );
+            },
+            onReorder: (oldIndex, newIndex) =>
+                _onReorder(oldIndex, newIndex, flatRows, allItems),
             itemCount: flatRows.length,
             itemBuilder: (context, index) {
               final row = flatRows[index];
               switch (row.kind) {
                 case _RowKind.item:
-                  return _buildItemRow(row.item!, row.depth, allItems);
+                  return _buildItemRow(
+                    row.item!, row.depth, allItems,
+                    key: ValueKey(row.id),
+                    reorderIndex: index,
+                  );
                 case _RowKind.addButton:
                   final isRootEmpty = row.addButtonParentId == null && allItems.isEmpty;
                   final hasAnyChildren = allItems.any((i) => i.parentId != null);
-                  return _buildAddButton(
-                    parentId: row.addButtonParentId,
-                    depth: row.depth,
-                    emptyState: isRootEmpty,
-                    showGuideText: !hasAnyChildren && row.depth == 1,
+                  return KeyedSubtree(
+                    key: ValueKey(row.id),
+                    child: _buildAddButton(
+                      parentId: row.addButtonParentId,
+                      depth: row.depth,
+                      emptyState: isRootEmpty,
+                      showGuideText: !hasAnyChildren && row.depth == 1,
+                    ),
                   );
               }
             },
@@ -579,7 +597,72 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     );
   }
 
-  Widget _buildItemRow(TodoItem item, int depth, List<TodoItem> allItems) {
+  /// ドラッグ並び替え（同じ親内のみ有効）
+  Future<void> _onReorder(
+    int oldIndex, int newIndex,
+    List<_FlatRow> flatRows, List<TodoItem> allItems,
+  ) async {
+    if (oldIndex < 0 || oldIndex >= flatRows.length) return;
+    final srcRow = flatRows[oldIndex];
+    if (srcRow.kind != _RowKind.item || srcRow.item == null) return;
+
+    final srcItem = srcRow.item!;
+    final parentId = srcItem.parentId;
+
+    // newIndex を ReorderableListView の仕様に合わせて補正
+    if (newIndex > oldIndex) newIndex--;
+
+    if (newIndex < 0 || newIndex >= flatRows.length) return;
+    // 同じ親の兄弟を取得
+    final siblings = allItems
+        .where((i) => i.parentId == parentId)
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+    final srcIdx = siblings.indexWhere((i) => i.id == srcItem.id);
+    if (srcIdx < 0) return;
+
+    // flatRows上のnewIndex → 兄弟内の挿入位置を算出
+    // newIndexの手前までスキャンして、最後に見つけた同じ親の兄弟の直後に挿入
+    int destIdx = 0;
+    for (int i = 0; i <= newIndex && i < flatRows.length; i++) {
+      final r = flatRows[i];
+      if (r.kind == _RowKind.item && r.item != null && r.item!.id != srcItem.id) {
+        if (r.item!.parentId == parentId) {
+          destIdx = siblings.indexWhere((s) => s.id == r.item!.id) + 1;
+        }
+      }
+    }
+    // newIndexが先頭より前なら0
+    if (newIndex == 0) destIdx = 0;
+    // srcIdxを考慮（removeしてからinsertするのでズレ補正）
+    if (srcIdx < destIdx) destIdx--;
+    destIdx = destIdx.clamp(0, siblings.length - 1);
+    if (srcIdx == destIdx) return;
+
+    // リスト上で移動
+    final moved = siblings.removeAt(srcIdx);
+    siblings.insert(destIdx, moved);
+
+    // sortOrder を振り直して保存
+    final db = ref.read(databaseProvider);
+    for (int i = 0; i < siblings.length; i++) {
+      if (siblings[i].sortOrder != i) {
+        await (db.update(db.todoItems)
+              ..where((t) => t.id.equals(siblings[i].id)))
+            .write(TodoItemsCompanion(
+          sortOrder: Value(i),
+          updatedAt: Value(DateTime.now()),
+        ));
+      }
+    }
+  }
+
+  Widget _buildItemRow(
+    TodoItem item, int depth, List<TodoItem> allItems, {
+    Key? key,
+    int? reorderIndex,
+  }) {
     final isEditing = _editingItemId == item.id;
     final hasChild = _hasChildren(item.id, allItems);
     final isExpanded = _expandedItems.contains(item.id);
@@ -591,6 +674,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         : 16 + 4 + (depth - 1) * _indentStep + 2 + 20;
 
     return Stack(
+      key: key,
       children: [
         // 背景色帯（インデント付き）
         Positioned(
@@ -704,6 +788,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                 ),
               ),
             ),
+          // ドラッグハンドル（将来カスタム化予定）
         ],
       ),
       ),
