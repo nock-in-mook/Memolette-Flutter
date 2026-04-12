@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/keyboard_done_bar.dart';
 import '../utils/text_menu_dismisser.dart';
 import 'trapezoid_tab_shape.dart';
 
@@ -187,7 +188,7 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
     // 特殊タブは色変更だけなので常に保存可能
     final canSave = _isSpecial || (_trimmed.isNotEmpty && !duplicate);
 
-    return Column(
+    return KeyboardDoneBar(child: Column(
       children: [
         _buildHeader(canSave: canSave),
         // 仕切り線なし（Swift版同様に余白で区切る）
@@ -210,7 +211,7 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
           ),
         ),
       ],
-    );
+    ));
   }
 
   Widget _buildHeader({required bool canSave}) {

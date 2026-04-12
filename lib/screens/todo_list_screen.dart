@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/keyboard_done_bar.dart';
 import '../utils/text_menu_dismisser.dart';
 
 const _uuid = Uuid();
@@ -200,6 +201,16 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     }
   }
 
+  /// アイテムと全子孫を再帰的に削除
+  Future<void> _deleteItemRecursive(String itemId, List<TodoItem> allItems) async {
+    final db = ref.read(databaseProvider);
+    final children = allItems.where((i) => i.parentId == itemId).toList();
+    for (final child in children) {
+      await _deleteItemRecursive(child.id, allItems);
+    }
+    await (db.delete(db.todoItems)..where((t) => t.id.equals(itemId))).go();
+  }
+
   Future<void> _toggleDone(TodoItem item) async {
     final db = ref.read(databaseProvider);
     await (db.update(db.todoItems)..where((t) => t.id.equals(item.id)))
@@ -252,8 +263,10 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
-        child: Column(
+        child: KeyboardDoneBar(
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildToolbar(),
@@ -265,6 +278,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
             ),
             Expanded(child: _buildItemList()),
           ],
+        ),
         ),
       ),
     );
@@ -673,15 +687,18 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         ? 0
         : 16 + 4 + (depth - 1) * _indentStep + 2 + 20;
 
-    return Stack(
-      key: key,
-      children: [
-        // 背景色帯（インデント付き）
-        Positioned(
-          left: bandLeft,
-          right: 16,
-          top: 0,
-          bottom: 0,
+    return _SwipeDeleteRow(
+      key: key ?? ValueKey(item.id),
+      enabled: !isEditing,
+      onDelete: () => _deleteItemRecursive(item.id, allItems),
+      child: Stack(
+        children: [
+          // 背景色帯（インデント付き）
+          Positioned(
+            left: bandLeft,
+            right: 16,
+            top: 0,
+            bottom: 0,
           child: Container(color: _depthBgColors[depth.clamp(0, _maxDepth)]),
         ),
         // 祖先の縦線（編集中は非表示）
@@ -793,6 +810,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       ),
       ),
       ],
+    ),
     );
   }
 
@@ -1030,4 +1048,123 @@ class _LShapePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_LShapePainter oldDelegate) => color != oldDelegate.color;
+}
+
+/// iOS風スワイプ削除: 左スワイプで赤い「削除」ボタンを露出、タップで削除
+class _SwipeDeleteRow extends StatefulWidget {
+  final Widget child;
+  final bool enabled;
+  final VoidCallback onDelete;
+
+  const _SwipeDeleteRow({
+    super.key,
+    required this.child,
+    required this.enabled,
+    required this.onDelete,
+  });
+
+  @override
+  State<_SwipeDeleteRow> createState() => _SwipeDeleteRowState();
+}
+
+class _SwipeDeleteRowState extends State<_SwipeDeleteRow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  static const double _buttonWidth = 80;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _close() {
+    _controller.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.enabled) return widget.child;
+
+    return GestureDetector(
+      onHorizontalDragUpdate: (details) {
+        final val = _controller.value - details.primaryDelta! / _buttonWidth;
+        _controller.value = val.clamp(0.0, 1.0);
+      },
+      onHorizontalDragEnd: (details) {
+        if (_controller.value > 0.5) {
+          _controller.forward();
+        } else {
+          _controller.reverse();
+        }
+      },
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // 赤い削除ボタン（背面右端）
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: _buttonWidth,
+            child: GestureDetector(
+              onTap: () {
+                _close();
+                widget.onDelete();
+              },
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.only(
+                    topRight: Radius.circular(4),
+                    bottomRight: Radius.circular(4),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(CupertinoIcons.trash, color: Colors.white, size: 16),
+                    SizedBox(width: 4),
+                    Text('削除', style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Hiragino Sans',
+                    )),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // メインコンテンツ（スライドする）
+          AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              return Transform.translate(
+                offset: Offset(-_buttonWidth * _controller.value, 0),
+                child: child,
+              );
+            },
+            child: GestureDetector(
+              onTap: _controller.value > 0 ? _close : null,
+              child: ColoredBox(
+                color: Colors.white,
+                child: widget.child,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

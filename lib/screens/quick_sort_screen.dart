@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/keyboard_done_bar.dart';
 import '../utils/text_menu_dismisser.dart';
 
 // ========================================
@@ -47,17 +48,18 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text('爆速メモ整理'),
         elevation: 0,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
       ),
-      body: switch (_phase) {
+      body: KeyboardDoneBar(child: switch (_phase) {
         _Phase.filter => _buildFilterPhase(),
         _Phase.carousel => _buildCarouselPhase(),
         _Phase.result => _buildResultPhase(),
-      },
+      }),
     );
   }
 

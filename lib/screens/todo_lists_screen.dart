@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/keyboard_done_bar.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../widgets/trapezoid_tab_shape.dart';
 import 'todo_list_screen.dart';
@@ -43,7 +44,8 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Padding(
+      resizeToAvoidBottomInset: false,
+      body: KeyboardDoneBar(child: Padding(
         padding: EdgeInsets.only(
           top: MediaQuery.of(context).viewPadding.top - 4,
         ),
@@ -69,7 +71,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
               ),
             ),
           ],
-        ),
+        )),
       ),
     );
   }
