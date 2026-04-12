@@ -10,17 +10,52 @@ import '../utils/text_menu_dismisser.dart';
 
 const _uuid = Uuid();
 
-// 本家 TodoListsView の緑色
 const Color _todoTabColor = Color(0xFF8CD18C);
+const Color _sysGreen = Color(0xFF34C759);
+const int _maxDepth = 4; // depth 0〜4 = 最大5階層
+const double _indentStep = 28.0; // 1階層あたりのインデント幅
 
-/// ToDoリスト詳細画面（最小実装）
-/// - タイトル表示・編集
-/// - ルートアイテムの一覧
-/// - 末尾の+ボタンで新規追加（インライン入力）
-/// - チェックボックスで完了切替
+// 階層ごとの背景色（薄め 8%、本家は opacity(0.10)*0.8）
+const List<Color> _depthBgColors = [
+  Color(0x1434C759), // depth 0: 緑
+  Color(0x14BF5AF2), // depth 1: 紫（Apple HIG purple）
+  Color(0x14FF9500), // depth 2: オレンジ
+  Color(0x14007AFF), // depth 3: 青
+  Color(0x14A2845E), // depth 4: 茶
+];
+
+// 階層ごとのアクセント色（濃いめ 70%、罫線・＋ボタン用）
+const List<Color> _depthAccentColors = [
+  Color(0xB334C759), // depth 0: 緑
+  Color(0xB3BF5AF2), // depth 1: 紫（Apple HIG purple）
+  Color(0xB3FF9500), // depth 2: オレンジ
+  Color(0xB3007AFF), // depth 3: 青
+  Color(0xB3A2845E), // depth 4: 茶
+];
+
+// フラット化された行の種別
+enum _RowKind { item, addButton }
+
+class _FlatRow {
+  final String id;
+  final _RowKind kind;
+  final TodoItem? item;
+  final String? addButtonParentId;
+  final int depth;
+
+  const _FlatRow.item(this.item, {required this.depth})
+      : id = item!.id,
+        kind = _RowKind.item,
+        addButtonParentId = null;
+
+  const _FlatRow.addButton({required this.addButtonParentId, required this.depth})
+      : id = 'add-${addButtonParentId ?? 'root'}',
+        kind = _RowKind.addButton,
+        item = null;
+}
+
 class TodoListScreen extends ConsumerStatefulWidget {
   final String listId;
-
   const TodoListScreen({super.key, required this.listId});
 
   @override
@@ -28,10 +63,11 @@ class TodoListScreen extends ConsumerStatefulWidget {
 }
 
 class _TodoListScreenState extends ConsumerState<TodoListScreen> {
-  // 編集中アイテム（実体は _EditingItemField が担当）
   String? _editingItemId;
+  // 追加先の親ID（null=ルート）。連続入力で同じ階層に追加するため保持
+  String? _addingParentId;
+  final Set<String> _expandedItems = {};
 
-  // タイトル編集
   bool _isEditingTitle = false;
   final TextEditingController _titleController = TextEditingController();
   final FocusNode _titleFocusNode = FocusNode();
@@ -52,37 +88,85 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         .watchSingleOrNull();
   }
 
-  Stream<List<TodoItem>> _watchItems() {
+  // 全アイテム取得（階層構造はクライアント側で組み立て）
+  Stream<List<TodoItem>> _watchAllItems() {
     final db = ref.read(databaseProvider);
     return (db.select(db.todoItems)
-          ..where((t) => t.listId.equals(widget.listId) & t.parentId.isNull())
+          ..where((t) => t.listId.equals(widget.listId))
           ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
         .watch();
   }
 
   // ========================================
+  // ツリー → フラットリスト変換
+  // ========================================
+  List<_FlatRow> _buildFlatRows(List<TodoItem> allItems) {
+    // parentId別にグルーピング
+    final Map<String?, List<TodoItem>> childrenMap = {};
+    for (final item in allItems) {
+      childrenMap.putIfAbsent(item.parentId, () => []).add(item);
+    }
+
+    final rows = <_FlatRow>[];
+
+    void appendRows(String? parentId, int depth) {
+      final children = childrenMap[parentId] ?? [];
+      for (final item in children) {
+        rows.add(_FlatRow.item(item, depth: depth));
+        // 展開中なら子を再帰的に追加
+        if (_expandedItems.contains(item.id)) {
+          appendRows(item.id, depth + 1);
+          // 子の末尾に追加ボタン（最大階層でなければ）
+          if (depth + 1 <= _maxDepth) {
+            rows.add(_FlatRow.addButton(addButtonParentId: item.id, depth: depth + 1));
+          }
+        }
+      }
+    }
+
+    appendRows(null, 0);
+    // ルートの追加ボタン
+    rows.add(_FlatRow.addButton(addButtonParentId: null, depth: 0));
+    return rows;
+  }
+
+  // 指定アイテムに子がいるか
+  bool _hasChildren(String itemId, List<TodoItem> allItems) {
+    return allItems.any((i) => i.parentId == itemId);
+  }
+
+  // ========================================
   // CRUD
   // ========================================
-  /// 新しい空行を作成して編集状態に入る
-  Future<void> _createItem() async {
+  Future<void> _createItem({String? parentId}) async {
     final db = ref.read(databaseProvider);
     final existing = await (db.select(db.todoItems)
-          ..where((t) => t.listId.equals(widget.listId) & t.parentId.isNull()))
+          ..where((t) {
+            final base = t.listId.equals(widget.listId);
+            return parentId == null
+                ? base & t.parentId.isNull()
+                : base & t.parentId.equals(parentId);
+          }))
         .get();
     final id = _uuid.v4();
     await db.into(db.todoItems).insert(TodoItemsCompanion.insert(
           id: id,
           listId: widget.listId,
           title: const Value(''),
+          parentId: Value(parentId),
           sortOrder: Value(existing.length),
         ));
     if (!mounted) return;
-    setState(() => _editingItemId = id);
-    // _EditingItemField の initState で自動的にフォーカスが入る
+    // 親を展開状態にする（子が見えるように）
+    if (parentId != null) {
+      _expandedItems.add(parentId);
+    }
+    setState(() {
+      _editingItemId = id;
+      _addingParentId = parentId;
+    });
   }
 
-  /// 編集中の項目を保存（_EditingItemField から呼ばれる）
-  /// chainNext=true（Enter押下時）かつ非空なら次の行を作って連続入力
   bool _isCommitting = false;
   Future<void> _commitEditWithText(String text, {bool chainNext = false}) async {
     if (_isCommitting) return;
@@ -93,6 +177,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       final trimmed = text.trim();
       final db = ref.read(databaseProvider);
       final wasEmpty = trimmed.isEmpty;
+      final parentId = _addingParentId;
       if (wasEmpty) {
         await (db.delete(db.todoItems)..where((t) => t.id.equals(id))).go();
       } else {
@@ -103,9 +188,12 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         ));
       }
       if (!mounted) return;
-      setState(() => _editingItemId = null);
+      setState(() {
+        _editingItemId = null;
+        _addingParentId = null;
+      });
       if (chainNext && !wasEmpty) {
-        await _createItem();
+        await _createItem(parentId: parentId);
       }
     } finally {
       _isCommitting = false;
@@ -119,6 +207,16 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       isDone: Value(!item.isDone),
       updatedAt: Value(DateTime.now()),
     ));
+  }
+
+  void _toggleExpand(String itemId) {
+    setState(() {
+      if (_expandedItems.contains(itemId)) {
+        _expandedItems.remove(itemId);
+      } else {
+        _expandedItems.add(itemId);
+      }
+    });
   }
 
   Future<void> _saveTitle() async {
@@ -136,6 +234,17 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     setState(() => _isEditingTitle = false);
   }
 
+  Future<void> _resetAll(List<TodoItem> items) async {
+    final db = ref.read(databaseProvider);
+    for (final item in items.where((i) => i.isDone)) {
+      await (db.update(db.todoItems)..where((t) => t.id.equals(item.id)))
+          .write(TodoItemsCompanion(
+        isDone: const Value(false),
+        updatedAt: Value(DateTime.now()),
+      ));
+    }
+  }
+
   // ========================================
   // build
   // ========================================
@@ -149,7 +258,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           children: [
             _buildToolbar(),
             _buildTitle(),
-            // タイトルと項目の仕切り線
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 16),
               height: 0.5,
@@ -167,7 +275,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       height: 44,
       child: Stack(
         children: [
-          // 中央: アイコン + 「ToDo リスト」
           const Center(
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -187,7 +294,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
               ],
             ),
           ),
-          // 左: 戻るボタン（角丸背景つき）
           Positioned(
             left: 12,
             top: 4,
@@ -224,7 +330,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     );
   }
 
-  /// タイトル本体（編集中はTextField、それ以外はタップ可能Text）
   Widget _buildTitleEditable(TodoList list) {
     if (_isEditingTitle) {
       return TextField(
@@ -276,26 +381,24 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       builder: (context, snap) {
         final list = snap.data;
         if (list == null) return const SizedBox(height: 32);
-        // 進捗はアイテムストリームから取得
         return StreamBuilder<List<TodoItem>>(
-          stream: _watchItems(),
+          stream: _watchAllItems(),
           builder: (context, itemsSnap) {
-            final items = itemsSnap.data ?? const <TodoItem>[];
-            final total = items.length;
-            final done = items.where((i) => i.isDone).length;
+            final allItems = itemsSnap.data ?? const <TodoItem>[];
+            final rootItems = allItems.where((i) => i.parentId == null).toList();
+            final total = rootItems.length;
+            final done = rootItems.where((i) => i.isDone).length;
             final progress = total > 0 ? done / total : 0.0;
             return Padding(
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 左側: タイトル + 完了件数
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // しおり + タイトルを中央揃えで横並び
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
@@ -320,7 +423,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                       ],
                     ),
                   ),
-                  // タグなしピル
                   Padding(
                     padding: const EdgeInsets.only(top: 6, right: 6),
                     child: Container(
@@ -344,8 +446,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                       ),
                     ),
                   ),
-                  // 右側: 円グラフ + リセット
-                  if (total > 0) _buildProgressDonut(items, progress),
+                  if (total > 0) _buildProgressDonut(rootItems, progress),
                 ],
               ),
             );
@@ -355,7 +456,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     );
   }
 
-  /// 円グラフ（進捗%表示）+ 下にリセットボタン
   Widget _buildProgressDonut(List<TodoItem> items, double progress) {
     final percent = (progress * 100).round();
     return Column(
@@ -367,7 +467,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           child: Stack(
             alignment: Alignment.center,
             children: [
-              // 背景円
               SizedBox.expand(
                 child: CircularProgressIndicator(
                   value: 1.0,
@@ -376,7 +475,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                       Colors.grey.withValues(alpha: 0.2)),
                 ),
               ),
-              // 進捗円
               SizedBox.expand(
                 child: CircularProgressIndicator(
                   value: progress,
@@ -386,7 +484,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                       AlwaysStoppedAnimation(Colors.blue.shade500),
                 ),
               ),
-              // パーセント
               Row(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -417,7 +514,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           ),
         ),
         const SizedBox(height: 4),
-        // リセットボタン: 完了中の項目があるときだけ有効
         GestureDetector(
           onTap: items.any((i) => i.isDone) ? () => _resetAll(items) : null,
           behavior: HitTestBehavior.opaque,
@@ -446,63 +542,88 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     );
   }
 
-  /// 全項目を未完了に戻す
-  Future<void> _resetAll(List<TodoItem> items) async {
-    final db = ref.read(databaseProvider);
-    for (final item in items.where((i) => i.isDone)) {
-      await (db.update(db.todoItems)..where((t) => t.id.equals(item.id)))
-          .write(TodoItemsCompanion(
-        isDone: const Value(false),
-        updatedAt: Value(DateTime.now()),
-      ));
-    }
-  }
-
+  // ========================================
+  // アイテムリスト（階層対応）
+  // ========================================
   Widget _buildItemList() {
     return StreamBuilder<List<TodoItem>>(
-      stream: _watchItems(),
+      stream: _watchAllItems(),
       builder: (context, snap) {
-        final items = snap.data ?? const <TodoItem>[];
-        final isEmpty = items.isEmpty;
-        // アイテム行は左右フルブリード（仕切り線と緑枠の端を一致させる）。
-        // 上下padding0、項目間の区切りは透明な1pxスペースで表現
-        // 下部余白を大きく取り、連続追加でリストが上下動するのを少しでも軽減
+        final allItems = snap.data ?? const <TodoItem>[];
+        final flatRows = _buildFlatRows(allItems);
         return MediaQuery.removePadding(
           context: context,
           removeTop: true,
           child: ListView.builder(
-          padding: const EdgeInsets.only(bottom: 200),
-          itemCount: items.length + 1, // 末尾に+ボタン
-          itemBuilder: (context, index) {
-            if (index == items.length) {
-              return _buildAddButton(emptyState: isEmpty);
-            }
-            return _buildItemRow(items[index]);
-          },
+            padding: const EdgeInsets.only(bottom: 200),
+            itemCount: flatRows.length,
+            itemBuilder: (context, index) {
+              final row = flatRows[index];
+              switch (row.kind) {
+                case _RowKind.item:
+                  return _buildItemRow(row.item!, row.depth, allItems);
+                case _RowKind.addButton:
+                  final isRootEmpty = row.addButtonParentId == null && allItems.isEmpty;
+                  final hasAnyChildren = allItems.any((i) => i.parentId != null);
+                  return _buildAddButton(
+                    parentId: row.addButtonParentId,
+                    depth: row.depth,
+                    emptyState: isRootEmpty,
+                    showGuideText: !hasAnyChildren && row.depth == 1,
+                  );
+              }
+            },
           ),
         );
       },
     );
   }
 
-  Widget _buildItemRow(TodoItem item) {
+  Widget _buildItemRow(TodoItem item, int depth, List<TodoItem> allItems) {
     final isEditing = _editingItemId == item.id;
-    return Container(
-      // 仕切り線と幅を揃える（左右16ptマージン）
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      decoration: BoxDecoration(
-        // 本家準拠: SwiftUI .green.opacity(0.10) (= iOS systemGreen at 10%)
-        color: const Color(0xFF34C759).withValues(alpha: 0.10),
-        // 項目間の仕切り線（iOS リスト標準のセパレータ相当）
-        border: Border(
-          bottom: BorderSide(
-            color: Colors.black.withValues(alpha: 0.08),
-            width: 0.5,
-          ),
+    final hasChild = _hasChildren(item.id, allItems);
+    final isExpanded = _expandedItems.contains(item.id);
+    final canExpand = depth < _maxDepth;
+    // 色帯の左端: depth 0 は全幅、depth 1+ は親チェックボックス中心線から
+    // = margin(16) + pad(4) + parentIndent + innerPad(2) + iconHalf(20)
+    final double bandLeft = depth == 0
+        ? 0
+        : 16 + 4 + (depth - 1) * _indentStep + 2 + 20;
+
+    return Stack(
+      children: [
+        // 背景色帯（インデント付き）
+        Positioned(
+          left: bandLeft,
+          right: 16,
+          top: 0,
+          bottom: 0,
+          child: Container(color: _depthBgColors[depth.clamp(0, _maxDepth)]),
         ),
-      ),
-      child: Row(
+        // 祖先の縦線（編集中は非表示）
+        if (depth > 0 && _editingItemId == null)
+          for (int d = 0; d < depth; d++)
+            Positioned(
+              left: 16 + 4 + d * _indentStep + 2 + 20 - 0.75,
+              top: 0,
+              bottom: 0,
+              child: Container(
+                width: 1.5,
+                color: _depthAccentColors[(d + 1).clamp(0, _maxDepth)],
+              ),
+            ),
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.only(left: depth * _indentStep + 4, right: 4, top: 4, bottom: 4),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: Colors.black.withValues(alpha: 0.08),
+                width: 0.5,
+              ),
+            ),
+          ),
+          child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // チェックボックス
@@ -516,9 +637,8 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                     ? CupertinoIcons.checkmark_square_fill
                     : CupertinoIcons.square,
                 size: 40,
-                // 本家 SwiftUI .green (iOS systemGreen 相当)
                 color: item.isDone
-                    ? const Color(0xFF34C759)
+                    ? _sysGreen
                     : Colors.black.withValues(alpha: 0.35),
               ),
             ),
@@ -528,8 +648,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           Expanded(
             child: isEditing
                 ? _EditingItemField(
-                    // ValueKey で行が変わったら StatefulWidget も新規になる →
-                    // initState が必ず走り、新しい FocusNode が確実にフォーカスを取る
                     key: ValueKey('edit_${item.id}'),
                     initialText: item.title,
                     onCommit: (text) => _commitEditWithText(text),
@@ -537,7 +655,10 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                   )
                 : GestureDetector(
                     onTap: () {
-                      setState(() => _editingItemId = item.id);
+                      setState(() {
+                        _editingItemId = item.id;
+                        _addingParentId = item.parentId;
+                      });
                     },
                     behavior: HitTestBehavior.opaque,
                     child: Text(
@@ -556,64 +677,178 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                     ),
                   ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAddButton({required bool emptyState}) {
-    // 本家準拠: チェックボックスと同じレイアウト構造で中心を自動的に合わせる
-    const Color sysGreen = Color(0xFF34C759);
-    return GestureDetector(
-      onTap: _createItem,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        // アイテム行と完全一致の余白構造（margin 16 + padding 4）
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // チェックボックスと同じ寸法: 内側 padding 2 + 40pt 枠
-            Padding(
-              padding: const EdgeInsets.all(2),
-              child: SizedBox(
-                width: 40,
-                height: 40,
-                child: Center(
-                  child: Icon(
-                    CupertinoIcons.add_circled_solid,
-                    size: 26,
-                    color: sysGreen.withValues(alpha: 0.5),
+          // シェブロン（右端、展開/折りたたみ）
+          if (hasChild || canExpand)
+            GestureDetector(
+              onTap: () => _toggleExpand(item.id),
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.all(2),
+                child: SizedBox(
+                  width: 28,
+                  height: 40,
+                  child: Center(
+                    child: AnimatedRotation(
+                      turns: isExpanded ? 0.25 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        CupertinoIcons.chevron_right,
+                        size: 18,
+                        weight: 700,
+                        color: isExpanded
+                            ? Colors.orange
+                            : (hasChild ? Colors.blue : Colors.black.withValues(alpha: 0.3)),
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-            const SizedBox(width: 12),
-            // 空のときだけテキスト表示。それ以外は空のExpandedで行全体をタップ可能に
-            Expanded(
-              child: emptyState
-                  ? Text(
-                      '最初の項目を追加しましょう',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'Hiragino Sans',
-                        color: sysGreen.withValues(alpha: 0.6),
-                      ),
-                    )
-                  : const SizedBox(height: 44),
+        ],
+      ),
+      ),
+      ],
+    );
+  }
+
+  Widget _buildAddButton({
+    required String? parentId,
+    required int depth,
+    required bool emptyState,
+    bool showGuideText = false,
+  }) {
+    final isChild = parentId != null;
+    final accentColor = isChild
+        ? _depthAccentColors[depth.clamp(0, _maxDepth)]
+        : _sysGreen.withValues(alpha: 0.5);
+
+    // ガイドテキスト表示条件
+    String? guideText;
+    if (emptyState) {
+      guideText = '最初の項目を追加しましょう';
+    } else if (isChild && showGuideText) {
+      guideText = '子項目を追加できます';
+    }
+
+    // ルート追加ボタン（シンプル）
+    if (!isChild) {
+      return GestureDetector(
+        onTap: () => _createItem(parentId: null),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.only(left: 4, right: 4, bottom: 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(2),
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Center(
+                    child: Icon(
+                      CupertinoIcons.add_circled_solid,
+                      size: 26,
+                      color: accentColor,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: guideText != null
+                    ? Text(guideText, style: TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w600,
+                        fontFamily: 'Hiragino Sans', color: accentColor))
+                    : const SizedBox(height: 44),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 子追加ボタン
+    // L字の縦線X位置 = 親のチェックボックス中心
+    // 親のチェックボックス中心 = margin(16) + padding(4) + parentIndent + innerPad(2) + iconHalf(20)
+    final double lineX = 16 + 4 + (depth - 1) * _indentStep + 2 + 20;
+    // 紫帯の左端 = L字の縦線位置
+    final double bandLeft = lineX - 0.75;
+
+    return GestureDetector(
+      onTap: () => _createItem(parentId: parentId),
+      behavior: HitTestBehavior.opaque,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // 階層色の帯（縦線位置から右端まで）
+          Container(
+            margin: EdgeInsets.only(left: bandLeft, right: 16),
+            height: 22,
+            color: _depthBgColors[depth.clamp(0, _maxDepth)],
+          ),
+          // +アイコン＋テキスト
+          // チェックボックス中心に＋アイコンを揃える:
+          // checkbox center = depth*28 + 4(pad) + 2(innerPad) + 20(iconHalf) = depth*28 + 26
+          // +icon(18pt) left = center - 9 = depth*28 + 17
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            padding: EdgeInsets.only(
+              left: depth * _indentStep + 17,
+              right: 4,
+            ),
+            height: 22,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(
+                  CupertinoIcons.add_circled_solid,
+                  size: 18,
+                  color: accentColor,
+                ),
+                if (guideText != null) ...[
+                  const SizedBox(width: 6),
+                  Text(guideText, style: TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w600,
+                    fontFamily: 'Hiragino Sans', color: accentColor)),
+                ],
+              ],
+            ),
+          ),
+          // 祖先の縦線 + 自分のL字（編集中は非表示）
+          if (_editingItemId == null) ...[
+            // 上位祖先の縦線（全高を貫通）
+            for (int d = 0; d < depth - 1; d++)
+              Positioned(
+                left: 16 + 4 + d * _indentStep + 2 + 20 - 0.75,
+                top: 0,
+                bottom: 0,
+                child: Container(
+                  width: 1.5,
+                  color: _depthAccentColors[(d + 1).clamp(0, _maxDepth)],
+                ),
+              ),
+            // 自分の親の縦線（上端から曲がり角まで）
+            Positioned(
+              left: lineX - 0.75,
+              top: 0,
+              child: Container(width: 1.5, height: 11, color: accentColor),
+            ),
+            // 横線（曲がり角から右へ）
+            Positioned(
+              left: lineX - 0.75,
+              top: 11 - 0.75,
+              child: Container(width: 14, height: 1.5, color: accentColor),
             ),
           ],
-        ),
+        ],
       ),
     );
   }
 }
 
 /// 編集中の単一行 TextField を独自 StatefulWidget で持つ。
-/// 行ごとに新しいインスタンスが生成され、initState で自身の FocusNode に
-/// 確実にフォーカスを取らせるため、連続追加でもタイミング問題が起きない。
 class _EditingItemField extends StatefulWidget {
   final String initialText;
   final void Function(String text) onCommit;
@@ -640,7 +875,6 @@ class _EditingItemFieldState extends State<_EditingItemField> {
     super.initState();
     _controller = TextEditingController(text: widget.initialText);
     _focusNode = FocusNode();
-    // ウィジェットがマウントされた次のフレームでフォーカス
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
     });
@@ -648,6 +882,9 @@ class _EditingItemFieldState extends State<_EditingItemField> {
 
   @override
   void dispose() {
+    if (!_committed) {
+      widget.onCommit(_controller.text);
+    }
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -687,4 +924,25 @@ class _EditingItemFieldState extends State<_EditingItemField> {
       onTapOutside: (_) => _doCommit(chain: false),
     );
   }
+}
+
+/// L字ライン（縦線＋横線）を描画するCustomPainter
+class _LShapePainter extends CustomPainter {
+  final Color color;
+  const _LShapePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    // 縦線: 上端→下端
+    canvas.drawLine(Offset(0, 0), Offset(0, size.height), paint);
+    // 横線: 下端から右へ
+    canvas.drawLine(Offset(0, size.height), Offset(size.width, size.height), paint);
+  }
+
+  @override
+  bool shouldRepaint(_LShapePainter oldDelegate) => color != oldDelegate.color;
 }
