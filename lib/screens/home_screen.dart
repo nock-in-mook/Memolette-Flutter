@@ -17,9 +17,11 @@ import '../widgets/memo_card.dart';
 import '../widgets/memo_input_area.dart';
 import '../widgets/move_to_top_icon.dart';
 import '../widgets/new_tag_sheet.dart';
+import '../widgets/todo_card.dart';
 import '../widgets/trapezoid_tab_shape.dart';
 import 'quick_sort_screen.dart';
 import 'settings_screen.dart';
+import 'todo_list_screen.dart';
 import 'todo_lists_screen.dart';
 
 /// グリッドサイズ選択肢（Swift版GridSizeOption準拠 / 旧「全文」を 1×可変 に置き換え）
@@ -1805,8 +1807,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (_selectedTabKey == kAllTabKey) {
       return _MemoGridView(
         stream: ref.watch(allMemosProvider),
+        todoListStream: ref.watch(allTodoListsProvider),
         gridSize: _gridSize,
         onTap: _openMemo,
+        onTodoTap: _openTodoList,
         wrapBuilder: (memo, card) => _wrapMemoInContextMenu(memo, card),
         selectMode: _isSelectMode,
         selectedIds: _selectedMemoIds,
@@ -1818,8 +1822,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     } else if (_selectedTabKey == kUntaggedTabKey) {
       return _MemoGridView(
         stream: ref.watch(untaggedMemosProvider),
+        todoListStream: ref.watch(untaggedTodoListsProvider),
         gridSize: _gridSize,
         onTap: _openMemo,
+        onTodoTap: _openTodoList,
         wrapBuilder: (memo, card) => _wrapMemoInContextMenu(memo, card),
         selectMode: _isSelectMode,
         selectedIds: _selectedMemoIds,
@@ -1834,8 +1840,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       final tagId = _selectedChildTagId ?? parentId;
       return _MemoGridView(
         stream: ref.watch(memosForTagProvider(tagId)),
+        todoListStream: ref.watch(todoListsForTagProvider(tagId)),
         gridSize: _gridSize,
         onTap: _openMemo,
+        onTodoTap: _openTodoList,
         // 親タグフォルダ表示時のみ子タグバッジ用にIDを渡す
         parentTagId: parentId,
         selectMode: _isSelectMode,
@@ -1847,6 +1855,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         onAvailableHeight: _onFolderAvailableHeight,
       );
     }
+  }
+
+  /// ToDoリストを開く
+  void _openTodoList(TodoList list) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, _, _) => TodoListScreen(listId: list.id),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
+    );
   }
 
   /// _MemoGridView から渡される実際の利用可能高さを通常/最大化別に保存。
@@ -3592,13 +3611,45 @@ class _FrequentTabContent extends ConsumerWidget {
 // ========================================
 // メモグリッドビュー（共通）
 // ========================================
+
+/// メモとToDoリストの統合アイテム（Swift版MemoGridItem準拠）
+sealed class _GridItem {
+  bool get isPinned;
+  int get manualSortOrder;
+  DateTime get createdAt;
+  String get id;
+
+  factory _GridItem.memo(Memo m) = _MemoGridItem;
+  factory _GridItem.todo(TodoList t) = _TodoGridItem;
+}
+
+class _MemoGridItem implements _GridItem {
+  final Memo memo;
+  _MemoGridItem(this.memo);
+  @override bool get isPinned => memo.isPinned;
+  @override int get manualSortOrder => memo.manualSortOrder;
+  @override DateTime get createdAt => memo.createdAt;
+  @override String get id => memo.id;
+}
+
+class _TodoGridItem implements _GridItem {
+  final TodoList todoList;
+  _TodoGridItem(this.todoList);
+  @override bool get isPinned => todoList.isPinned;
+  @override int get manualSortOrder => todoList.manualSortOrder;
+  @override DateTime get createdAt => todoList.createdAt;
+  @override String get id => todoList.id;
+}
+
 // カードを CupertinoContextMenu などで包みたいときに使う
 typedef MemoCardWrapper = Widget Function(Memo memo, Widget cardChild);
 
 class _MemoGridView extends StatelessWidget {
   final AsyncValue<List<Memo>> stream;
+  final AsyncValue<List<TodoList>>? todoListStream;
   final GridSizeOption gridSize;
   final void Function(Memo) onTap;
+  final void Function(TodoList)? onTodoTap;
   final MemoCardWrapper? wrapBuilder;
   // 子タグバッジ用: 現在のフォルダの親タグID（無ければバッジなし）
   final String? parentTagId;
@@ -3620,8 +3671,10 @@ class _MemoGridView extends StatelessWidget {
 
   const _MemoGridView({
     required this.stream,
+    this.todoListStream,
     required this.gridSize,
     required this.onTap,
+    this.onTodoTap,
     this.wrapBuilder,
     this.parentTagId,
     this.selectMode = false,
@@ -3711,11 +3764,45 @@ class _MemoGridView extends StatelessWidget {
     return h < 36 ? 36 : h;
   }
 
+  /// メモとToDoリストを統合ソートしたリストを生成
+  List<_GridItem> _mergeItems(List<Memo> memos, List<TodoList> todoLists) {
+    final items = <_GridItem>[
+      ...memos.map(_GridItem.memo),
+      ...todoLists.map(_GridItem.todo),
+    ];
+    items.sort((a, b) {
+      // ピン留め優先
+      if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
+      // manualSortOrder 降順
+      if (a.manualSortOrder != b.manualSortOrder) {
+        return b.manualSortOrder.compareTo(a.manualSortOrder);
+      }
+      // 作成日時降順
+      return b.createdAt.compareTo(a.createdAt);
+    });
+    return items;
+  }
+
+  Widget _buildGridItem(_GridItem item) {
+    return switch (item) {
+      _MemoGridItem(memo: final memo) => _buildCard(memo),
+      _TodoGridItem(todoList: final list) => TodoCard(
+          key: ValueKey('todocard_${list.id}'),
+          todoList: list,
+          onTap: () => onTodoTap?.call(list),
+        ),
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
+    // ToDoリストを取得（なければ空リスト）
+    final todoLists = todoListStream?.valueOrNull ?? const <TodoList>[];
+
     return stream.when(
       data: (memos) {
-        if (memos.isEmpty) {
+        final merged = _mergeItems(memos, todoLists);
+        if (merged.isEmpty) {
           return Align(
             alignment: const Alignment(0, -0.2),
             child: Column(
@@ -3750,20 +3837,19 @@ class _MemoGridView extends StatelessWidget {
               if (gridSize == GridSizeOption.titleOnly) {
                 return ListView.separated(
                   padding: const EdgeInsets.only(bottom: bottomPad),
-                  itemCount: memos.length,
+                  itemCount: merged.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 2),
-                  itemBuilder: (_, i) => _buildCard(memos[i]),
+                  itemBuilder: (_, i) => _buildGridItem(merged[i]),
                 );
               }
 
               // 1×可変: 1列、カード高さは内容に追従、本文 max 15行
-              // ListView.separated は lazy build なので 1万件あっても画面外は描画しない
               if (gridSize == GridSizeOption.grid1flex) {
                 return ListView.separated(
                   padding: const EdgeInsets.only(bottom: bottomPad),
-                  itemCount: memos.length,
+                  itemCount: merged.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
-                  itemBuilder: (_, i) => _buildCard(memos[i]),
+                  itemBuilder: (_, i) => _buildGridItem(merged[i]),
                 );
               }
 
@@ -3775,8 +3861,6 @@ class _MemoGridView extends StatelessWidget {
                 });
               }
               // 通常: rows×cols でフォルダ高さに合わせて自動計算。
-              // 最大化時は cardHeightReference（=通常時の高さ）を使うことで
-              // カードサイズは保ったまま自然に行数だけ増える
               final mainExtent = _computeMainAxisExtent(
                 cardHeightReference ?? constraints.maxHeight,
               );
@@ -3788,8 +3872,8 @@ class _MemoGridView extends StatelessWidget {
                   mainAxisSpacing: 8,
                   mainAxisExtent: mainExtent,
                 ),
-                itemCount: memos.length,
-                itemBuilder: (_, i) => _buildCard(memos[i]),
+                itemCount: merged.length,
+                itemBuilder: (_, i) => _buildGridItem(merged[i]),
               );
             },
           ),

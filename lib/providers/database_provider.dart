@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../db/database.dart';
 
@@ -105,6 +106,44 @@ final tagsForMemoStreamProvider =
     StreamProvider.family<List<Tag>, String>((ref, memoId) {
   final db = ref.watch(databaseProvider);
   return db.watchTagsForMemo(memoId);
+});
+
+// ========================================
+// ToDoリスト関連
+// ========================================
+
+/// 全ToDoリストをリアルタイム監視
+final allTodoListsProvider = StreamProvider<List<TodoList>>((ref) {
+  final db = ref.watch(databaseProvider);
+  return (db.select(db.todoLists)
+        ..orderBy([
+          (t) => OrderingTerm(expression: t.isPinned, mode: OrderingMode.desc),
+          (t) => OrderingTerm(
+              expression: t.manualSortOrder, mode: OrderingMode.desc),
+          (t) =>
+              OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc),
+        ]))
+      .watch();
+});
+
+/// タグに紐づくToDoリスト取得
+final todoListsForTagProvider =
+    StreamProvider.family<List<TodoList>, String>((ref, tagId) {
+  final db = ref.watch(databaseProvider);
+  return db.watchTodoListsForTag(tagId);
+});
+
+/// タグなしToDoリスト取得
+final untaggedTodoListsProvider = StreamProvider<List<TodoList>>((ref) {
+  final db = ref.watch(databaseProvider);
+  return db.watchUntaggedTodoLists();
+});
+
+/// ToDoリストに紐づくタグ取得（StreamProvider）
+final tagsForTodoListStreamProvider =
+    StreamProvider.family<List<Tag>, String>((ref, todoListId) {
+  final db = ref.watch(databaseProvider);
+  return db.watchTagsForTodoList(todoListId);
 });
 
 /// 「すべて」「タグなし」タブの色（colorIndex）を保持

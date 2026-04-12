@@ -405,6 +405,83 @@ class AppDatabase extends _$AppDatabase {
   }
 
   // ========================================
+  // ToDoリスト ↔ タグ リレーション
+  // ========================================
+
+  /// ToDoリストにタグを付ける
+  Future<void> addTagToTodoList(String todoListId, String tagId) {
+    return into(todoListTags).insert(
+      TodoListTagsCompanion.insert(todoListId: todoListId, tagId: tagId),
+      mode: InsertMode.insertOrIgnore,
+    );
+  }
+
+  /// ToDoリストからタグを外す
+  Future<void> removeTagFromTodoList(String todoListId, String tagId) {
+    return (delete(todoListTags)
+          ..where((t) =>
+              t.todoListId.equals(todoListId) & t.tagId.equals(tagId)))
+        .go();
+  }
+
+  /// ToDoリストに紐づくタグを取得
+  Future<List<Tag>> getTagsForTodoList(String todoListId) {
+    final query = select(tags).join([
+      innerJoin(todoListTags, todoListTags.tagId.equalsExp(tags.id)),
+    ])
+      ..where(todoListTags.todoListId.equals(todoListId));
+    return query.map((row) => row.readTable(tags)).get();
+  }
+
+  /// ToDoリストに紐づくタグをリアルタイム監視
+  Stream<List<Tag>> watchTagsForTodoList(String todoListId) {
+    final query = select(tags).join([
+      innerJoin(todoListTags, todoListTags.tagId.equalsExp(tags.id)),
+    ])
+      ..where(todoListTags.todoListId.equals(todoListId));
+    return query.map((row) => row.readTable(tags)).watch();
+  }
+
+  /// タグに紐づくToDoリストを取得（リアルタイム）
+  Stream<List<TodoList>> watchTodoListsForTag(String tagId) {
+    final query = select(todoLists).join([
+      innerJoin(
+          todoListTags, todoListTags.todoListId.equalsExp(todoLists.id)),
+    ])
+      ..where(todoListTags.tagId.equals(tagId))
+      ..orderBy([
+        OrderingTerm(
+            expression: todoLists.isPinned, mode: OrderingMode.desc),
+        OrderingTerm(
+            expression: todoLists.manualSortOrder,
+            mode: OrderingMode.desc),
+        OrderingTerm(
+            expression: todoLists.createdAt, mode: OrderingMode.desc),
+      ]);
+    return query.map((row) => row.readTable(todoLists)).watch();
+  }
+
+  /// タグなしToDoリストを取得（リアルタイム）
+  Stream<List<TodoList>> watchUntaggedTodoLists() {
+    return customSelect(
+      'SELECT * FROM todo_lists WHERE id NOT IN '
+      '(SELECT DISTINCT todo_list_id FROM todo_list_tags) '
+      'ORDER BY is_pinned DESC, manual_sort_order DESC, created_at DESC',
+      readsFrom: {todoLists, todoListTags},
+    ).watch().map((rows) => rows.map((row) {
+          return TodoList(
+            id: row.read<String>('id'),
+            title: row.read<String>('title'),
+            createdAt: row.read<DateTime>('created_at'),
+            updatedAt: row.read<DateTime>('updated_at'),
+            isPinned: row.read<bool>('is_pinned'),
+            isLocked: row.read<bool>('is_locked'),
+            manualSortOrder: row.read<int>('manual_sort_order'),
+          );
+        }).toList());
+  }
+
+  // ========================================
   // タグ使用履歴（最大20件）
   // ========================================
 

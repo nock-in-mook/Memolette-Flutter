@@ -986,9 +986,8 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.9),
+                  color: Colors.grey.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.red.withValues(alpha: 0.15), width: 0.5),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -997,7 +996,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                       color: Colors.red.withValues(alpha: 0.6)),
                     const SizedBox(width: 5),
                     Text('削除', style: TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans',
+                      fontSize: 14, fontWeight: FontWeight.w600, fontFamily: 'Hiragino Sans',
                       color: Colors.red.withValues(alpha: 0.6))),
                   ],
                 ),
@@ -1260,87 +1259,160 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
 
   Widget _buildProgressDonut(List<TodoItem> items, double progress) {
     final percent = (progress * 100).round();
+    final hasDone = items.any((i) => i.isDone);
+    final doneCount = items.where((i) => i.isDone).length;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
-          width: 38,
-          height: 38,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              SizedBox.expand(
-                child: CircularProgressIndicator(
-                  value: 1.0,
-                  strokeWidth: 4,
-                  valueColor: AlwaysStoppedAnimation(
-                      Colors.grey.withValues(alpha: 0.2)),
+        GestureDetector(
+          onTap: hasDone ? () => _showResetDialog(items, doneCount) : null,
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            width: 38,
+            height: 38,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox.expand(
+                  child: CircularProgressIndicator(
+                    value: 1.0,
+                    strokeWidth: 4,
+                    valueColor: AlwaysStoppedAnimation(
+                        Colors.grey.withValues(alpha: 0.2)),
+                  ),
                 ),
-              ),
-              SizedBox.expand(
-                child: CircularProgressIndicator(
-                  value: progress,
-                  strokeWidth: 4,
-                  strokeCap: StrokeCap.round,
-                  valueColor:
-                      AlwaysStoppedAnimation(Colors.blue.shade500),
+                SizedBox.expand(
+                  child: CircularProgressIndicator(
+                    value: progress,
+                    strokeWidth: 4,
+                    strokeCap: StrokeCap.round,
+                    valueColor:
+                        AlwaysStoppedAnimation(Colors.blue.shade500),
+                  ),
                 ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '$percent',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        fontFamily: 'Hiragino Sans',
+                        color: Colors.black87,
+                        height: 1.0,
+                      ),
+                    ),
+                    const Text(
+                      '%',
+                      style: TextStyle(
+                        fontSize: 8,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Hiragino Sans',
+                        color: Colors.black87,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        // チェックが1つ以上あるときだけ表示
+        if (hasDone)
+          GestureDetector(
+            onTap: () => _showResetDialog(items, doneCount),
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  CupertinoIcons.checkmark_square,
+                  size: 10,
+                  color: Colors.black.withValues(alpha: 0.4),
+                ),
+                const SizedBox(width: 2),
+                Text(
+                  'リセット',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                    fontFamily: 'Hiragino Sans',
+                    color: Colors.black.withValues(alpha: 0.4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// チェックリセット確認ダイアログ
+  void _showResetDialog(List<TodoItem> items, int doneCount) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true, barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      transitionDuration: const Duration(milliseconds: 150),
+      pageBuilder: (context, _, __) => Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white, borderRadius: BorderRadius.circular(16),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 20, offset: const Offset(0, 4))],
               ),
-              Row(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    '$percent',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      fontFamily: 'Hiragino Sans',
-                      color: Colors.black87,
-                      height: 1.0,
+                  const Text('チェックをリセット', style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Hiragino Sans')),
+                  const SizedBox(height: 12),
+                  Text('$doneCount件の完了チェックを外します',
+                    style: TextStyle(fontSize: 13, fontFamily: 'Hiragino Sans',
+                      color: Colors.black.withValues(alpha: 0.5))),
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _resetAll(items);
+                    },
+                    child: Container(
+                      width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8)),
+                      alignment: Alignment.center,
+                      child: const Text('リセットする', style: TextStyle(fontSize: 14,
+                        fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans', color: Colors.red)),
                     ),
                   ),
-                  const Text(
-                    '%',
-                    style: TextStyle(
-                      fontSize: 8,
-                      fontWeight: FontWeight.w600,
-                      fontFamily: 'Hiragino Sans',
-                      color: Colors.black87,
-                      height: 1.2,
+                  const SizedBox(height: 10),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10),
+                      alignment: Alignment.center,
+                      child: Text('キャンセル', style: TextStyle(fontSize: 14,
+                        fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans',
+                        color: Colors.black.withValues(alpha: 0.5))),
                     ),
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
-        const SizedBox(height: 4),
-        GestureDetector(
-          onTap: items.any((i) => i.isDone) ? () => _resetAll(items) : null,
-          behavior: HitTestBehavior.opaque,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                CupertinoIcons.checkmark_square,
-                size: 10,
-                color: Colors.black.withValues(alpha: 0.4),
-              ),
-              const SizedBox(width: 2),
-              Text(
-                'リセット',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
-                  fontFamily: 'Hiragino Sans',
-                  color: Colors.black.withValues(alpha: 0.4),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+      ),
+      transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
     );
   }
 
