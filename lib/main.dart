@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'db/database.dart';
 import 'screens/home_screen.dart';
+import 'utils/keyboard_done_bar.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +27,7 @@ class MemolettApp extends StatelessWidget {
     return MaterialApp(
       title: 'Memolette',
       debugShowCheckedModeBanner: false,
+      builder: (context, child) => KeyboardDoneBar(child: child!),
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.blueAccent,

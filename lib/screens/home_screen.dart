@@ -369,19 +369,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         child: Stack(
           children: [
             _buildMainContent(parentTags, parentTagsAsync, currentColor),
-            // キーボードの右上に丸いキーボード収納ボタン（キーボード表示中のみ）
-            if (MediaQuery.of(context).viewInsets.bottom > 0)
-              Positioned(
-                right: 10,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 6,
-                child: _buildKeyboardAccessory(),
-              ),
-            // 最大化中 + キーボード表示中: 縮小ボタンを収納ボタンの左にフロート
+            // 最大化中 + キーボード表示中: 縮小ボタンをフロート
             if (_isInputExpanded &&
                 MediaQuery.of(context).viewInsets.bottom > 0)
               Positioned(
-                right: 10 + 36 + 8, // 収納ボタン (36) の左に8px間隔
-                bottom: MediaQuery.of(context).viewInsets.bottom + 6,
+                right: 6 + 36 + 8, // グローバル収納ボタン (36) の左に8px間隔
+                bottom: MediaQuery.of(context).viewInsets.bottom + 4,
                 child: _buildFloatingMinimizeButton(),
               ),
             // 最大化中 + キーボード表示中: 消しゴムボタンを左にフロート
@@ -395,30 +388,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ],
         ),
       )),
-    );
-  }
-
-  Widget _buildKeyboardAccessory() {
-    return GestureDetector(
-      onTap: () => FocusScope.of(context).unfocus(),
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: const Color(0xFF007AFF),
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.25),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: const Icon(Icons.keyboard_hide,
-            size: 20, color: Colors.white),
-      ),
     );
   }
 

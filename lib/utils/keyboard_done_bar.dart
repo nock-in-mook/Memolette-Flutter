@@ -2,7 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 /// キーボード表示中にフローティング「完了」ボタンを表示するウィジェット。
-/// Scaffoldのbodyをこれで包むと、キーボード表示中に自動でボタンが出る。
+/// MaterialAppのbuilderで全体を包めば全画面に自動適用される。
 class KeyboardDoneBar extends StatelessWidget {
   final Widget child;
   const KeyboardDoneBar({super.key, required this.child});
@@ -17,12 +17,13 @@ class KeyboardDoneBar extends StatelessWidget {
         child,
         if (isKeyboardVisible)
           Positioned(
-            right: 12,
-            bottom: bottomInset + 8,
+            right: 6,
+            bottom: bottomInset + 4,
             child: GestureDetector(
               onTap: () => FocusScope.of(context).unfocus(),
+              behavior: HitTestBehavior.opaque,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: const Color(0xFF007AFF),
                   borderRadius: BorderRadius.circular(20),
@@ -44,6 +45,7 @@ class KeyboardDoneBar extends StatelessWidget {
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: Colors.white,
+                      decoration: TextDecoration.none,
                     )),
                   ],
                 ),

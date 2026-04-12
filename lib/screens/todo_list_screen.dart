@@ -6,7 +6,6 @@ import 'package:uuid/uuid.dart';
 
 import '../db/database.dart';
 import '../providers/database_provider.dart';
-import '../utils/keyboard_done_bar.dart';
 import '../utils/text_menu_dismisser.dart';
 
 const _uuid = Uuid();
@@ -68,6 +67,23 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   // 追加先の親ID（null=ルート）。連続入力で同じ階層に追加するため保持
   String? _addingParentId;
   final Set<String> _expandedItems = {};
+  // メモ編集中のアイテムID（null=メモ編集なし）
+  String? _memoEditingItemId;
+  // メモ表示中（閲覧）のアイテムID
+  String? _memoViewItemId;
+  // 選択削除モード
+  bool _isSelectMode = false;
+  final Set<String> _selectedItems = {};
+  // スワイプ削除の一斉クローズ通知
+  final ValueNotifier<int> _swipeCloseNotifier = ValueNotifier<int>(0);
+  bool _isAnySwipeOpen = false;
+
+  void _closeSwipeIfOpen() {
+    if (_isAnySwipeOpen) {
+      _swipeCloseNotifier.value++;
+      _isAnySwipeOpen = false;
+    }
+  }
 
   bool _isEditingTitle = false;
   final TextEditingController _titleController = TextEditingController();
@@ -77,6 +93,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   void dispose() {
     _titleController.dispose();
     _titleFocusNode.dispose();
+    _swipeCloseNotifier.dispose();
     super.dispose();
   }
 
@@ -96,6 +113,135 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           ..where((t) => t.listId.equals(widget.listId))
           ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
         .watch();
+  }
+
+  // 初回展開フラグ
+  bool _didInitialExpand = false;
+
+  bool _isAllExpanded(List<TodoItem> allItems) {
+    final parents = allItems.where((i) => _hasChildren(i.id, allItems)).map((i) => i.id).toSet();
+    return parents.isNotEmpty && parents.every((id) => _expandedItems.contains(id));
+  }
+
+  void _expandAll(List<TodoItem> allItems, {bool withMemo = false}) {
+    setState(() {
+      for (final item in allItems) {
+        if (_hasChildren(item.id, allItems)) {
+          _expandedItems.add(item.id);
+        }
+      }
+      if (withMemo) {
+        for (final item in allItems) {
+          if ((item.memo ?? '').isNotEmpty) {
+            _memoViewItemId = null; // 複数展開は未対応、将来対応
+          }
+        }
+      }
+    });
+  }
+
+  void _collapseAll() {
+    setState(() {
+      _expandedItems.clear();
+      _memoEditingItemId = null;
+      _memoViewItemId = null;
+    });
+  }
+
+  void _showExpandDialog(List<TodoItem> allItems) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      transitionDuration: const Duration(milliseconds: 150),
+      pageBuilder: (context, anim1, anim2) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 20,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('メモを含む項目があります',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
+                        fontFamily: 'Hiragino Sans')),
+                    const SizedBox(height: 16),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _expandAll(allItems);
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text('リストのみ展開',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500,
+                            fontFamily: 'Hiragino Sans', color: Color(0xFF007AFF))),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _expandAll(allItems, withMemo: true);
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFBF5AF2).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text('メモも全展開',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500,
+                            fontFamily: 'Hiragino Sans', color: Color(0xFFBF5AF2))),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        alignment: Alignment.center,
+                        child: Text('キャンセル',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500,
+                            fontFamily: 'Hiragino Sans',
+                            color: Colors.black.withValues(alpha: 0.5))),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, anim1, anim2, child) {
+        return FadeTransition(opacity: anim1, child: child);
+      },
+    );
   }
 
   // ========================================
@@ -140,6 +286,10 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   // CRUD
   // ========================================
   Future<void> _createItem({String? parentId}) async {
+    if (_isAnySwipeOpen) {
+      _closeSwipeIfOpen();
+      return;
+    }
     final db = ref.read(databaseProvider);
     final existing = await (db.select(db.todoItems)
           ..where((t) {
@@ -220,7 +370,128 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     ));
   }
 
+  void _toggleMemo(TodoItem item) {
+    if (_isSelectMode) return;
+    if (_isAnySwipeOpen) { _closeSwipeIfOpen(); return; }
+    setState(() {
+      if (_memoEditingItemId == item.id || _memoViewItemId == item.id) {
+        // 展開中/編集中 → 折りたたみ
+        _memoEditingItemId = null;
+        _memoViewItemId = null;
+      } else if ((item.memo ?? '').isEmpty) {
+        // メモ空 → 編集モード
+        _memoEditingItemId = item.id;
+        _memoViewItemId = null;
+      } else {
+        // メモあり＆折りたたみ中 → 展開
+        _memoViewItemId = item.id;
+        _memoEditingItemId = null;
+      }
+    });
+  }
+
+  Future<void> _saveMemo(String itemId, String text) async {
+    final trimmed = text.trim();
+    final db = ref.read(databaseProvider);
+    await (db.update(db.todoItems)..where((t) => t.id.equals(itemId)))
+        .write(TodoItemsCompanion(
+      memo: Value(trimmed.isEmpty ? null : trimmed),
+      updatedAt: Value(DateTime.now()),
+    ));
+    if (!mounted) return;
+    setState(() {
+      _memoEditingItemId = null;
+      _memoViewItemId = null;
+    });
+  }
+
+  void _showMemoDeleteDialog(String itemId) {
+    FocusScope.of(context).unfocus();
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      transitionDuration: const Duration(milliseconds: 150),
+      pageBuilder: (context, anim1, anim2) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 20,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('メモを削除',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
+                        fontFamily: 'Hiragino Sans')),
+                    const SizedBox(height: 12),
+                    Text('このメモを削除しますか？',
+                      style: TextStyle(fontSize: 13, fontFamily: 'Hiragino Sans',
+                        color: Colors.black.withValues(alpha: 0.5))),
+                    const SizedBox(height: 16),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _saveMemo(itemId, '');
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text('削除する',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500,
+                            fontFamily: 'Hiragino Sans', color: Colors.red)),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        alignment: Alignment.center,
+                        child: Text('キャンセル',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500,
+                            fontFamily: 'Hiragino Sans',
+                            color: Colors.black.withValues(alpha: 0.5))),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, anim1, anim2, child) {
+        return FadeTransition(opacity: anim1, child: child);
+      },
+    );
+  }
+
   void _toggleExpand(String itemId) {
+    if (_isAnySwipeOpen) {
+      _closeSwipeIfOpen();
+      return;
+    }
     setState(() {
       if (_expandedItems.contains(itemId)) {
         _expandedItems.remove(itemId);
@@ -257,30 +528,484 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   }
 
   // ========================================
+  // 選択削除
+  // ========================================
+  void _toggleSelect(String itemId, List<TodoItem> allItems) {
+    setState(() {
+      if (_selectedItems.contains(itemId)) {
+        _selectedItems.remove(itemId);
+      } else {
+        _selectedItems.add(itemId);
+      }
+      // 親選択時は子孫も連動
+      _selectDescendants(itemId, allItems);
+    });
+  }
+
+  void _selectDescendants(String itemId, List<TodoItem> allItems) {
+    final isSelected = _selectedItems.contains(itemId);
+    for (final child in allItems.where((i) => i.parentId == itemId)) {
+      if (isSelected) {
+        _selectedItems.add(child.id);
+      } else {
+        _selectedItems.remove(child.id);
+      }
+      _selectDescendants(child.id, allItems);
+    }
+  }
+
+  Future<void> _deleteSelectedItems(List<TodoItem> allItems) async {
+    final toDelete = _selectedItems.toSet();
+    for (final id in toDelete) {
+      await _deleteItemRecursive(id, allItems);
+    }
+    setState(() {
+      _isSelectMode = false;
+      _selectedItems.clear();
+    });
+  }
+
+  void _showDeleteSelectedConfirm(List<TodoItem> allItems) {
+    final count = _selectedItems.length;
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true, barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      transitionDuration: const Duration(milliseconds: 150),
+      pageBuilder: (context, _, __) => Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white, borderRadius: BorderRadius.circular(16),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 20, offset: const Offset(0, 4))],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('選択した項目を削除', style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Hiragino Sans')),
+                  const SizedBox(height: 12),
+                  Text('$count件の項目を削除しますか？',
+                    style: TextStyle(fontSize: 13, fontFamily: 'Hiragino Sans',
+                      color: Colors.black.withValues(alpha: 0.5))),
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _deleteSelectedItems(allItems);
+                    },
+                    child: Container(
+                      width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8)),
+                      alignment: Alignment.center,
+                      child: const Text('削除する', style: TextStyle(fontSize: 14,
+                        fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans', color: Colors.red)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10),
+                      alignment: Alignment.center,
+                      child: Text('キャンセル', style: TextStyle(fontSize: 14,
+                        fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans',
+                        color: Colors.black.withValues(alpha: 0.5))),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+      transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+    );
+  }
+
+  Future<void> _clearAllItems() async {
+    final db = ref.read(databaseProvider);
+    await (db.delete(db.todoItems)
+          ..where((t) => t.listId.equals(widget.listId)))
+        .go();
+    setState(() {
+      _expandedItems.clear();
+      _memoEditingItemId = null;
+      _memoViewItemId = null;
+    });
+  }
+
+  void _showDeleteMenu(List<TodoItem> allItems) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      transitionDuration: const Duration(milliseconds: 150),
+      pageBuilder: (context, _, __) => Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 20, offset: const Offset(0, 4))],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('項目を削除', style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Hiragino Sans')),
+                  const SizedBox(height: 16),
+                  // 選択して削除
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      setState(() { _isSelectMode = true; _selectedItems.clear(); });
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8)),
+                      alignment: Alignment.center,
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(CupertinoIcons.checkmark_circle, size: 14, color: Color(0xFF007AFF)),
+                          SizedBox(width: 6),
+                          Text('選択して削除', style: TextStyle(fontSize: 14,
+                            fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans',
+                            color: Color(0xFF007AFF))),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // 全件削除
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _showClearAllDialog(allItems);
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8)),
+                      alignment: Alignment.center,
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(CupertinoIcons.trash, size: 14, color: Colors.red),
+                          SizedBox(width: 6),
+                          Text('全件削除', style: TextStyle(fontSize: 14,
+                            fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans',
+                            color: Colors.red)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10),
+                      alignment: Alignment.center,
+                      child: Text('キャンセル', style: TextStyle(fontSize: 14,
+                        fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans',
+                        color: Colors.black.withValues(alpha: 0.5))),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+      transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+    );
+  }
+
+  void _showClearAllDialog(List<TodoItem> allItems) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true, barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      transitionDuration: const Duration(milliseconds: 150),
+      pageBuilder: (context, _, __) => Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white, borderRadius: BorderRadius.circular(16),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 20, offset: const Offset(0, 4))],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('全項目を削除', style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Hiragino Sans')),
+                  const SizedBox(height: 12),
+                  Text('${allItems.length}件の項目を全て削除します\nリスト自体は残ります',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13, fontFamily: 'Hiragino Sans',
+                      color: Colors.black.withValues(alpha: 0.5))),
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _showClearAllConfirm();
+                    },
+                    child: Container(
+                      width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8)),
+                      alignment: Alignment.center,
+                      child: const Text('全て削除する', style: TextStyle(fontSize: 14,
+                        fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans', color: Colors.red)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10),
+                      alignment: Alignment.center,
+                      child: Text('キャンセル', style: TextStyle(fontSize: 14,
+                        fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans',
+                        color: Colors.black.withValues(alpha: 0.5))),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+      transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+    );
+  }
+
+  void _showClearAllConfirm() {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true, barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      transitionDuration: const Duration(milliseconds: 150),
+      pageBuilder: (context, _, __) => Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white, borderRadius: BorderRadius.circular(16),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 20, offset: const Offset(0, 4))],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('本当によろしいですか？', style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Hiragino Sans')),
+                  const SizedBox(height: 8),
+                  Text('全項目を削除します。この操作は取り消せません。',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13, fontFamily: 'Hiragino Sans',
+                      color: Colors.black.withValues(alpha: 0.5))),
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _clearAllItems();
+                    },
+                    child: Container(
+                      width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.red, borderRadius: BorderRadius.circular(8)),
+                      alignment: Alignment.center,
+                      child: const Text('削除する', style: TextStyle(fontSize: 14,
+                        fontWeight: FontWeight.w700, fontFamily: 'Hiragino Sans', color: Colors.white)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10),
+                      alignment: Alignment.center,
+                      child: Text('キャンセル', style: TextStyle(fontSize: 14,
+                        fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans',
+                        color: Colors.black.withValues(alpha: 0.5))),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+      transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+    );
+  }
+
+  // ========================================
   // build
   // ========================================
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      resizeToAvoidBottomInset: false,
-      body: SafeArea(
-        child: KeyboardDoneBar(
+    return GestureDetector(
+      onTap: _closeSwipeIfOpen,
+      behavior: HitTestBehavior.translucent,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
           child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildToolbar(),
-            _buildTitle(),
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              height: 0.5,
-              color: Colors.black.withValues(alpha: 0.15),
-            ),
-            Expanded(child: _buildItemList()),
-          ],
-        ),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildToolbar(),
+              _buildTitle(),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                height: 0.5,
+                color: Colors.black.withValues(alpha: 0.15),
+              ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    _buildItemList(),
+                    // フッター（下端フロート）
+                    Positioned(
+                      left: 0, right: 0, bottom: 8,
+                      child: _buildFooter(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _buildFooter() {
+    return StreamBuilder<List<TodoItem>>(
+      stream: _watchAllItems(),
+      builder: (context, snap) {
+        final allItems = snap.data ?? const <TodoItem>[];
+        if (allItems.isEmpty || _editingItemId != null || _memoEditingItemId != null) {
+          return const SizedBox.shrink();
+        }
+        if (_isSelectMode) {
+          // 選択モードではヒント非表示
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // キャンセル
+              GestureDetector(
+                onTap: () => setState(() { _isSelectMode = false; _selectedItems.clear(); }),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.black.withValues(alpha: 0.1)),
+                  ),
+                  child: Text('キャンセル', style: TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans',
+                    color: Colors.black.withValues(alpha: 0.5))),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // N件削除
+              GestureDetector(
+                onTap: _selectedItems.isEmpty ? null : () => _showDeleteSelectedConfirm(allItems),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: _selectedItems.isEmpty ? Colors.grey : Colors.red,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(CupertinoIcons.trash, size: 14, color: Colors.white),
+                      const SizedBox(width: 5),
+                      Text('${_selectedItems.length}件削除', style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans',
+                        color: Colors.white)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+        // 通常モード: ヒントテキスト + 削除メニューボタン
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ヒントテキスト
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(CupertinoIcons.hand_draw, size: 12,
+                  color: Colors.black.withValues(alpha: 0.16)),
+                const SizedBox(width: 5),
+                Text('タップで編集 ・ 長押しで並び替え ・ 左スワイプで削除',
+                  style: TextStyle(fontSize: 13, fontFamily: 'Hiragino Sans',
+                    color: Colors.black.withValues(alpha: 0.16))),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // 削除ボタン
+            GestureDetector(
+              onTap: () => _showDeleteMenu(allItems),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.red.withValues(alpha: 0.15), width: 0.5),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(CupertinoIcons.list_bullet, size: 14,
+                      color: Colors.red.withValues(alpha: 0.6)),
+                    const SizedBox(width: 5),
+                    Text('削除', style: TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans',
+                      color: Colors.red.withValues(alpha: 0.6))),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -339,6 +1064,64 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
               ),
             ),
           ),
+          // 右上: 全展開/全収納ボタン
+          Positioned(
+            right: 12,
+            top: 4,
+            child: StreamBuilder<List<TodoItem>>(
+              stream: _watchAllItems(),
+              builder: (context, snap) {
+                final allItems = snap.data ?? const <TodoItem>[];
+                final hasAnyChild = allItems.any((i) => _hasChildren(i.id, allItems));
+                if (!hasAnyChild) return const SizedBox.shrink();
+                if (!_didInitialExpand && allItems.isNotEmpty) {
+                  _didInitialExpand = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _expandAll(allItems);
+                  });
+                }
+                final expanded = _isAllExpanded(allItems);
+                return GestureDetector(
+                  onTap: () {
+                    if (expanded) {
+                      _collapseAll();
+                    } else {
+                      final hasAnyMemo = allItems.any((i) => (i.memo ?? '').isNotEmpty);
+                      if (hasAnyMemo) {
+                        _showExpandDialog(allItems);
+                      } else {
+                        _expandAll(allItems);
+                      }
+                    }
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      expanded ? '全収納' : '全展開',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        fontFamily: 'Hiragino Sans',
+                        color: Color(0xFF007AFF),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -369,6 +1152,11 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     }
     return GestureDetector(
       onTap: () {
+        if (_isSelectMode) return;
+        if (_isAnySwipeOpen) {
+          _closeSwipeIfOpen();
+          return;
+        }
         _titleController.text = list.title;
         setState(() => _isEditingTitle = true);
       },
@@ -592,6 +1380,12 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                     reorderIndex: index,
                   );
                 case _RowKind.addButton:
+                  if (_isSelectMode) {
+                    return KeyedSubtree(
+                      key: ValueKey(row.id),
+                      child: const SizedBox.shrink(),
+                    );
+                  }
                   final isRootEmpty = row.addButtonParentId == null && allItems.isEmpty;
                   final hasAnyChildren = allItems.any((i) => i.parentId != null);
                   return KeyedSubtree(
@@ -691,6 +1485,9 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       key: key ?? ValueKey(item.id),
       enabled: !isEditing,
       onDelete: () => _deleteItemRecursive(item.id, allItems),
+      closeNotifier: _swipeCloseNotifier,
+      onOpened: () => _isAnySwipeOpen = true,
+      onClosed: () => _isAnySwipeOpen = false,
       child: Stack(
         children: [
           // 背景色帯（インデント付き）
@@ -701,8 +1498,8 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
             bottom: 0,
           child: Container(color: _depthBgColors[depth.clamp(0, _maxDepth)]),
         ),
-        // 祖先の縦線（編集中は非表示）
-        if (depth > 0 && _editingItemId == null)
+        // 祖先の縦線（編集中・選択モード中は非表示）
+        if (depth > 0 && _editingItemId == null && !_isSelectMode)
           for (int d = 0; d < depth; d++)
             Positioned(
               left: 16 + 4 + d * _indentStep + 2 + 20 - 0.75,
@@ -724,12 +1521,35 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
               ),
             ),
           ),
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // 選択モード: チェックマーク
+          if (_isSelectMode)
+            GestureDetector(
+              onTap: () => _toggleSelect(item.id, allItems),
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  _selectedItems.contains(item.id)
+                      ? CupertinoIcons.checkmark_circle_fill
+                      : CupertinoIcons.circle,
+                  size: 22,
+                  color: _selectedItems.contains(item.id)
+                      ? Colors.red
+                      : Colors.black.withValues(alpha: 0.35),
+                ),
+              ),
+            ),
           // チェックボックス
           GestureDetector(
-            onTap: () => _toggleDone(item),
+            onTap: _isSelectMode
+                ? () => _toggleSelect(item.id, allItems)
+                : () => _toggleDone(item),
             behavior: HitTestBehavior.opaque,
             child: Padding(
               padding: const EdgeInsets.all(2),
@@ -756,6 +1576,14 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                   )
                 : GestureDetector(
                     onTap: () {
+                      if (_isSelectMode) {
+                        _toggleSelect(item.id, allItems);
+                        return;
+                      }
+                      if (_isAnySwipeOpen) {
+                        _closeSwipeIfOpen();
+                        return;
+                      }
                       setState(() {
                         _editingItemId = item.id;
                         _addingParentId = item.parentId;
@@ -778,6 +1606,49 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                     ),
                   ),
           ),
+          // メモボタン（項目名編集中も表示）
+            Builder(builder: (context) {
+              final isMemoActive = _memoEditingItemId == item.id || _memoViewItemId == item.id;
+              return GestureDetector(
+                onTap: () => _toggleMemo(item),
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: isMemoActive
+                        ? BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF007AFF).withValues(alpha: 0.25),
+                                blurRadius: 5,
+                                spreadRadius: 0,
+                              ),
+                            ],
+                          )
+                        : null,
+                    child: Center(
+                      child: Transform.rotate(
+                        angle: 1.5708, // 90°
+                        child: Icon(
+                          (item.memo ?? '').isNotEmpty
+                              ? CupertinoIcons.doc_fill
+                              : CupertinoIcons.doc,
+                          size: 16,
+                          color: isMemoActive
+                              ? const Color(0xFF007AFF)
+                              : (item.memo ?? '').isNotEmpty
+                                  ? _depthAccentColors[depth.clamp(0, _maxDepth)]
+                                  : Colors.black.withValues(alpha: 0.35),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
           // シェブロン（右端、展開/折りたたみ）
           if (hasChild || canExpand)
             GestureDetector(
@@ -808,9 +1679,116 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           // ドラッグハンドル（将来カスタム化予定）
         ],
       ),
+      // メモ展開エリア
+      if (_memoEditingItemId == item.id || _memoViewItemId == item.id)
+        _buildMemoArea(item, depth),
+      // メモ1行プレビュー（閉じてるとき＋メモあり）
+      if (_memoEditingItemId != item.id && _memoViewItemId != item.id && (item.memo ?? '').isNotEmpty)
+        _buildMemoPreview(item, depth),
+            ],
+          ),
       ),
       ],
     ),
+    );
+  }
+
+  Widget _buildMemoArea(TodoItem item, int depth) {
+    final memoColor = _depthAccentColors[depth.clamp(0, _maxDepth)];
+    final isEditing = _memoEditingItemId == item.id;
+
+    return Container(
+      padding: const EdgeInsets.only(left: 8, right: 4, top: 4, bottom: 4),
+      decoration: BoxDecoration(
+        color: memoColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // メモアイコン（線のみ、常時表示）
+          Transform.rotate(
+            angle: 1.5708,
+            child: Icon(CupertinoIcons.doc, size: 11, color: memoColor),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: isEditing
+                ? _MemoEditField(
+                    key: ValueKey('memo_${item.id}'),
+                    initialText: item.memo ?? '',
+                    placeholder: '"${item.title}" にメモを追加',
+                    color: memoColor,
+                    onCommit: (text) => _saveMemo(item.id, text),
+                  )
+                : Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setState(() {
+                            _memoEditingItemId = item.id;
+                            _memoViewItemId = null;
+                          }),
+                          behavior: HitTestBehavior.opaque,
+                          child: Text(
+                            item.memo ?? '',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              fontFamily: 'Hiragino Sans',
+                              color: memoColor,
+                            ),
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => _showMemoDeleteDialog(item.id),
+                        behavior: HitTestBehavior.opaque,
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(CupertinoIcons.trash,
+                              size: 11, color: memoColor.withValues(alpha: 0.5)),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMemoPreview(TodoItem item, int depth) {
+    final memoColor = _depthAccentColors[depth.clamp(0, _maxDepth)];
+    return GestureDetector(
+      onTap: () => _toggleMemo(item),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 8, right: 4, top: 2),
+        child: Row(
+          children: [
+            Transform.rotate(
+              angle: 1.5708,
+              child: Icon(CupertinoIcons.doc_fill,
+                  size: 11, color: memoColor),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                item.memo ?? '',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  fontFamily: 'Hiragino Sans',
+                  color: memoColor,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -919,8 +1897,8 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
               ],
             ),
           ),
-          // 祖先の縦線 + 自分のL字（編集中は非表示）
-          if (_editingItemId == null) ...[
+          // 祖先の縦線 + 自分のL字（編集中・選択モード中は非表示）
+          if (_editingItemId == null && !_isSelectMode) ...[
             // 上位祖先の縦線（全高を貫通）
             for (int d = 0; d < depth - 1; d++)
               Positioned(
@@ -1050,17 +2028,104 @@ class _LShapePainter extends CustomPainter {
   bool shouldRepaint(_LShapePainter oldDelegate) => color != oldDelegate.color;
 }
 
+/// メモ編集用TextField
+class _MemoEditField extends StatefulWidget {
+  final String initialText;
+  final String placeholder;
+  final Color color;
+  final void Function(String text) onCommit;
+
+  const _MemoEditField({
+    super.key,
+    required this.initialText,
+    required this.placeholder,
+    required this.color,
+    required this.onCommit,
+  });
+
+  @override
+  State<_MemoEditField> createState() => _MemoEditFieldState();
+}
+
+class _MemoEditFieldState extends State<_MemoEditField> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  bool _committed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialText);
+    _focusNode = FocusNode();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    if (!_committed) {
+      widget.onCommit(_controller.text);
+    }
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _commit() {
+    if (_committed) return;
+    _committed = true;
+    widget.onCommit(_controller.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _controller,
+      focusNode: _focusNode,
+      maxLines: 10,
+      minLines: 1,
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+        fontFamily: 'Hiragino Sans',
+        color: widget.color,
+      ),
+      decoration: InputDecoration(
+        isDense: true,
+        border: InputBorder.none,
+        contentPadding: EdgeInsets.zero,
+        hintText: widget.placeholder,
+        hintStyle: TextStyle(
+          fontSize: 13,
+          fontFamily: 'Hiragino Sans',
+          color: widget.color.withValues(alpha: 0.4),
+        ),
+      ),
+      onTap: TextMenuDismisser.wrap(null),
+      contextMenuBuilder: TextMenuDismisser.builder,
+      onTapOutside: (_) => _commit(),
+    );
+  }
+}
+
 /// iOS風スワイプ削除: 左スワイプで赤い「削除」ボタンを露出、タップで削除
 class _SwipeDeleteRow extends StatefulWidget {
   final Widget child;
   final bool enabled;
   final VoidCallback onDelete;
+  final ValueNotifier<int>? closeNotifier;
+  final VoidCallback? onOpened;
+  final VoidCallback? onClosed;
 
   const _SwipeDeleteRow({
     super.key,
     required this.child,
     required this.enabled,
     required this.onDelete,
+    this.closeNotifier,
+    this.onOpened,
+    this.onClosed,
   });
 
   @override
@@ -1079,15 +2144,30 @@ class _SwipeDeleteRowState extends State<_SwipeDeleteRow>
       vsync: this,
       duration: const Duration(milliseconds: 200),
     );
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        widget.onOpened?.call();
+      } else if (status == AnimationStatus.dismissed) {
+        widget.onClosed?.call();
+      }
+    });
+    widget.closeNotifier?.addListener(_onCloseAll);
+  }
+
+  void _onCloseAll() {
+    if (_controller.value > 0) {
+      _controller.reverse();
+    }
   }
 
   @override
   void dispose() {
+    widget.closeNotifier?.removeListener(_onCloseAll);
     _controller.dispose();
     super.dispose();
   }
 
-  void _close() {
+  void close() {
     _controller.reverse();
   }
 
@@ -1118,7 +2198,7 @@ class _SwipeDeleteRowState extends State<_SwipeDeleteRow>
             width: _buttonWidth,
             child: GestureDetector(
               onTap: () {
-                _close();
+                close();
                 widget.onDelete();
               },
               child: Container(
@@ -1156,7 +2236,7 @@ class _SwipeDeleteRowState extends State<_SwipeDeleteRow>
               );
             },
             child: GestureDetector(
-              onTap: _controller.value > 0 ? _close : null,
+              onTap: _controller.value > 0 ? close : null,
               child: ColoredBox(
                 color: Colors.white,
                 child: widget.child,
