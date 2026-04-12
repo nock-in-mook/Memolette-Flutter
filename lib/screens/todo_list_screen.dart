@@ -475,10 +475,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           itemCount: items.length + 1, // 末尾に+ボタン
           itemBuilder: (context, index) {
             if (index == items.length) {
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                child: _buildAddButton(emptyState: isEmpty),
-              );
+              return _buildAddButton(emptyState: isEmpty);
             }
             return _buildItemRow(items[index]);
           },
@@ -565,35 +562,47 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   }
 
   Widget _buildAddButton({required bool emptyState}) {
-    // 本家準拠: アイコンは22pt+34x34フレーム、色は systemGreen at 0.5/0.6
+    // 本家準拠: チェックボックスと同じレイアウト構造で中心を自動的に合わせる
     const Color sysGreen = Color(0xFF34C759);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      child: GestureDetector(
-        onTap: _createItem,
-        behavior: HitTestBehavior.opaque,
+    return GestureDetector(
+      onTap: _createItem,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        // アイテム行と完全一致の余白構造（margin 16 + padding 4）
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            SizedBox(
-              width: 34,
-              height: 34,
-              child: Center(
-                child: Icon(
-                  CupertinoIcons.add_circled_solid,
-                  size: 26,
-                  color: sysGreen.withValues(alpha: 0.5),
+            // チェックボックスと同じ寸法: 内側 padding 2 + 40pt 枠
+            Padding(
+              padding: const EdgeInsets.all(2),
+              child: SizedBox(
+                width: 40,
+                height: 40,
+                child: Center(
+                  child: Icon(
+                    CupertinoIcons.add_circled_solid,
+                    size: 26,
+                    color: sysGreen.withValues(alpha: 0.5),
+                  ),
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-            Text(
-              emptyState ? '最初の項目を追加しましょう' : '項目を追加',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                fontFamily: 'Hiragino Sans',
-                color: sysGreen.withValues(alpha: 0.6),
-              ),
+            const SizedBox(width: 12),
+            // 空のときだけテキスト表示。それ以外は空のExpandedで行全体をタップ可能に
+            Expanded(
+              child: emptyState
+                  ? Text(
+                      '最初の項目を追加しましょう',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Hiragino Sans',
+                        color: sysGreen.withValues(alpha: 0.6),
+                      ),
+                    )
+                  : const SizedBox(height: 44),
             ),
           ],
         ),
