@@ -1116,60 +1116,46 @@ class _QuickSortIntro extends StatelessWidget {
           const Icon(Icons.bolt, size: 48, color: Colors.orange),
           const SizedBox(height: 20),
 
-          // 説明文
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
+          // 説明文（全行の左端を揃えて中央配置）
+          IntrinsicWidth(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'お好みの条件で抽出したメモを連続で表示し、一気に',
                   style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                  textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 10),
-                // チェックリスト（中央配置＋左揃え）
-                IntrinsicWidth(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      'タイトル編集',
-                      'タグ付け',
-                      '本文編集',
-                      'ロック（削除防止）',
-                      '削除',
-                    ].map((text) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.check_box,
-                                  size: 20, color: Colors.green),
-                              const SizedBox(width: 8),
-                              Text(text,
-                                  style: const TextStyle(
-                                      fontSize: 14, fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                        )).toList(),
-                  ),
-                ),
+                // チェックリスト
+                ...[
+                  'タイトル編集',
+                  'タグ付け',
+                  '本文編集',
+                  'ロック（削除防止）',
+                  '削除',
+                ].map((text) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.check_box,
+                              size: 20, color: Colors.green),
+                          const SizedBox(width: 8),
+                          Text(text,
+                              style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    )),
                 const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'ができるモードです。',
-                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '未整理のメモが溜まってきたら、ぜひ活用してください。',
-                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                      ),
-                    ],
-                  ),
+                Text(
+                  'ができるモードです。',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '未整理のメモが溜まってきたら、ぜひ活用してください。',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                 ),
               ],
             ),
