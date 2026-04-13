@@ -56,11 +56,15 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
               _allFilteredMemos = memos;
               _currentSetIndex = 0;
               _loadCurrentSet();
-              _phase = _Phase.carousel;
+              _phase = _Phase.loading;
             });
           },
           onBack: () => setState(() => _phase = _Phase.intro),
           onCancel: () => Navigator.of(context).pop(),
+        ),
+        _Phase.loading => _QuickSortLoading(
+          memoCount: _allFilteredMemos.length,
+          onComplete: () => setState(() => _phase = _Phase.carousel),
         ),
         _Phase.carousel => _buildCarouselPhase(),
         _Phase.result => _buildResultPhase(),
@@ -1070,6 +1074,141 @@ class _QuickSortFilterPhaseState
 }
 
 // ========================================
+// ローディング画面（純粋な演出）
+// ========================================
+class _QuickSortLoading extends StatefulWidget {
+  final int memoCount;
+  final VoidCallback onComplete;
+
+  const _QuickSortLoading({
+    required this.memoCount,
+    required this.onComplete,
+  });
+
+  @override
+  State<_QuickSortLoading> createState() => _QuickSortLoadingState();
+}
+
+class _QuickSortLoadingState extends State<_QuickSortLoading>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _progress;
+
+  @override
+  void initState() {
+    super.initState();
+    // 10件以下: 1.5秒、11件以上: 3秒（Swift版準拠）
+    final duration = widget.memoCount <= 10
+        ? const Duration(milliseconds: 1500)
+        : const Duration(milliseconds: 3000);
+
+    _controller = AnimationController(vsync: this, duration: duration);
+    // イーズアウト風カーブ（最初速く、最後ゆっくり）
+    _progress = CurvedAnimation(
+      parent: _controller,
+      curve: const Cubic(0.0, 0.0, 0.2, 1.0),
+    );
+    _controller.forward().then((_) {
+      if (mounted) widget.onComplete();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: AnimatedBuilder(
+        animation: _progress,
+        builder: (context, _) {
+          final value = _progress.value;
+          final percent = (value * 100).toInt();
+
+          return Column(
+            children: [
+              const Spacer(),
+
+              // ドキュメントアイコン
+              Transform.rotate(
+                angle: -0.52, // -30度
+                child: Icon(Icons.file_copy,
+                    size: 50, color: Colors.green[400]),
+              ),
+              const SizedBox(height: 20),
+
+              // テキスト
+              Text(
+                '${widget.memoCount}件のメモを準備中…',
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // プログレスバー
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 60),
+                child: Column(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: SizedBox(
+                        height: 12,
+                        child: Stack(
+                          children: [
+                            // 背景
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.grey.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            // プログレス
+                            FractionallySizedBox(
+                              widthFactor: value,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Colors.orange, Colors.yellow],
+                                  ),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '$percent%',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        fontFamily: 'Menlo',
+                        color: Colors.grey[500],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const Spacer(),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ========================================
 // イントロ画面（説明）
 // ========================================
 class _QuickSortIntro extends StatelessWidget {
@@ -1201,4 +1340,4 @@ class _QuickSortIntro extends StatelessWidget {
   }
 }
 
-enum _Phase { intro, filter, carousel, result }
+enum _Phase { intro, filter, loading, carousel, result }
