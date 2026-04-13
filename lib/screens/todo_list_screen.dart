@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' hide Column;
 import 'package:uuid/uuid.dart';
 
+import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/text_menu_dismisser.dart';
+import '../widgets/tag_dial_view.dart';
 
 const _uuid = Uuid();
 
@@ -77,6 +79,9 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   // スワイプ削除の一斉クローズ通知
   final ValueNotifier<int> _swipeCloseNotifier = ValueNotifier<int>(0);
   bool _isAnySwipeOpen = false;
+
+  // ルーレット
+  bool _rouletteOpen = false;
 
   void _closeSwipeIfOpen() {
     if (_isAnySwipeOpen) {
@@ -876,32 +881,42 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: _closeSwipeIfOpen,
+      onTap: () {
+        _closeSwipeIfOpen();
+        if (_rouletteOpen) setState(() => _rouletteOpen = false);
+      },
       behavior: HitTestBehavior.translucent,
       child: Scaffold(
         backgroundColor: Colors.white,
         body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: Stack(
             children: [
-              _buildToolbar(),
-              _buildTitle(),
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                height: 0.5,
-                color: Colors.black.withValues(alpha: 0.15),
-              ),
-              Expanded(
-                child: Stack(
-                  children: [
-                    _buildItemList(),
-                    // フッター（下端フロート）
-                    Positioned(
-                      left: 0, right: 0, bottom: 8,
-                      child: _buildFooter(),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildToolbar(),
+                  _buildTitle(),
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16),
+                    height: 0.5,
+                    color: Colors.black.withValues(alpha: 0.15),
+                  ),
+                  Expanded(
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        _buildItemList(),
+                        // フッター（下端フロート）
+                        Positioned(
+                          left: 0, right: 0, bottom: 8,
+                          child: _buildFooter(),
+                        ),
+                        // ルーレットオーバーレイ（仕切り線直下のStack内に配置）
+                        if (_rouletteOpen) _buildRouletteOverlay(),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -1224,29 +1239,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                       ],
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6, right: 6),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                            color: Colors.black.withValues(alpha: 0.15),
-                            width: 0.5),
-                      ),
-                      child: Text(
-                        'タグなし',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          fontFamily: 'Hiragino Sans',
-                          color: Colors.black.withValues(alpha: 0.45),
-                        ),
-                      ),
-                    ),
-                  ),
+                  _buildTagBadge(),
                   if (total > 0) _buildProgressDonut(rootItems, progress),
                 ],
               ),
@@ -1255,6 +1248,375 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         );
       },
     );
+  }
+
+  /// タグバッジ（タップでルーレット開閉）
+  Widget _buildTagBadge() {
+    return StreamBuilder<List<Tag>>(
+      stream: ref.read(databaseProvider).watchTagsForTodoList(widget.listId),
+      builder: (context, snap) {
+        final tags = snap.data ?? const <Tag>[];
+        final parentTag = tags.where((t) => t.parentTagId == null).firstOrNull;
+        final childTag = parentTag != null
+            ? tags.where((t) => t.parentTagId == parentTag.id).firstOrNull
+            : null;
+        final label = childTag?.name ?? parentTag?.name ?? 'タグなし';
+        final bgColor = parentTag != null
+            ? TagColors.getColor(parentTag.colorIndex).withValues(alpha: 0.2)
+            : Colors.white;
+        final borderColor = parentTag != null
+            ? TagColors.getColor(parentTag.colorIndex).withValues(alpha: 0.4)
+            : Colors.black.withValues(alpha: 0.15);
+        final textColor = parentTag != null
+            ? Colors.black.withValues(alpha: 0.7)
+            : Colors.black.withValues(alpha: 0.45);
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 6, right: 6),
+          child: GestureDetector(
+            onTap: () => setState(() => _rouletteOpen = !_rouletteOpen),
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: borderColor, width: 0.5),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  fontFamily: 'Hiragino Sans',
+                  color: textColor,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// ルーレットオーバーレイ（グレー背景 + トレー + ダイヤル）
+  Widget _buildRouletteOverlay() {
+    final allTags = ref.watch(allTagsProvider).valueOrNull ?? const <Tag>[];
+    final parentTags = allTags.where((t) => t.parentTagId == null).toList();
+
+    return StreamBuilder<List<Tag>>(
+      stream: ref.read(databaseProvider).watchTagsForTodoList(widget.listId),
+      builder: (context, snap) {
+        final attachedTags = snap.data ?? const <Tag>[];
+        final currentParent =
+            attachedTags.where((t) => t.parentTagId == null).firstOrNull;
+        final currentChild = currentParent != null
+            ? attachedTags
+                .where((t) => t.parentTagId == currentParent.id)
+                .firstOrNull
+            : null;
+
+        final parentOptions = [
+          const TagDialOption(id: null, name: 'タグなし', color: Colors.white),
+          ...parentTags.map((t) => TagDialOption(
+                id: t.id,
+                name: t.name,
+                color: TagColors.getColor(t.colorIndex),
+              )),
+        ];
+
+        final childTags = currentParent != null
+            ? allTags
+                .where((t) => t.parentTagId == currentParent.id)
+                .toList()
+            : <Tag>[];
+        final childOptions = [
+          const TagDialOption(id: null, name: '子タグなし', color: Colors.white),
+          ...childTags.map((t) => TagDialOption(
+                id: t.id,
+                name: t.name,
+                color: TagColors.getColor(t.colorIndex),
+              )),
+        ];
+
+        // トレーサイズ（メモ入力画面と同じ）
+        const double trayBodyWidth = 300.0;
+        const double tabW = 19.0;
+        const double trayTotalWidth = trayBodyWidth + tabW;
+        const double dialOverhang = 60.0;
+        const Color trayColor = Color.fromRGBO(142, 142, 147, 1);
+
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // グレー背景（タップで閉じる）
+            // 仕切り線の上のタイトル領域もカバーするため top: -200
+            Positioned(
+              left: 0, right: 0, top: -200, bottom: 0,
+              child: GestureDetector(
+                onTap: () => setState(() => _rouletteOpen = false),
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.3),
+                ),
+              ),
+            ),
+            // トレー + ルーレット（top: 0 = 仕切り線直下）
+            Positioned(
+              right: 0,
+              top: 0,
+              height: 22 + 211 + 40,
+              width: trayTotalWidth + dialOverhang,
+              child: GestureDetector(
+                onTap: () {}, // トレー内タップではオーバーレイを閉じない
+                behavior: HitTestBehavior.opaque,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // トレー背景
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      child: CustomPaint(
+                        painter: _TrayPainter(
+                          color: trayColor,
+                          tabWidth: tabW,
+                          tabHeight: 22,
+                          tabRadius: 6,
+                          bodyRadius: 10,
+                          innerRadius: 10,
+                        ),
+                        child: SizedBox(
+                          width: trayTotalWidth,
+                          child: Column(
+                            children: [
+                              // ラベル帯（22pt）
+                              SizedBox(
+                                height: 22,
+                                child: Stack(
+                                  children: [
+                                    // しまう三角マーク
+                                    Positioned(
+                                      left: 4, top: 0, bottom: 0,
+                                      child: Center(
+                                        child: Text(
+                                          '\u25B6',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.white.withValues(alpha: 0.8),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    // 親タグラベル
+                                    Positioned(
+                                      right: 221, top: 0, height: 22,
+                                      child: Center(
+                                        child: Text(
+                                          '親タグ',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.white.withValues(alpha: 0.75),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    // 子タグラベル
+                                    Positioned(
+                                      right: 104, top: 0, height: 22,
+                                      child: Center(
+                                        child: Text(
+                                          '子タグ',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.white.withValues(alpha: 0.75),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // 収納ボタン（ルーレット211ptの中央に配置）
+                              SizedBox(
+                                height: 211,
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () => setState(() => _rouletteOpen = false),
+                                    child: Transform.translate(
+                                      offset: const Offset(-8, 0),
+                                      child: SizedBox(
+                                        width: 36,
+                                        child: Center(
+                                          child: Text(
+                                            '\u203A',
+                                            style: TextStyle(
+                                              fontSize: 60,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white.withValues(alpha: 0.5),
+                                              height: 1,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              // 下部ボタン（親タグ追加 / 子タグ追加 / 履歴）
+                              SizedBox(
+                                height: 40,
+                                child: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    // 親タグ追加
+                                    Positioned(
+                                      right: 191, top: 0,
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () {
+                                          // TODO: 親タグ追加シート
+                                        },
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.add_circle, size: 14,
+                                                color: Colors.white.withValues(alpha: 0.9)),
+                                            const SizedBox(width: 3),
+                                            Text('親タグ追加',
+                                              style: TextStyle(fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.white.withValues(alpha: 0.9))),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    // 子タグ追加
+                                    Positioned(
+                                      right: 78, top: 0,
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () {
+                                          // TODO: 子タグ追加シート
+                                        },
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.add_circle_outline, size: 13,
+                                                color: Colors.white.withValues(alpha: 0.8)),
+                                            const SizedBox(width: 3),
+                                            Text('子タグ追加',
+                                              style: TextStyle(fontSize: 13,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.white.withValues(alpha: 0.8))),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    // 履歴
+                                    Positioned(
+                                      right: 8, top: 9,
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () {
+                                          // TODO: タグ履歴
+                                        },
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.chevron_right, size: 12,
+                                                color: Colors.white.withValues(alpha: 0.8)),
+                                            const SizedBox(width: 3),
+                                            Text('履歴',
+                                              style: TextStyle(fontSize: 11,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.white.withValues(alpha: 0.8))),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    // ルーレット（トレー上のダイヤル）
+                    Positioned(
+                      right: 0,
+                      top: 22,
+                      height: 211,
+                      width: trayBodyWidth + dialOverhang,
+                      child: Align(
+                        alignment: Alignment.topRight,
+                        child: Transform.translate(
+                          offset: Offset(-dialOverhang, 0),
+                          child: TagDialView(
+                            height: 211,
+                            parentOptions: parentOptions,
+                            childOptions: childOptions,
+                            selectedParentId: currentParent?.id,
+                            selectedChildId: currentChild?.id,
+                            isOpen: true,
+                            onParentSelected: (id) =>
+                                _onRouletteTagSelected(id, false),
+                            onChildSelected: (id) =>
+                                _onRouletteTagSelected(id, true),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+
+  /// ルーレットでタグ選択時の処理
+  Future<void> _onRouletteTagSelected(String? id, bool isChild) async {
+    final db = ref.read(databaseProvider);
+    final attachedTags = await db.getTagsForTodoList(widget.listId);
+
+    if (id == null) {
+      // 「タグなし」/「子タグなし」選択 → タグを外す
+      if (!isChild) {
+        for (final tag in attachedTags) {
+          await db.removeTagFromTodoList(widget.listId, tag.id);
+        }
+      } else {
+        for (final tag
+            in attachedTags.where((t) => t.parentTagId != null)) {
+          await db.removeTagFromTodoList(widget.listId, tag.id);
+        }
+      }
+    } else {
+      if (!isChild) {
+        // 親タグ選択: 既存の親・子タグを外して新しい親タグを付ける
+        for (final tag in attachedTags) {
+          await db.removeTagFromTodoList(widget.listId, tag.id);
+        }
+        await db.addTagToTodoList(widget.listId, id);
+      } else {
+        // 子タグ選択: 既存の子タグを外して新しい子タグを付ける
+        for (final tag
+            in attachedTags.where((t) => t.parentTagId != null)) {
+          await db.removeTagFromTodoList(widget.listId, tag.id);
+        }
+        await db.addTagToTodoList(widget.listId, id);
+      }
+    }
+    if (mounted) setState(() {});
   }
 
   Widget _buildProgressDonut(List<TodoItem> items, double progress) {
@@ -2319,4 +2681,77 @@ class _SwipeDeleteRowState extends State<_SwipeDeleteRow>
       ),
     );
   }
+}
+
+/// トレー背景（メモ入力画面と同じ形状）
+class _TrayPainter extends CustomPainter {
+  final Color color;
+  final double tabWidth;
+  final double tabHeight;
+  final double tabRadius;
+  final double bodyRadius;
+  final double innerRadius;
+
+  _TrayPainter({
+    required this.color,
+    required this.tabWidth,
+    required this.tabHeight,
+    required this.tabRadius,
+    required this.bodyRadius,
+    required this.innerRadius,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bodyTop = tabHeight;
+    final bodyLeftX = tabWidth;
+    final ir = innerRadius.clamp(0.0, bodyTop);
+
+    final path = Path();
+
+    path.moveTo(0, tabRadius);
+    path.arcTo(
+      Rect.fromLTWH(0, 0, tabRadius * 2, tabRadius * 2),
+      3.14159, 3.14159 / 2, false,
+    );
+
+    path.lineTo(size.width, 0);
+    path.lineTo(size.width, size.height);
+
+    path.lineTo(bodyLeftX + bodyRadius, size.height);
+    path.arcTo(
+      Rect.fromLTWH(bodyLeftX, size.height - bodyRadius * 2, bodyRadius * 2, bodyRadius * 2),
+      3.14159 / 2, 3.14159 / 2, false,
+    );
+
+    path.lineTo(bodyLeftX, bodyTop + ir);
+    path.arcTo(
+      Rect.fromLTWH(bodyLeftX - ir * 2, bodyTop, ir * 2, ir * 2),
+      0, -3.14159 / 2, false,
+    );
+
+    path.lineTo(tabRadius, bodyTop);
+    path.arcTo(
+      Rect.fromLTWH(0, bodyTop - tabRadius * 2, tabRadius * 2, tabRadius * 2),
+      3.14159 / 2, 3.14159 / 2, false,
+    );
+
+    path.close();
+
+    // 影
+    canvas.save();
+    canvas.translate(-2, 0);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+    canvas.restore();
+
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrayPainter old) => old.color != color;
 }
