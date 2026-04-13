@@ -217,7 +217,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           ),
 
           // カードを画面中央寄りに浮かせる
-          const Spacer(flex: 2),
+          const Spacer(flex: 5),
 
           // メモカード（スワイプ＋スライドアニメーション）
           GestureDetector(
@@ -294,7 +294,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           ),
 
           // カード下のスペース（弧型コントローラー用）
-          const Spacer(flex: 3),
+          const Spacer(flex: 7),
 
           // ナビゲーション
           Padding(
