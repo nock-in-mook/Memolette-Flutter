@@ -44,6 +44,9 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   Color _labTabColor = const Color(0xFFFFCC80).withValues(alpha: 0.28);
   Color _labTagFooterColor = Colors.cyan.withValues(alpha: 0.04);
 
+  // カードスライドアニメーション方向（true=右へ進む、false=左へ戻る）
+  bool _slideForward = true;
+
   int get _totalSets =>
       (_allFilteredMemos.length + _setSize - 1) ~/ _setSize;
   @override void initState(){super.initState();_dl();}
@@ -216,20 +219,78 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           // カードを画面中央寄りに浮かせる
           const Spacer(flex: 2),
 
-          // メモカード（画面高さの29%）
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: SizedBox(
-              height: MediaQuery.of(context).size.height * 0.29,
-              child: _QuickSortCard(
-                memo: memo,
-                onTagged: () => _taggedMemoIds.add(memo.id),
-                onTitled: () => _titledMemoIds.add(memo.id),
-                onEdited: () => _editedMemoIds.add(memo.id),
-                tabColor: _labTabColor,
-                tagFooterColor: _labTagFooterColor,
+          // メモカード（スワイプ＋スライドアニメーション）
+          GestureDetector(
+            onHorizontalDragEnd: (details) {
+              final v = details.primaryVelocity ?? 0;
+              if (v < -200 && canNext) {
+                _nextCard();
+              } else if (v > 200 && canPrev) {
+                _prevCard();
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * 0.29,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  transitionBuilder: (child, animation) {
+                    // 進む: 右からスライドイン / 戻る: 左からスライドイン
+                    final isEntering = child.key == ValueKey(memo.id);
+                    final offset = _slideForward
+                        ? (isEntering ? const Offset(1, 0) : const Offset(-1, 0))
+                        : (isEntering ? const Offset(-1, 0) : const Offset(1, 0));
+                    return SlideTransition(
+                      position: Tween(begin: offset, end: Offset.zero)
+                          .animate(animation),
+                      child: child,
+                    );
+                  },
+                  child: _QuickSortCard(
+                    key: ValueKey(memo.id),
+                    memo: memo,
+                    onTagged: () => _taggedMemoIds.add(memo.id),
+                    onTitled: () => _titledMemoIds.add(memo.id),
+                    onEdited: () => _editedMemoIds.add(memo.id),
+                    tabColor: _labTabColor,
+                    tagFooterColor: _labTagFooterColor,
+                  ),
+                ),
               ),
             ),
+          ),
+
+          // 日付情報
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 6, 24, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                Text(
+                  '更新日：${_formatDate(memo.updatedAt)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey.withValues(alpha: 0.5),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '作成日：${_formatDate(memo.createdAt)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey.withValues(alpha: 0.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
           ),
 
           // カード下のスペース（弧型コントローラー用）
@@ -414,9 +475,15 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
     setState(() {});
   }
 
-  void _prevCard() => setState(() => _currentCardIndex--);
+  void _prevCard() => setState(() {
+    _slideForward = false;
+    _currentCardIndex--;
+  });
 
-  void _nextCard() => setState(() => _currentCardIndex++);
+  void _nextCard() => setState(() {
+    _slideForward = true;
+    _currentCardIndex++;
+  });
 
   void _deleteCurrent(Memo memo) {
     if (memo.isLocked) {
@@ -441,6 +508,10 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   // ========================================
   // カラーラボ（開発用）
   // ========================================
+  String _formatDate(DateTime dt) {
+    return '${dt.year}/${dt.month.toString().padLeft(2, '0')}/${dt.day.toString().padLeft(2, '0')}';
+  }
+
   void _showColorLab(BuildContext context) {
     // タブ用カラーパレット: ベース色 × alpha
     final tabSamples = <_ColorSample>[];
@@ -726,6 +797,7 @@ class _QuickSortCard extends ConsumerStatefulWidget {
   final Color tagFooterColor;
 
   const _QuickSortCard({
+    super.key,
     required this.memo,
     required this.onTagged,
     required this.onTitled,
