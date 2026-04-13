@@ -22,7 +22,7 @@ class QuickSortScreen extends ConsumerStatefulWidget {
 
 class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   // フェーズ管理
-  _Phase _phase = _Phase.filter;
+  _Phase _phase = _Phase.intro;
 
   // 処理対象メモ
   List<Memo> _allFilteredMemos = [];
@@ -46,6 +46,10 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
       backgroundColor: const Color(0xFFF5F5F5),
       resizeToAvoidBottomInset: false,
       body: KeyboardDoneBar(child: switch (_phase) {
+        _Phase.intro => _QuickSortIntro(
+          onNext: () => setState(() => _phase = _Phase.filter),
+          onCancel: () => Navigator.of(context).pop(),
+        ),
         _Phase.filter => _QuickSortFilterPhase(
           onStart: (memos) {
             setState(() {
@@ -55,6 +59,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
               _phase = _Phase.carousel;
             });
           },
+          onBack: () => setState(() => _phase = _Phase.intro),
           onCancel: () => Navigator.of(context).pop(),
         ),
         _Phase.carousel => _buildCarouselPhase(),
@@ -594,10 +599,12 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
 // ========================================
 class _QuickSortFilterPhase extends ConsumerStatefulWidget {
   final void Function(List<Memo> memos) onStart;
+  final VoidCallback onBack;
   final VoidCallback onCancel;
 
   const _QuickSortFilterPhase({
     required this.onStart,
+    required this.onBack,
     required this.onCancel,
   });
 
@@ -775,24 +782,40 @@ class _QuickSortFilterPhaseState
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
             child: Row(
               children: [
+                TextButton.icon(
+                  onPressed: widget.onBack,
+                  icon: const Icon(Icons.arrow_back_ios, size: 16),
+                  label: const Text('戻る', style: TextStyle(fontSize: 16)),
+                  style: TextButton.styleFrom(foregroundColor: Colors.blue),
+                ),
+                const Spacer(),
                 TextButton(
                   onPressed: widget.onCancel,
                   child: const Text('閉じる',
-                      style: TextStyle(fontSize: 16, color: Colors.blue)),
+                      style: TextStyle(fontSize: 16, color: Colors.grey)),
                 ),
-                const Spacer(),
               ],
             ),
           ),
+
+          // フィルタ案内ヘッダー
+          const Padding(
+            padding: EdgeInsets.only(top: 8, bottom: 4),
+            child: Text('対象のメモを選んでください',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+          const Text('複数選択可',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.blue)),
+          const SizedBox(height: 16),
 
           // スクロール領域
           Expanded(
             child: SingleChildScrollView(
               child: Column(
                 children: [
-                  // ヘッダー
-                  _buildHeader(),
-                  const SizedBox(height: 20),
                   // フィルタ条件リスト
                   _buildFilterList(),
                   const SizedBox(height: 24),
@@ -805,81 +828,6 @@ class _QuickSortFilterPhaseState
           _buildStartButton(),
         ],
       ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Column(
-      children: [
-        const SizedBox(height: 8),
-        const Text(
-          '爆速メモ整理モード',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.5,
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Icon(Icons.bolt, size: 36, color: Colors.orange),
-        const SizedBox(height: 12),
-
-        // 説明文
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            children: [
-              Text(
-                'お好みの条件で抽出したメモを連続で表示し、一気に',
-                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 6),
-              // チェックリスト
-              ...[
-                'タイトル編集',
-                'タグ付け',
-                '本文編集',
-                'ロック（削除防止）',
-                '削除',
-              ].map((text) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 1),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.check_box, size: 18, color: Colors.green),
-                        const SizedBox(width: 6),
-                        Text(text,
-                            style: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  )),
-              const SizedBox(height: 2),
-              Text(
-                'ができるモードです。',
-                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-              ),
-            ],
-          ),
-        ),
-
-        // 仕切り
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
-          child: Divider(color: Colors.grey[300]),
-        ),
-
-        // 案内
-        const Text('対象のメモを選んでください',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-        const SizedBox(height: 2),
-        const Text('複数選択可',
-            style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: Colors.blue)),
-      ],
     );
   }
 
@@ -1121,4 +1069,132 @@ class _QuickSortFilterPhaseState
   }
 }
 
-enum _Phase { filter, carousel, result }
+// ========================================
+// イントロ画面（説明）
+// ========================================
+class _QuickSortIntro extends StatelessWidget {
+  final VoidCallback onNext;
+  final VoidCallback onCancel;
+
+  const _QuickSortIntro({
+    required this.onNext,
+    required this.onCancel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        children: [
+          // ナビバー
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Row(
+              children: [
+                TextButton(
+                  onPressed: onCancel,
+                  child: const Text('閉じる',
+                      style: TextStyle(fontSize: 16, color: Colors.blue)),
+                ),
+                const Spacer(),
+              ],
+            ),
+          ),
+
+          const Spacer(flex: 2),
+
+          // メインコンテンツ
+          const Text(
+            '爆速メモ整理モード',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Icon(Icons.bolt, size: 48, color: Colors.orange),
+          const SizedBox(height: 20),
+
+          // 説明文
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Column(
+              children: [
+                Text(
+                  'お好みの条件で抽出したメモを連続で表示し、一気に',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                // チェックリスト
+                ...[
+                  'タイトル編集',
+                  'タグ付け',
+                  '本文編集',
+                  'ロック（削除防止）',
+                  '削除',
+                ].map((text) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.check_box,
+                              size: 20, color: Colors.green),
+                          const SizedBox(width: 8),
+                          Text(text,
+                              style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    )),
+                const SizedBox(height: 6),
+                Text(
+                  'ができるモードです。',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+
+          const Spacer(flex: 3),
+
+          // 次へボタン
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: onNext,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                  elevation: 2,
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '次へ',
+                      style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.3),
+                    ),
+                    SizedBox(width: 6),
+                    Icon(Icons.arrow_forward_ios, size: 16),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum _Phase { intro, filter, carousel, result }
