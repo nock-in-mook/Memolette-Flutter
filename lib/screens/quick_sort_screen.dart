@@ -293,74 +293,158 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           ),
           ),
 
-          // カード下のスペース（弧型コントローラー用）
-          const Spacer(flex: 7),
+          // カード下のスペース
+          const Spacer(flex: 4),
 
-          // ナビゲーション
+          // 弧型コントローラー（弧線 + 3編集ボタン）本家準拠レイアウト
+          Transform.translate(
+            offset: const Offset(0, 0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 弧の仕切り線
+                Transform.translate(
+                  offset: const Offset(0, 53),
+                  child: CustomPaint(
+                    size: Size(MediaQuery.of(context).size.width, 70),
+                    painter: _ArcDividerPainter(),
+                  ),
+                ),
+                // 3ボタン（弧線に被せて配置）
+                Transform.translate(
+                  offset: const Offset(0, -27),
+                  child: SizedBox(
+                    height: 50,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      clipBehavior: Clip.none,
+                      children: [
+                        // 本文（中央、y:-17）
+                        Positioned(
+                          top: -17,
+                          child: _ArcEditButton(
+                            label: '本文',
+                            color: Colors.grey.withValues(alpha: 0.15),
+                            width: null,
+                            onTap: () => _setEditMode(_EditMode.content),
+                          ),
+                        ),
+                        // タイトル（左、-13°回転、x:-128, y:-2）
+                        Positioned(
+                          top: -2,
+                          child: Transform.translate(
+                            offset: const Offset(-128, 0),
+                            child: Transform.rotate(
+                              angle: -13 * pi / 180,
+                              child: _ArcEditButton(
+                                label: 'タイトル',
+                                color: Colors.orange.withValues(alpha: 0.2),
+                                width: 100,
+                                onTap: () => _setEditMode(_EditMode.title),
+                              ),
+                            ),
+                          ),
+                        ),
+                        // タグ（右、+13°回転、x:128, y:-2）
+                        Positioned(
+                          top: -2,
+                          child: Transform.translate(
+                            offset: const Offset(128, 0),
+                            child: Transform.rotate(
+                              angle: 13 * pi / 180,
+                              child: _ArcEditButton(
+                                label: 'タグ',
+                                color: Colors.cyan.withValues(alpha: 0.2),
+                                width: 90,
+                                onTap: () => _setEditMode(_EditMode.tag),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const Spacer(flex: 1),
+
+          // 下部操作パネル（前へ/削除/ロック/次へ）
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 // 前へ
-                _navTriangle(
-                  icon: Icons.arrow_left,
-                  enabled: canPrev,
+                _PressableButton(
                   onTap: canPrev ? _prevCard : null,
+                  shadowHeight: 3,
+                  color: canPrev ? Colors.blue : Colors.grey[200]!,
+                  borderRadius: 8,
+                  padding: const EdgeInsets.all(6),
+                  child: Icon(Icons.arrow_left,
+                      size: 28,
+                      color: canPrev ? Colors.white : Colors.grey[400]),
                 ),
                 // 削除
-                _navCircleButton(
-                  icon: Icons.delete_outline,
-                  label: '削除',
-                  color: memo.isLocked
-                      ? Colors.grey[300]!
-                      : Colors.red,
-                  onTap: () => _deleteCurrent(memo),
+                _PressableButton(
+                  onTap: memo.isLocked ? null : () => _deleteCurrent(memo),
+                  shadowHeight: 4,
+                  color: Colors.white,
+                  isCircle: true,
+                  size: 50,
+                  child: Icon(Icons.delete_outline,
+                      size: 20,
+                      color: memo.isLocked ? Colors.grey[300] : Colors.red),
                 ),
                 // ロック
-                _navCircleButton(
-                  icon: memo.isLocked
-                      ? Icons.lock
-                      : Icons.lock_open,
-                  label: memo.isLocked ? '解除' : 'ロック',
-                  color: memo.isLocked
-                      ? Colors.orange
-                      : Colors.grey,
-                  size: 36,
-                  iconSize: 14,
+                _PressableButton(
                   onTap: () => _toggleLock(memo),
+                  shadowHeight: 3,
+                  color: Colors.white,
+                  isCircle: true,
+                  size: 36,
+                  child: Icon(
+                    memo.isLocked ? Icons.lock : Icons.lock_open,
+                    size: 14,
+                    color: memo.isLocked ? Colors.orange : Colors.grey,
+                  ),
                 ),
                 // 次へ or 完了
                 if (isLast)
-                  GestureDetector(
+                  _PressableButton(
                     onTap: _finishCurrentSet,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.orange,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text('完了',
-                              style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white)),
-                          SizedBox(width: 4),
-                          Icon(Icons.chevron_right,
-                              size: 16, color: Colors.white),
-                        ],
-                      ),
+                    shadowHeight: 3,
+                    color: Colors.orange,
+                    borderRadius: 20,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('完了',
+                            style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white)),
+                        SizedBox(width: 4),
+                        Icon(Icons.chevron_right,
+                            size: 16, color: Colors.white),
+                      ],
                     ),
                   )
                 else
-                  _navTriangle(
-                    icon: Icons.arrow_right,
-                    enabled: canNext,
+                  _PressableButton(
                     onTap: canNext ? _nextCard : null,
+                    shadowHeight: 3,
+                    color: canNext ? Colors.blue : Colors.grey[200]!,
+                    borderRadius: 8,
+                    padding: const EdgeInsets.all(6),
+                    child: Icon(Icons.arrow_right,
+                        size: 28,
+                        color: canNext ? Colors.white : Colors.grey[400]),
                   ),
               ],
             ),
@@ -368,6 +452,13 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
         ],
       ),
     );
+  }
+
+  // 編集モード切替（カード内のフォーカスを制御）
+  void _setEditMode(_EditMode mode) {
+    // TODO: カードの編集モードを切り替える
+    // 現在はカード内のタップで直接切り替えているが、
+    // 弧型ボタンからも制御できるようにする
   }
 
   // ✕ボタン等の丸いボタン
@@ -2047,6 +2138,192 @@ class _QuickSortIntro extends StatelessWidget {
 }
 
 enum _Phase { intro, filter, loading, carousel, result }
+enum _EditMode { none, title, content, tag }
+
+// ========================================
+// 押下エフェクト付きボタン（本家 TapPressableView 準拠）
+// ========================================
+class _PressableButton extends StatefulWidget {
+  final VoidCallback? onTap;
+  final Widget child;
+  final Color color;
+  final double shadowHeight;
+  final double borderRadius;
+  final EdgeInsetsGeometry? padding;
+  final bool isCircle;
+  final double? size;
+
+  const _PressableButton({
+    required this.child,
+    required this.color,
+    this.onTap,
+    this.shadowHeight = 4,
+    this.borderRadius = 12,
+    this.padding,
+    this.isCircle = false,
+    this.size,
+  });
+
+  @override
+  State<_PressableButton> createState() => _PressableButtonState();
+}
+
+class _PressableButtonState extends State<_PressableButton> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onTap != null;
+    final sh = widget.shadowHeight;
+
+    return GestureDetector(
+      onTapDown: enabled ? (_) => setState(() => _isPressed = true) : null,
+      onTapUp: enabled ? (_) {
+        setState(() => _isPressed = false);
+        widget.onTap?.call();
+      } : null,
+      onTapCancel: enabled ? () => setState(() => _isPressed = false) : null,
+      child: AnimatedContainer(
+        duration: Duration(milliseconds: _isPressed ? 35 : 50),
+        curve: _isPressed ? Curves.easeIn : Curves.easeOut,
+        transform: Matrix4.translationValues(0, _isPressed ? sh : 0, 0),
+        padding: widget.padding ??
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: widget.isCircle
+            ? BoxDecoration(
+                color: widget.color,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.grey[300]!, width: 1),
+                boxShadow: _isPressed
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          blurRadius: sh,
+                          offset: Offset(0, sh),
+                        ),
+                      ],
+              )
+            : BoxDecoration(
+                color: widget.color,
+                borderRadius: BorderRadius.circular(widget.borderRadius),
+                border: Border.all(
+                    color: Colors.grey.withValues(alpha: 0.3), width: 1),
+                boxShadow: _isPressed
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          blurRadius: sh,
+                          offset: Offset(0, sh),
+                        ),
+                      ],
+              ),
+        child: widget.isCircle && widget.size != null
+            ? SizedBox(
+                width: widget.size! - 2,
+                height: widget.size! - 2,
+                child: Center(child: widget.child),
+              )
+            : widget.child,
+      ),
+    );
+  }
+}
+
+// ========================================
+// 弧型編集ボタン（ArcCapsule + マット塗り）
+// ========================================
+class _ArcEditButton extends StatelessWidget {
+  final String label;
+  final Color color;
+  final double? width;
+  final VoidCallback onTap;
+
+  const _ArcEditButton({
+    required this.label,
+    required this.color,
+    required this.onTap,
+    this.width,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _PressableButton(
+      onTap: onTap,
+      color: Colors.transparent,
+      shadowHeight: 4,
+      padding: EdgeInsets.zero,
+      borderRadius: 20,
+      child: Container(
+        width: width,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(0, 7, 0, 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+                color: Colors.grey.withValues(alpha: 0.3), width: 1),
+          ),
+          child: Stack(
+            children: [
+              // 色レイヤー
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
+              // テキスト
+              Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.edit_square, size: 16, color: Colors.black87),
+                    const SizedBox(width: 3),
+                    Text(label, style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: '.AppleSystemUIFontRounded',
+                    )),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ========================================
+// 弧の仕切り線
+// ========================================
+class _ArcDividerPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.grey.withValues(alpha: 0.5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
+
+    final path = Path();
+    // 本家準拠: 左下→右下、制御点は中央上（height:70のframeでminY=0）
+    path.moveTo(0, size.height);
+    path.quadraticBezierTo(
+      size.width / 2, 0,
+      size.width, size.height,
+    );
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
 
 // カラーラボ用
 class _ColorSample {
