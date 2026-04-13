@@ -1127,27 +1127,32 @@ class _QuickSortIntro extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 10),
-                // チェックリスト
-                ...[
-                  'タイトル編集',
-                  'タグ付け',
-                  '本文編集',
-                  'ロック（削除防止）',
-                  '削除',
-                ].map((text) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.check_box,
-                              size: 20, color: Colors.green),
-                          const SizedBox(width: 8),
-                          Text(text,
-                              style: const TextStyle(
-                                  fontSize: 14, fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                    )),
+                // チェックリスト（中央配置＋左揃え）
+                IntrinsicWidth(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      'タイトル編集',
+                      'タグ付け',
+                      '本文編集',
+                      'ロック（削除防止）',
+                      '削除',
+                    ].map((text) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.check_box,
+                                  size: 20, color: Colors.green),
+                              const SizedBox(width: 8),
+                              Text(text,
+                                  style: const TextStyle(
+                                      fontSize: 14, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        )).toList(),
+                  ),
+                ),
                 const SizedBox(height: 6),
                 Text(
                   'ができるモードです。',
