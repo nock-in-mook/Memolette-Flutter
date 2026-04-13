@@ -66,7 +66,7 @@ class NewTagSheet extends ConsumerStatefulWidget {
         final maxVisible = screenH - mq.padding.top - 10 - keyboardH;
         final actualVisible =
             visibleH > maxVisible && maxVisible > 0 ? maxVisible : visibleH;
-        return Padding(
+        return SuppressKeyboardDoneBar(child: Padding(
           padding: EdgeInsets.only(bottom: keyboardH),
           child: SizedBox(
             height: actualVisible,
@@ -92,7 +92,7 @@ class NewTagSheet extends ConsumerStatefulWidget {
               ),
             ),
           ),
-        );
+        ));
       },
     );
   }

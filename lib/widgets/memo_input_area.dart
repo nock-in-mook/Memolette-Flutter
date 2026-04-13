@@ -1244,60 +1244,60 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
     if (child != null) {
       final childColor = TagColors.getColor(child.colorIndex);
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          // 親タグ
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(5, 3, 8, 3),
-              decoration: BoxDecoration(
-                color: parentColor,
-                borderRadius: BorderRadius.circular(CornerRadius.parentTag),
-              ),
-              child: Text(
-                parent.name,
-                style: _parentTagTextStyle,
-                strutStyle: _parentStrutStyle,
-                textHeightBehavior: _tightHeightBehavior,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+      // 親タグと子タグを4ptめり込ませる（本家 HStack(spacing: -4) 準拠）
+      final parentWidget = Container(
+        padding: const EdgeInsets.fromLTRB(7, 4, 10, 4),
+        decoration: BoxDecoration(
+          color: parentColor,
+          borderRadius: BorderRadius.circular(CornerRadius.badge),
+        ),
+        child: Text(
+          parent.name,
+          style: _parentTagTextStyle,
+          strutStyle: _parentStrutStyle,
+          textHeightBehavior: _tightHeightBehavior,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      );
+      final childWidget = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        decoration: BoxDecoration(
+          color: childColor,
+          borderRadius: BorderRadius.circular(CornerRadius.badge),
+          border: Border.all(color: Colors.white, width: 1.5),
+        ),
+        child: Text(
+          child.name,
+          style: _childTagTextStyle,
+          strutStyle: _childStrutStyle,
+          textHeightBehavior: _tightHeightBehavior,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      );
+      // IntrinsicHeight + Row で bottom-align、子タグを -4pt マージンで重ねる
+      return IntrinsicHeight(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            parentWidget,
+            Transform.translate(
+              offset: const Offset(-4, 1.5),
+              child: childWidget,
             ),
-          ),
-          // 子タグ（4pt左にズラして親に重ねる / 白枠線）
-          Flexible(
-            child: Transform.translate(
-              offset: const Offset(-4, 0),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                decoration: BoxDecoration(
-                  color: childColor,
-                  borderRadius: BorderRadius.circular(CornerRadius.badge),
-                  border: Border.all(color: Colors.white, width: 1.5),
-                ),
-                child: Text(
-                  child.name,
-                  style: _childTagTextStyle,
-                  strutStyle: _childStrutStyle,
-                  textHeightBehavior: _tightHeightBehavior,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       );
     }
 
     // 親タグのみ
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
       decoration: BoxDecoration(
         color: parentColor,
-        borderRadius: BorderRadius.circular(CornerRadius.parentTag),
+        borderRadius: BorderRadius.circular(CornerRadius.badge),
       ),
       child: Text(
         parent.name,

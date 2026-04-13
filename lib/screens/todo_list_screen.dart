@@ -8,6 +8,8 @@ import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/text_menu_dismisser.dart';
+import '../widgets/frosted_alert_dialog.dart';
+import '../widgets/new_tag_sheet.dart';
 import '../widgets/tag_dial_view.dart';
 
 const _uuid = Uuid();
@@ -911,8 +913,8 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                           left: 0, right: 0, bottom: 8,
                           child: _buildFooter(),
                         ),
-                        // ルーレットオーバーレイ（仕切り線直下のStack内に配置）
-                        if (_rouletteOpen) _buildRouletteOverlay(),
+                        // ルーレットオーバーレイ（常に配置、アニメーションで開閉）
+                        _buildRouletteOverlay(),
                       ],
                     ),
                   ),
@@ -1239,8 +1241,14 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                       ],
                     ),
                   ),
-                  _buildTagBadge(),
-                  if (total > 0) _buildProgressDonut(rootItems, progress),
+                  // タグバッジと円グラフを下端揃えで横並び
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      _buildTagBadge(),
+                      if (total > 0) _buildProgressDonut(rootItems, progress),
+                    ],
+                  ),
                 ],
               ),
             );
@@ -1250,7 +1258,38 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     );
   }
 
-  /// タグバッジ（タップでルーレット開閉）
+  // タグバッジ用テキストスタイル（メモ入力画面と同じ）
+  static const TextStyle _parentTagTextStyle = TextStyle(
+    fontSize: 11,
+    fontWeight: FontWeight.w600,
+    fontFamily: '.SF Pro Rounded',
+    fontFamilyFallback: ['SF Pro Rounded', 'Hiragino Sans'],
+    height: 1.0,
+    leadingDistribution: TextLeadingDistribution.even,
+    color: Colors.black,
+  );
+  static const TextStyle _childTagTextStyle = TextStyle(
+    fontSize: 10,
+    fontWeight: FontWeight.w500,
+    fontFamily: '.SF Pro Rounded',
+    fontFamilyFallback: ['SF Pro Rounded', 'Hiragino Sans'],
+    height: 1.0,
+    leadingDistribution: TextLeadingDistribution.even,
+    color: Colors.black,
+  );
+  static const StrutStyle _parentStrutStyle = StrutStyle(
+    fontSize: 11, height: 1.0, forceStrutHeight: true, leading: 0,
+  );
+  static const StrutStyle _childStrutStyle = StrutStyle(
+    fontSize: 10, height: 1.0, forceStrutHeight: true, leading: 0,
+  );
+  static const TextHeightBehavior _tightHeight = TextHeightBehavior(
+    applyHeightToFirstAscent: false,
+    applyHeightToLastDescent: false,
+    leadingDistribution: TextLeadingDistribution.even,
+  );
+
+  /// タグバッジ（タップでルーレット開閉、メモ入力画面と同じ重ね表示）
   Widget _buildTagBadge() {
     return StreamBuilder<List<Tag>>(
       stream: ref.read(databaseProvider).watchTagsForTodoList(widget.listId),
@@ -1260,42 +1299,107 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         final childTag = parentTag != null
             ? tags.where((t) => t.parentTagId == parentTag.id).firstOrNull
             : null;
-        final label = childTag?.name ?? parentTag?.name ?? 'タグなし';
-        final bgColor = parentTag != null
-            ? TagColors.getColor(parentTag.colorIndex).withValues(alpha: 0.2)
-            : Colors.white;
-        final borderColor = parentTag != null
-            ? TagColors.getColor(parentTag.colorIndex).withValues(alpha: 0.4)
-            : Colors.black.withValues(alpha: 0.15);
-        final textColor = parentTag != null
-            ? Colors.black.withValues(alpha: 0.7)
-            : Colors.black.withValues(alpha: 0.45);
 
         return Padding(
-          padding: const EdgeInsets.only(top: 6, right: 6),
+          padding: const EdgeInsets.only(right: 6),
           child: GestureDetector(
             onTap: () => setState(() => _rouletteOpen = !_rouletteOpen),
             behavior: HitTestBehavior.opaque,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: bgColor,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: borderColor, width: 0.5),
-              ),
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  fontFamily: 'Hiragino Sans',
-                  color: textColor,
-                ),
-              ),
-            ),
+            child: parentTag != null
+                ? _buildTagDisplay(parentTag, childTag)
+                : Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          width: 0.5),
+                    ),
+                    child: Text(
+                      'タグなし',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        fontFamily: 'Hiragino Sans',
+                        color: Colors.black.withValues(alpha: 0.45),
+                      ),
+                    ),
+                  ),
           ),
         );
       },
+    );
+  }
+
+  /// 親タグ＋子タグの重ね合わせ表示（本家 tagDisplay 準拠）
+  Widget _buildTagDisplay(Tag parent, Tag? child) {
+    final parentColor = TagColors.getColor(parent.colorIndex);
+
+    if (child != null) {
+      final childColor = TagColors.getColor(child.colorIndex);
+      final parentWidget = Container(
+        padding: const EdgeInsets.fromLTRB(7, 4, 10, 4),
+        decoration: BoxDecoration(
+          color: parentColor,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          parent.name,
+          style: _parentTagTextStyle,
+          strutStyle: _parentStrutStyle,
+          textHeightBehavior: _tightHeight,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      );
+      final childWidget = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        decoration: BoxDecoration(
+          color: childColor,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: Colors.white, width: 1.5),
+        ),
+        child: Text(
+          child.name,
+          style: _childTagTextStyle,
+          strutStyle: _childStrutStyle,
+          textHeightBehavior: _tightHeight,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      );
+      return IntrinsicHeight(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            parentWidget,
+            Transform.translate(
+              offset: const Offset(-4, 1.5),
+              child: childWidget,
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 親タグのみ
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: parentColor,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        parent.name,
+        style: _parentTagTextStyle,
+        strutStyle: _parentStrutStyle,
+        textHeightBehavior: _tightHeight,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 
@@ -1346,38 +1450,54 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         const double dialOverhang = 60.0;
         const Color trayColor = Color.fromRGBO(142, 142, 147, 1);
 
+        // スライドオフセット（閉じ時: トレー全幅分右に隠す）
+        final slideOffset = _rouletteOpen ? 0.0 : (trayTotalWidth + dialOverhang);
+
         return Stack(
           clipBehavior: Clip.none,
           children: [
-            // グレー背景（タップで閉じる）
-            // 仕切り線の上のタイトル領域もカバーするため top: -200
+            // グレー背景（タップで閉じる、フェードアニメ）
             Positioned(
               left: 0, right: 0, top: -200, bottom: 0,
-              child: GestureDetector(
-                onTap: () => setState(() => _rouletteOpen = false),
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.3),
+              child: IgnorePointer(
+                ignoring: !_rouletteOpen,
+                child: GestureDetector(
+                  onTap: () => setState(() => _rouletteOpen = false),
+                  child: AnimatedOpacity(
+                    opacity: _rouletteOpen ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.3),
+                    ),
+                  ),
                 ),
               ),
             ),
-            // トレー + ルーレット（top: 0 = 仕切り線直下）
+            // トレー + ルーレット（スライドアニメ）
             Positioned(
               right: 0,
               top: 0,
               height: 22 + 211 + 40,
               width: trayTotalWidth + dialOverhang,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+                transform: Matrix4.translationValues(slideOffset, 0, 0),
               child: GestureDetector(
                 onTap: () {}, // トレー内タップではオーバーレイを閉じない
-                behavior: HitTestBehavior.opaque,
+                behavior: HitTestBehavior.translucent,
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    // トレー背景
+                    // トレー背景（タップで収納）
                     Positioned(
                       right: 0,
                       top: 0,
                       bottom: 0,
-                      child: CustomPaint(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _rouletteOpen = false),
+                        behavior: HitTestBehavior.opaque,
+                        child: CustomPaint(
                         painter: _TrayPainter(
                           color: trayColor,
                           tabWidth: tabW,
@@ -1395,15 +1515,19 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                                 height: 22,
                                 child: Stack(
                                   children: [
-                                    // しまう三角マーク
+                                    // しまう三角マーク（タップで閉じる）
                                     Positioned(
-                                      left: 4, top: 0, bottom: 0,
-                                      child: Center(
-                                        child: Text(
-                                          '\u25B6',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.white.withValues(alpha: 0.8),
+                                      left: 0, top: 0, bottom: 0, width: tabW,
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () => setState(() => _rouletteOpen = false),
+                                        child: Center(
+                                          child: Text(
+                                            '\u25B6',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.white.withValues(alpha: 0.8),
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -1478,9 +1602,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                                       right: 191, top: 0,
                                       child: GestureDetector(
                                         behavior: HitTestBehavior.opaque,
-                                        onTap: () {
-                                          // TODO: 親タグ追加シート
-                                        },
+                                        onTap: _openAddParentTagSheet,
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
@@ -1500,9 +1622,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                                       right: 78, top: 0,
                                       child: GestureDetector(
                                         behavior: HitTestBehavior.opaque,
-                                        onTap: () {
-                                          // TODO: 子タグ追加シート
-                                        },
+                                        onTap: _openAddChildTagSheet,
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
@@ -1547,6 +1667,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                         ),
                       ),
                     ),
+                    ),
                     // ルーレット（トレー上のダイヤル）
                     Positioned(
                       right: 0,
@@ -1575,13 +1696,13 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                   ],
                 ),
               ),
+              ),
             ),
           ],
         );
       },
     );
   }
-
 
   /// ルーレットでタグ選択時の処理
   Future<void> _onRouletteTagSelected(String? id, bool isChild) async {
@@ -1617,6 +1738,38 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       }
     }
     if (mounted) setState(() {});
+  }
+
+  /// 親タグ追加シート
+  Future<void> _openAddParentTagSheet() async {
+    FocusScope.of(context).unfocus();
+    final newTagId = await NewTagSheet.show(context: context);
+    if (newTagId == null) return;
+    await _onRouletteTagSelected(newTagId, false);
+  }
+
+  /// 子タグ追加シート（親タグ未選択時は警告）
+  Future<void> _openAddChildTagSheet() async {
+    FocusScope.of(context).unfocus();
+    final db = ref.read(databaseProvider);
+    final attachedTags = await db.getTagsForTodoList(widget.listId);
+    final parentTag =
+        attachedTags.where((t) => t.parentTagId == null).firstOrNull;
+    if (parentTag == null) {
+      if (!mounted) return;
+      await showFrostedAlert(
+        context: context,
+        title: '親タグを選んでください',
+        message: '子タグを追加するには、先にルーレットで親タグを選択してください。',
+      );
+      return;
+    }
+    final newTagId = await NewTagSheet.show(
+      context: context,
+      parentTagId: parentTag.id,
+    );
+    if (newTagId == null) return;
+    await _onRouletteTagSelected(newTagId, true);
   }
 
   Widget _buildProgressDonut(List<TodoItem> items, double progress) {

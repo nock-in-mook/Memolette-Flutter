@@ -1,8 +1,22 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+/// キーボード完了ボタンを抑制するためのInheritedWidget。
+/// モーダルシート等で完了ボタンを非表示にしたい場合に使う。
+class SuppressKeyboardDoneBar extends InheritedWidget {
+  const SuppressKeyboardDoneBar({super.key, required super.child});
+
+  static bool isSuppressed(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<SuppressKeyboardDoneBar>() != null;
+  }
+
+  @override
+  bool updateShouldNotify(SuppressKeyboardDoneBar oldWidget) => false;
+}
+
 /// キーボード表示中にフローティング「完了」ボタンを表示するウィジェット。
 /// MaterialAppのbuilderで全体を包めば全画面に自動適用される。
+/// SuppressKeyboardDoneBarで包まれた子ツリーでは非表示になる。
 class KeyboardDoneBar extends StatelessWidget {
   final Widget child;
   const KeyboardDoneBar({super.key, required this.child});
@@ -11,11 +25,12 @@ class KeyboardDoneBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final isKeyboardVisible = bottomInset > 0;
+    final isSuppressed = SuppressKeyboardDoneBar.isSuppressed(context);
 
     return Stack(
       children: [
         child,
-        if (isKeyboardVisible)
+        if (isKeyboardVisible && !isSuppressed)
           Positioned(
             right: 6,
             bottom: bottomInset + 4,
