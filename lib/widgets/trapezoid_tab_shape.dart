@@ -9,12 +9,16 @@ import 'package:flutter/material.dart';
 ///
 /// SwiftのaddArc(tangent1:tangent2:radius:)を、tan/sin/atan2で算出して再現する。
 class TrapezoidTabClipper extends CustomClipper<Path> {
-  final double inset;       // 台形の傾き量（小さめ→長方形寄り）
+  final double inset;       // 台形の傾き量（小さめ→長方形寄り）— 左右同値の場合に使う
+  final double? leftInset;  // 左側だけ個別指定（nullならinsetを使う）
+  final double? rightInset; // 右側だけ個別指定（nullならinsetを使う）
   final double topRadius;   // 上部の角丸半径
   final double rootRadius;  // 付け根の逆カーブ半径
 
   const TrapezoidTabClipper({
     this.inset = 6,
+    this.leftInset,
+    this.rightInset,
     this.topRadius = 7,
     this.rootRadius = 9,
   });
@@ -25,22 +29,44 @@ class TrapezoidTabClipper extends CustomClipper<Path> {
     final h = size.height;
     final r = topRadius;
     final br = rootRadius;
+    final li = leftInset ?? inset;   // 左側インセット
+    final ri = rightInset ?? inset;  // 右側インセット
 
     final path = Path();
+
+    if (li == 0) {
+      // 左辺が垂直 → 付け根カーブ不要、左上角丸のみ
+      path.moveTo(0, h);
+      var current = const Offset(0, 0);
+      path.lineTo(0, r);
+      // 左上角丸（垂直→水平）
+      current = _arcTangent(path, Offset(0, r),
+          const Offset(0, 0), Offset(w - ri, 0), r);
+      // 右上角丸
+      current = _arcTangent(path, current,
+          Offset(w - ri, 0), Offset(w, h), r);
+      // 右付け根の逆カーブ
+      current = _arcTangent(path, current,
+          Offset(w, h), Offset(w + br, h), br);
+      path.lineTo(w + br, h);
+      path.close();
+      return path;
+    }
+
     var current = Offset(-br, h);
     path.moveTo(current.dx, current.dy);
 
-    // 左付け根の逆カーブ: extLeft → bottomLeft の線と bottomLeft → topLeft の線に接する半径brの円弧
+    // 左付け根の逆カーブ
     current = _arcTangent(path, current,
-        Offset(0, h), Offset(inset, 0), br);
+        Offset(0, h), Offset(li, 0), br);
 
     // 左上角丸
     current = _arcTangent(path, current,
-        Offset(inset, 0), Offset(w - inset, 0), r);
+        Offset(li, 0), Offset(w - ri, 0), r);
 
     // 右上角丸
     current = _arcTangent(path, current,
-        Offset(w - inset, 0), Offset(w, h), r);
+        Offset(w - ri, 0), Offset(w, h), r);
 
     // 右付け根の逆カーブ
     current = _arcTangent(path, current,
@@ -111,6 +137,8 @@ class TrapezoidTabClipper extends CustomClipper<Path> {
   @override
   bool shouldReclip(covariant TrapezoidTabClipper old) =>
       old.inset != inset ||
+      old.leftInset != leftInset ||
+      old.rightInset != rightInset ||
       old.topRadius != topRadius ||
       old.rootRadius != rootRadius;
 }
@@ -119,6 +147,8 @@ class TrapezoidTabClipper extends CustomClipper<Path> {
 class TrapezoidTabPainter extends CustomPainter {
   final Color color;
   final double inset;
+  final double? leftInset;
+  final double? rightInset;
   final double topRadius;
   final double rootRadius;
   final List<Shadow> shadows;
@@ -126,6 +156,8 @@ class TrapezoidTabPainter extends CustomPainter {
   const TrapezoidTabPainter({
     required this.color,
     this.inset = 6,
+    this.leftInset,
+    this.rightInset,
     this.topRadius = 7,
     this.rootRadius = 9,
     this.shadows = const [],
@@ -135,6 +167,8 @@ class TrapezoidTabPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final clipper = TrapezoidTabClipper(
       inset: inset,
+      leftInset: leftInset,
+      rightInset: rightInset,
       topRadius: topRadius,
       rootRadius: rootRadius,
     );
@@ -159,6 +193,8 @@ class TrapezoidTabPainter extends CustomPainter {
   bool shouldRepaint(covariant TrapezoidTabPainter old) =>
       old.color != color ||
       old.inset != inset ||
+      old.leftInset != leftInset ||
+      old.rightInset != rightInset ||
       old.topRadius != topRadius ||
       old.rootRadius != rootRadius;
 }

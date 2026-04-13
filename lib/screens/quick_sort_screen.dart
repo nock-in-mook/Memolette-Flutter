@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -38,9 +40,14 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   final Set<String> _editedMemoIds = {};
   final List<String> _deleteQueue = [];
 
+  // カラーラボ（開発用）
+  Color _labTabColor = const Color(0xFFFFCC80).withValues(alpha: 0.28);
+  Color _labTagFooterColor = Colors.cyan.withValues(alpha: 0.04);
+
   int get _totalSets =>
       (_allFilteredMemos.length + _setSize - 1) ~/ _setSize;
-
+  @override void initState(){super.initState();_dl();}
+  Future<void> _dl()async{final db=ref.read(databaseProvider);final m=await db.select(db.memos).get();if(!mounted||m.isEmpty)return;setState((){_allFilteredMemos=m;_loadCurrentSet();_phase=_Phase.carousel;});}
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -106,13 +113,24 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  // 左: ✕ボタン
+                  // 左: ✕ボタン + ラボ
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: _circleButton(
-                      icon: Icons.close,
-                      size: 32,
-                      onTap: () => Navigator.of(context).pop(),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _circleButton(
+                          icon: Icons.close,
+                          size: 32,
+                          onTap: () => Navigator.of(context).pop(),
+                        ),
+                        const SizedBox(width: 8),
+                        _circleButton(
+                          icon: Icons.science,
+                          size: 32,
+                          onTap: () => _showColorLab(context),
+                        ),
+                      ],
                     ),
                   ),
                   // 中央: 枚数カウンター
@@ -192,8 +210,8 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
             ),
           ),
 
-          // カードを画面中央寄りに浮かせる（下端位置を維持）
-          const Spacer(flex: 3),
+          // カードを画面中央寄りに浮かせる
+          const Spacer(flex: 2),
 
           // メモカード（画面高さの29%）
           Padding(
@@ -205,12 +223,14 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                 onTagged: () => _taggedMemoIds.add(memo.id),
                 onTitled: () => _titledMemoIds.add(memo.id),
                 onEdited: () => _editedMemoIds.add(memo.id),
+                tabColor: _labTabColor,
+                tagFooterColor: _labTagFooterColor,
               ),
             ),
           ),
 
           // カード下のスペース（弧型コントローラー用）
-          const Spacer(flex: 2),
+          const Spacer(flex: 3),
 
           // ナビゲーション
           Padding(
@@ -415,6 +435,183 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
     });
   }
 
+  // ========================================
+  // カラーラボ（開発用）
+  // ========================================
+  void _showColorLab(BuildContext context) {
+    // タブ用カラーパレット: ベース色 × alpha
+    final tabSamples = <_ColorSample>[];
+    final baseCols = {
+      // オレンジ系
+      'FF9800': Colors.orange,
+      'FF9500': const Color(0xFFFF9500),  // SwiftのColor.orange
+      'FFB74D': const Color(0xFFFFB74D),  // orange[300]
+      'FFCC80': const Color(0xFFFFCC80),  // orange[200]
+      'FFE0B2': const Color(0xFFFFE0B2),  // orange[100]
+      'FFF3E0': const Color(0xFFFFF3E0),  // orange[50]
+      // ピンク〜オレンジ間（サーモン〜ピーチ〜コーラル）
+      'FF8A65': const Color(0xFFFF8A65),  // deepOrange[300]
+      'FFAB91': const Color(0xFFFFAB91),  // deepOrange[200]
+      'FFCCBC': const Color(0xFFFFCCBC),  // deepOrange[100]
+      'FBE9E7': const Color(0xFFFBE9E7),  // deepOrange[50]
+      'FF7043': const Color(0xFFFF7043),  // deepOrange[400]
+      'E08060': const Color(0xFFE08060),  // サーモン
+      'F4A460': const Color(0xFFF4A460),  // サンディブラウン
+      'FFBEA0': const Color(0xFFFFBEA0),  // ライトサーモン
+      'FFD0B0': const Color(0xFFFFD0B0),  // ピーチ
+      'FFDAB9': const Color(0xFFFFDAB9),  // ピーチパフ
+      'FFE4C4': const Color(0xFFFFE4C4),  // ビスク
+      'FF6F61': const Color(0xFFFF6F61),  // コーラル（パントン）
+      'FF8C69': const Color(0xFFFF8C69),  // サーモン2
+      'FFA07A': const Color(0xFFFFA07A),  // ライトサーモン
+      'FFB088': const Color(0xFFFFB088),  // ピーチ系
+      'FFC0A0': const Color(0xFFFFC0A0),  // ヌード系
+      // ピンク系
+      'FF80AB': const Color(0xFFFF80AB),  // pink accent[100]
+      'F48FB1': const Color(0xFFF48FB1),  // pink[200]
+      'F8BBD0': const Color(0xFFF8BBD0),  // pink[100]
+      'FCE4EC': const Color(0xFFFCE4EC),  // pink[50]
+      // アンバー系
+      'FFC107': Colors.amber,
+      'FFD54F': const Color(0xFFFFD54F),  // amber[300]
+      'FFE082': const Color(0xFFFFE082),  // amber[200]
+    };
+    for (final e in baseCols.entries) {
+      for (final a in [0.04, 0.06, 0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.22, 0.28]) {
+        tabSamples.add(_ColorSample(
+          '${e.key} @${(a * 100).toInt()}%',
+          e.value.withValues(alpha: a),
+        ));
+      }
+    }
+
+    // タグフッター用カラーパレット
+    final footerSamples = <_ColorSample>[];
+    final footerCols = {
+      'cyan': Colors.cyan,
+      '00BCD4': const Color(0xFF00BCD4),
+      'B2EBF2': const Color(0xFFB2EBF2),  // cyan[100]
+      '80DEEA': const Color(0xFF80DEEA),  // cyan[200]
+      '4DD0E1': const Color(0xFF4DD0E1),  // cyan[300]
+      'E0F7FA': const Color(0xFFE0F7FA),  // cyan[50]
+    };
+    for (final e in footerCols.entries) {
+      for (final a in [0.02, 0.04, 0.06, 0.08, 0.10, 0.14]) {
+        footerSamples.add(_ColorSample(
+          '${e.key} @${(a * 100).toInt()}%',
+          e.value.withValues(alpha: a),
+        ));
+      }
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (ctx, scrollController) => Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text('Color Lab',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: [
+                  const Text('タイトルタブ',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: tabSamples.map((s) => GestureDetector(
+                      onTap: () {
+                        setState(() => _labTabColor = s.color);
+                        Navigator.pop(ctx);
+                      },
+                      child: Tooltip(
+                        message: s.label,
+                        child: Container(
+                          width: 44, height: 44,
+                          decoration: BoxDecoration(
+                            color: s.color,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: _labTabColor == s.color
+                                  ? Colors.blue : Colors.grey[300]!,
+                              width: _labTabColor == s.color ? 2 : 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('タグフッター',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: footerSamples.map((s) => GestureDetector(
+                      onTap: () {
+                        setState(() => _labTagFooterColor = s.color);
+                        Navigator.pop(ctx);
+                      },
+                      child: Tooltip(
+                        message: s.label,
+                        child: Container(
+                          width: 44, height: 44,
+                          decoration: BoxDecoration(
+                            color: s.color,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: _labTagFooterColor == s.color
+                                  ? Colors.blue : Colors.grey[300]!,
+                              width: _labTagFooterColor == s.color ? 2 : 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  // 現在の値を表示
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Tab: ${_labTabColor.toString()}\n'
+                      'Footer: ${_labTagFooterColor.toString()}',
+                      style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _finishCurrentSet() {
     // 削除キューを実行
     final db = ref.read(databaseProvider);
@@ -522,12 +719,16 @@ class _QuickSortCard extends ConsumerStatefulWidget {
   final VoidCallback onTagged;
   final VoidCallback onTitled;
   final VoidCallback onEdited;
+  final Color tabColor;
+  final Color tagFooterColor;
 
   const _QuickSortCard({
     required this.memo,
     required this.onTagged,
     required this.onTitled,
     required this.onEdited,
+    required this.tabColor,
+    required this.tagFooterColor,
   });
 
   @override
@@ -602,86 +803,80 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
       final tabWidth = constraints.maxWidth * tabRatio;
       final borderColor = _parentTagColor;
 
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // タイトルタブ
-          SizedBox(
-            width: tabWidth,
-            height: tabHeight,
-            child: ClipPath(
-              clipper: const TrapezoidTabClipper(
-                  inset: 10, topRadius: 7, rootRadius: 9),
+      // カード全体の外形パスを描画するCustomPaint + 内部レイアウト
+      return CustomPaint(
+        painter: _CardWithTabPainter(
+          tabWidth: tabWidth,
+          tabHeight: tabHeight,
+          tabColor: _isEditingTitle
+              ? const Color(0xFFFFE0B2)
+              : const Color(0xFFFFF0DB),
+          bodyColor: Colors.white,
+          borderColor: borderColor?.withValues(alpha: 0.4) ??
+              Colors.grey.withValues(alpha: 0.2),
+          borderWidth: 2.5,
+          cornerRadius: 14,
+          tabTopRadius: 7,
+          tabRootRadius: 9,
+          tabRightInset: 10,
+          shadowColor: Colors.black.withValues(alpha: 0.1),
+          shadowBlur: 8,
+          shadowOffsetY: 4,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // タイトルタブ領域
+            SizedBox(
+              width: tabWidth,
+              height: tabHeight,
               child: GestureDetector(
                 onTap: () {
                   if (!_isEditingTitle) {
                     setState(() => _isEditingTitle = true);
                   }
                 },
-                child: Container(
-                  color: _isEditingTitle
-                      ? Colors.orange.withValues(alpha: 0.35)
-                      : Colors.orange.withValues(alpha: 0.18),
+                child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  alignment: Alignment.centerLeft,
-                  child: _isEditingTitle
-                      ? TextField(
-                          controller: _titleController,
-                          autofocus: true,
-                          onTap: TextMenuDismisser.wrap(null),
-                          contextMenuBuilder: TextMenuDismisser.builder,
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold),
-                          decoration: const InputDecoration(
-                            hintText: 'タイトルなし',
-                            border: InputBorder.none,
-                            isDense: true,
-                            contentPadding: EdgeInsets.zero,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _isEditingTitle
+                        ? TextField(
+                            controller: _titleController,
+                            autofocus: true,
+                            onTap: TextMenuDismisser.wrap(null),
+                            contextMenuBuilder: TextMenuDismisser.builder,
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
+                            decoration: const InputDecoration(
+                              hintText: 'タイトルなし',
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            onSubmitted: (_) => _saveTitle(),
+                          )
+                        : Text(
+                            _titleController.text.isEmpty
+                                ? 'タイトルなし'
+                                : _titleController.text,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: _titleController.text.isEmpty
+                                  ? Colors.grey
+                                  : Colors.black87,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          onSubmitted: (_) => _saveTitle(),
-                        )
-                      : Text(
-                          _titleController.text.isEmpty
-                              ? 'タイトルなし'
-                              : _titleController.text,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: _titleController.text.isEmpty
-                                ? Colors.grey
-                                : Colors.black87,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                  ),
                 ),
               ),
             ),
-          ),
 
-          // カード本体
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: const BorderRadius.only(
-                  topRight: Radius.circular(14),
-                  bottomLeft: Radius.circular(14),
-                  bottomRight: Radius.circular(14),
-                ),
-                border: Border.all(
-                  color: borderColor?.withValues(alpha: 0.4) ??
-                      Colors.grey.withValues(alpha: 0.2),
-                  width: 2.5,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
+            // 本文 + タグフッター
+            Expanded(
               child: Stack(
                 children: [
                   Column(
@@ -740,11 +935,7 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                            color: Colors.cyan.withValues(alpha: 0.06),
-                            borderRadius: const BorderRadius.only(
-                              bottomLeft: Radius.circular(12),
-                              bottomRight: Radius.circular(12),
-                            ),
+                            color: widget.tagFooterColor,
                           ),
                           child: Row(
                             children: [
@@ -846,8 +1037,8 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                 ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     });
   }
@@ -1674,3 +1865,170 @@ class _QuickSortIntro extends StatelessWidget {
 }
 
 enum _Phase { intro, filter, loading, carousel, result }
+
+// カラーラボ用
+class _ColorSample {
+  final String label;
+  final Color color;
+  const _ColorSample(this.label, this.color);
+}
+
+/// タブ付きカード全体を1つの形状で描画（ボーダー+影がタブまで包む）
+class _CardWithTabPainter extends CustomPainter {
+  final double tabWidth;
+  final double tabHeight;
+  final Color tabColor;
+  final Color bodyColor;
+  final Color borderColor;
+  final double borderWidth;
+  final double cornerRadius;
+  final double tabTopRadius;
+  final double tabRootRadius;
+  final double tabRightInset;
+  final Color shadowColor;
+  final double shadowBlur;
+  final double shadowOffsetY;
+
+  const _CardWithTabPainter({
+    required this.tabWidth,
+    required this.tabHeight,
+    required this.tabColor,
+    required this.bodyColor,
+    required this.borderColor,
+    required this.borderWidth,
+    required this.cornerRadius,
+    required this.tabTopRadius,
+    required this.tabRootRadius,
+    required this.tabRightInset,
+    required this.shadowColor,
+    required this.shadowBlur,
+    required this.shadowOffsetY,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final cr = cornerRadius;
+    final tr = tabTopRadius;
+    final rr = tabRootRadius;
+
+    // タブ+本体を合わせた外形パス（時計回り）
+    final path = _buildOuterPath(w, h, cr, tr, rr);
+
+    // 影
+    canvas.save();
+    canvas.translate(0, shadowOffsetY);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = shadowColor
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, shadowBlur),
+    );
+    canvas.restore();
+
+    // 本体（白）を全体に塗る
+    canvas.drawPath(path, Paint()..color = bodyColor);
+
+    // タブ部分だけ上書き塗り
+    // タブ塗り用パス（外形パスのタブ部分と一致）
+    final ri = tabRightInset;
+    final th = tabHeight;
+    final tw = tabWidth;
+    final tabPath = Path();
+    tabPath.moveTo(0, th);
+    var tc = Offset(0, th);
+    // 左辺を上へ → 左上角丸
+    tc = _arc(tabPath, tc, const Offset(0, 0), Offset(tr, 0), tr);
+    // 上辺 → 右上角丸
+    tc = _arc(tabPath, tc, Offset(tw - ri, 0), Offset(tw, th), tr);
+    // 右斜辺を下へ
+    tabPath.lineTo(tw, th);
+    tabPath.close();
+    canvas.drawPath(tabPath, Paint()..color = tabColor);
+
+    // ボーダー（外形全体）
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = borderColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = borderWidth,
+    );
+  }
+
+  Path _buildOuterPath(double w, double h, double cr, double tr, double rr) {
+    final ri = tabRightInset;
+    final th = tabHeight;
+    final tw = tabWidth;
+    final path = Path();
+
+    // スタート: 左下角の少し上
+    var cur = Offset(0, h - cr);
+    path.moveTo(cur.dx, cur.dy);
+
+    // 左下角丸
+    cur = _arc(path, cur, Offset(0, h), Offset(cr, h), cr);
+    // 下辺 → 右下角丸
+    cur = _arc(path, cur, Offset(w, h), Offset(w, h - cr), cr);
+    // 右辺 → 右上角丸（本体部分）
+    cur = _arc(path, cur, Offset(w, th), Offset(w - cr, th), cr);
+    // 本体上辺 → タブ付け根の逆カーブ
+    cur = _arc(path, cur, Offset(tw, th), Offset(tw - ri, 0), rr);
+    // タブ右上角丸
+    cur = _arc(path, cur, Offset(tw - ri, 0), Offset(tw - ri - tr, 0), tr);
+    // タブ上辺 → 左上角丸
+    cur = _arc(path, cur, Offset(0, 0), Offset(0, tr), tr);
+    // 左辺を下へ
+    path.lineTo(0, h - cr);
+
+    path.close();
+    return path;
+  }
+
+  /// SwiftのaddArc(tangent1:tangent2:radius:)と同等
+  Offset _arc(Path path, Offset current, Offset p1, Offset p2, double radius) {
+    final v1 = current - p1;
+    final v2 = p2 - p1;
+    final l1 = v1.distance;
+    final l2 = v2.distance;
+    if (l1 == 0 || l2 == 0) {
+      path.lineTo(p1.dx, p1.dy);
+      return p1;
+    }
+    final u1 = v1 / l1;
+    final u2 = v2 / l2;
+    final dot = u1.dx * u2.dx + u1.dy * u2.dy;
+    if (dot.abs() >= 0.9999) {
+      path.lineTo(p1.dx, p1.dy);
+      return p1;
+    }
+    final theta = acos(dot.clamp(-1.0, 1.0));
+    final dist = radius / tan(theta / 2);
+    final t1 = p1 + u1 * dist;
+    final t2 = p1 + u2 * dist;
+    final bis = u1 + u2;
+    final bisU = bis / bis.distance;
+    final centerDist = radius / sin(theta / 2);
+    final center = p1 + bisU * centerDist;
+    final startAngle = atan2(t1.dy - center.dy, t1.dx - center.dx);
+    final endAngle = atan2(t2.dy - center.dy, t2.dx - center.dx);
+    var sweep = endAngle - startAngle;
+    if (sweep > pi) sweep -= 2 * pi;
+    if (sweep < -pi) sweep += 2 * pi;
+    path.lineTo(t1.dx, t1.dy);
+    path.arcTo(
+      Rect.fromCircle(center: center, radius: radius),
+      startAngle, sweep, false,
+    );
+    return t2;
+  }
+
+  @override
+  bool shouldRepaint(covariant _CardWithTabPainter old) =>
+      old.tabWidth != tabWidth ||
+      old.tabHeight != tabHeight ||
+      old.tabColor != tabColor ||
+      old.bodyColor != bodyColor ||
+      old.borderColor != borderColor;
+}
