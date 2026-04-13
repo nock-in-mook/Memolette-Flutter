@@ -469,6 +469,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  // 履歴スクロールシェブロン
+  bool _historyCanScrollDown = false;
+
   /// タグ履歴リスト（フォルダタブ右上にオーバーレイ）
   Widget _buildTagHistoryList() {
     final state = _inputAreaKey.currentState;
@@ -476,7 +479,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final allTags = ref.watch(allTagsProvider).value ?? const <Tag>[];
 
     return Container(
-      constraints: const BoxConstraints(maxWidth: 220, maxHeight: 180),
+      constraints: const BoxConstraints(maxWidth: 250, maxHeight: 220),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
@@ -504,7 +507,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     )),
                 const Spacer(),
                 GestureDetector(
-                  onTap: () => state?.closeTagHistory(),
+                  onTap: () {
+                    state?.closeTagHistory();
+                    setState(() => _historyCanScrollDown = false);
+                  },
                   child: Icon(CupertinoIcons.xmark_circle_fill,
                       size: 16,
                       color: Colors.grey.withValues(alpha: 0.5)),
@@ -521,77 +527,105 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             )
           else
             Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-                itemCount: items.length,
-                itemBuilder: (context, index) {
-                  final item = items[index];
-                  final parentTag = allTags
-                      .where((t) => t.id == item.parentTagId)
-                      .firstOrNull;
-                  if (parentTag == null) return const SizedBox.shrink();
-                  final childTag = item.childTagId != null
-                      ? allTags
-                          .where((t) => t.id == item.childTagId)
-                          .firstOrNull
-                      : null;
-
-                  return GestureDetector(
-                    onTap: () => state?.selectFromHistory(item),
-                    behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 3),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // 親タグバッジ
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: TagColors.getColor(parentTag.colorIndex),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              parentTag.name,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                fontFamily: '.SF Pro Rounded',
-                              ),
-                            ),
-                          ),
-                          // 子タグバッジ
-                          if (childTag != null) ...[
-                            const SizedBox(width: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 5, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: TagColors.getColor(childTag.colorIndex),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: Colors.grey.withValues(alpha: 0.3),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Text(
-                                childTag.name,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  fontFamily: '.SF Pro Rounded',
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  );
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  final metrics = notification.metrics;
+                  final canDown = metrics.pixels < metrics.maxScrollExtent;
+                  if (canDown != _historyCanScrollDown) {
+                    setState(() => _historyCanScrollDown = canDown);
+                  }
+                  return false;
                 },
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    final parentTag = allTags
+                        .where((t) => t.id == item.parentTagId)
+                        .firstOrNull;
+                    if (parentTag == null) return const SizedBox.shrink();
+                    final childTag = item.childTagId != null
+                        ? allTags
+                            .where((t) => t.id == item.childTagId)
+                            .firstOrNull
+                        : null;
+
+                    return GestureDetector(
+                      onTap: () => state?.selectFromHistory(item),
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: IntrinsicHeight(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Flexible(
+                                child: Container(
+                                  constraints: const BoxConstraints(maxWidth: 130),
+                                  padding: EdgeInsets.fromLTRB(
+                                      6, 3, childTag != null ? 9 : 6, 3),
+                                  decoration: BoxDecoration(
+                                    color: TagColors.getColor(parentTag.colorIndex),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    parentTag.name,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      fontFamily: '.SF Pro Rounded',
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              if (childTag != null)
+                                Flexible(
+                                  child: Transform.translate(
+                                    offset: const Offset(-4, 1),
+                                    child: Container(
+                                      constraints: const BoxConstraints(maxWidth: 110),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 5, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: TagColors.getColor(childTag.colorIndex),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        childTag.name,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          fontFamily: '.SF Pro Rounded',
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
+            ),
+          // 下スクロールシェブロン
+          if (_historyCanScrollDown)
+            Center(
+              child: Icon(Icons.keyboard_arrow_down,
+                  size: 32, color: Colors.grey.withValues(alpha: 0.5)),
             ),
         ],
       ),
@@ -607,7 +641,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           top: MediaQuery.of(context).viewPadding.top - 4,
         ),
         child: LayoutBuilder(
-          builder: (context, constraints) => Column(
+          builder: (context, constraints) => GestureDetector(
+          onTap: () {
+            // ルーレット展開中なら閉じる
+            if (_inputAreaKey.currentState?.isRouletteOpen ?? false) {
+              _inputAreaKey.currentState?.closeRoulette();
+            }
+          },
+          behavior: HitTestBehavior.translucent,
+          child: Column(
           children: [
             // 1. 検索バー / 入力欄最大化中はミニバー
             // フォルダ最大化中も検索バーは残す（+ボタンは入力欄最大化を開く動作に切替）
@@ -646,6 +688,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 isExpanded: _isInputExpanded,
                 onToggleExpanded: () =>
                     setState(() => _isInputExpanded = !_isInputExpanded),
+                onTagHistoryChanged: () => setState(() {}),
               ),
             ),
             // 2b. 入力欄最大化時: 下端シェブロン
@@ -800,7 +843,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     if (_inputAreaKey.currentState?.showTagHistory ?? false)
                       Positioned(
                         right: 8,
-                        top: -10,
+                        top: -110,
                         child: _buildTagHistoryList(),
                       ),
                     // 並び替え中: フォルダ本体に説明 + ボタン
@@ -838,6 +881,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
             ),
           ],
+        ),
         ),
       ),
     );

@@ -10,6 +10,7 @@ void main() async {
   // ダミータグ挿入（タグ0件のときだけ）
   final db = AppDatabase();
   await db.seedDummyTags();
+  await db.seedDummyTagHistory();
   await db.close();
 
   runApp(

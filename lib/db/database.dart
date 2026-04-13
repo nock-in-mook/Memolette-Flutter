@@ -551,6 +551,75 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  /// ダミータグ履歴を挿入（開発用）
+  /// 親タグのみ・親子セット・重複を含むパターンで生成
+  Future<void> seedDummyTagHistory() async {
+    final existing = await getRecentTagHistory();
+    // 長いタグ名テスト済みかチェック（テストタグの存在で判定）
+    final hasLongTest = (await (select(tags)
+          ..where((t) => t.name.equals('とても長い親タグの名前テスト用')))
+        .get()).isNotEmpty;
+    if (existing.isNotEmpty && hasLongTest) return;
+
+    final parentTags = await (select(tags)
+          ..where((t) => t.parentTagId.isNull())
+          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+        .get();
+    if (parentTags.isEmpty) return;
+
+    // 各親タグの子タグを取得
+    final childMap = <String, List<Tag>>{};
+    for (final p in parentTags) {
+      final children = await (select(tags)
+            ..where((t) => t.parentTagId.equals(p.id)))
+          .get();
+      childMap[p.id] = children;
+    }
+
+    // パターン生成: 親タグのみ、親+子、重複チェック用（初回のみ）
+    if (existing.isEmpty)
+    for (var i = 0; i < parentTags.length && i < 5; i++) {
+      final p = parentTags[i];
+      final children = childMap[p.id] ?? [];
+
+      // 親タグのみ
+      await recordTagHistory(p.id);
+
+      // 子タグがあれば親+子セットも
+      if (children.isNotEmpty) {
+        await recordTagHistory(p.id, childTagId: children.first.id);
+      }
+      if (children.length > 1) {
+        await recordTagHistory(p.id, childTagId: children[1].id);
+      }
+    }
+
+    // 重複テスト: 最初の親タグをもう一度記録（日時更新されるはず）
+    if (parentTags.isNotEmpty) {
+      await recordTagHistory(parentTags.first.id);
+    }
+
+    // 長いタグ名テスト用
+    final longParent = parentTags.where((t) => t.name.length > 5).firstOrNull;
+    if (longParent != null) {
+      final longChildren = childMap[longParent.id] ?? [];
+      final longChild = longChildren.where((t) => t.name.length > 3).firstOrNull;
+      await recordTagHistory(longParent.id, childTagId: longChild?.id);
+    }
+
+    // 超長い名前のテスト用タグを一時作成して履歴に入れる
+    final longTestParentId = _uuid.v4();
+    final longTestChildId = _uuid.v4();
+    await into(tags).insert(TagsCompanion.insert(
+      id: longTestParentId, name: const Value('とても長い親タグの名前テスト用'), colorIndex: const Value(20),
+    ));
+    await into(tags).insert(TagsCompanion.insert(
+      id: longTestChildId, name: const Value('超長い子タグ名前テスト'), colorIndex: const Value(30),
+      parentTagId: Value(longTestParentId),
+    ));
+    await recordTagHistory(longTestParentId, childTagId: longTestChildId);
+  }
+
   /// 全データ削除（開発用）
   Future<void> wipeAll() async {
     await transaction(() async {

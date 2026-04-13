@@ -27,6 +27,8 @@ class MemoInputArea extends ConsumerStatefulWidget {
   final bool isExpanded;
   /// 最大化トグル (親が状態を持つ)
   final VoidCallback? onToggleExpanded;
+  /// タグ履歴表示状態が変わったときの通知（親のsetStateを呼ぶ用）
+  final VoidCallback? onTagHistoryChanged;
 
   const MemoInputArea({
     super.key,
@@ -38,6 +40,7 @@ class MemoInputArea extends ConsumerStatefulWidget {
     this.focusRequest = 0,
     this.isExpanded = false,
     this.onToggleExpanded,
+    this.onTagHistoryChanged,
   });
 
   @override
@@ -49,6 +52,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   bool get hasContent => _contentController.text.isNotEmpty;
   /// 外部から本文フォーカス状態を確認するゲッター
   bool get isContentFocused => _contentFocusNode.hasFocus;
+  /// ルーレットが開いてるか
+  bool get isRouletteOpen => _rouletteOpen;
+  /// ルーレットを閉じる（外部から呼べる）
+  void closeRoulette() => _closeRoulette();
   /// タグ履歴が表示中か
   bool get showTagHistory => _showTagHistory;
   /// タグ履歴アイテム
@@ -56,7 +63,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   /// 履歴からタグを選択（外部から呼べる）
   Future<void> selectFromHistory(TagHistory item) => _selectFromHistory(item);
   /// 履歴パネルを閉じる
-  void closeTagHistory() => setState(() => _showTagHistory = false);
+  void closeTagHistory() {
+    setState(() => _showTagHistory = false);
+    widget.onTagHistoryChanged?.call();
+  }
 
   // 本文の最大文字数（Swift版準拠）
   static const int _maxContentLength = 50000;
@@ -990,6 +1000,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       _rouletteOpen = true;
       _showTagHistory = false;
     });
+    widget.onTagHistoryChanged?.call();
   }
 
   /// ルーレットを閉じる（タグ履歴を記録）
@@ -1005,6 +1016,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       _rouletteOpen = false;
       _showTagHistory = false;
     });
+    widget.onTagHistoryChanged?.call();
   }
 
   // タグ履歴の表示フラグ
@@ -1023,6 +1035,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
         _showTagHistory = true;
       });
     }
+    widget.onTagHistoryChanged?.call();
   }
 
   /// 履歴からタグを選択
@@ -1035,6 +1048,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       await _onTagSelected(item.childTagId!, true);
     }
     setState(() => _showTagHistory = false);
+    widget.onTagHistoryChanged?.call();
   }
 
   /// 親タグ追加シートを開く

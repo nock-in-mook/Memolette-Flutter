@@ -84,6 +84,11 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
 
   // ルーレット
   bool _rouletteOpen = false;
+  bool _showTagHistory = false;
+  List<TagHistory> _tagHistoryItems = [];
+  // 履歴スクロールシェブロン
+  bool _historyCanScrollUp = false;
+  bool _historyCanScrollDown = false;
 
   void _closeSwipeIfOpen() {
     if (_isAnySwipeOpen) {
@@ -885,7 +890,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     return GestureDetector(
       onTap: () {
         _closeSwipeIfOpen();
-        if (_rouletteOpen) setState(() => _rouletteOpen = false);
+        // ルーレット閉じはグレー背景タップで行う（ここで閉じると履歴ボタン等が競合する）
       },
       behavior: HitTestBehavior.translucent,
       child: Scaffold(
@@ -920,6 +925,17 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                   ),
                 ],
               ),
+              // タグ履歴オーバーレイ（トレー下端のすぐ下に表示）
+              if (_showTagHistory && _rouletteOpen)
+                Positioned(
+                  right: 16,
+                  top: 273 + 150,
+                  child: Material(
+                    elevation: 8,
+                    borderRadius: BorderRadius.circular(10),
+                    child: _buildTagHistoryOverlay(),
+                  ),
+                ),
             ],
           ),
         ),
@@ -1209,44 +1225,70 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
             final progress = total > 0 ? done / total : 0.0;
             return Padding(
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
-              child: Row(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            const Icon(CupertinoIcons.bookmark_fill,
-                                size: 20, color: Colors.orange),
-                            const SizedBox(width: 8),
-                            Expanded(child: _buildTitleEditable(list)),
-                          ],
-                        ),
-                        if (total > 0) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            '$done/$total 完了',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              fontFamily: 'Hiragino Sans',
-                              color: Colors.black.withValues(alpha: 0.55),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  // タグバッジと円グラフを下端揃えで横並び
+                  // 1行目: ブックマーク + タイトル（フル幅） + 円グラフ
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      _buildTagBadge(),
-                      if (total > 0) _buildProgressDonut(rootItems, progress),
+                      const Icon(CupertinoIcons.bookmark_fill,
+                          size: 20, color: Colors.orange),
+                      const SizedBox(width: 8),
+                      Expanded(child: _buildTitleEditable(list)),
+                      if (total > 0) ...[
+                        const SizedBox(width: 8),
+                        _buildProgressDonut(rootItems, progress),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  // 2行目: 完了数 + タグバッジ + リセット（常に表示）
+                  Row(
+                    children: [
+                      Text(
+                        '$done/$total 完了',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          fontFamily: 'Hiragino Sans',
+                          color: Colors.black.withValues(alpha: 0.55),
+                        ),
+                      ),
+                      const Spacer(),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 160),
+                        child: _buildTagBadge(),
+                      ),
+                      // リセットボタン（チェックが1つ以上あるとき）
+                      if (done > 0) ...[
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () => _showResetDialog(rootItems, done),
+                          behavior: HitTestBehavior.opaque,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                CupertinoIcons.checkmark_square,
+                                size: 10,
+                                color: Colors.black.withValues(alpha: 0.4),
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                'リセット',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w500,
+                                  fontFamily: 'Hiragino Sans',
+                                  color: Colors.black.withValues(alpha: 0.4),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],
@@ -1375,10 +1417,12 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            parentWidget,
-            Transform.translate(
-              offset: const Offset(-4, 1.5),
-              child: childWidget,
+            Flexible(child: parentWidget),
+            Flexible(
+              child: Transform.translate(
+                offset: const Offset(-4, 1.5),
+                child: childWidget,
+              ),
             ),
           ],
         ),
@@ -1462,7 +1506,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
               child: IgnorePointer(
                 ignoring: !_rouletteOpen,
                 child: GestureDetector(
-                  onTap: () => setState(() => _rouletteOpen = false),
+                  onTap: _closeRoulette,
                   child: AnimatedOpacity(
                     opacity: _rouletteOpen ? 1.0 : 0.0,
                     duration: const Duration(milliseconds: 300),
@@ -1495,7 +1539,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                       top: 0,
                       bottom: 0,
                       child: GestureDetector(
-                        onTap: () => setState(() => _rouletteOpen = false),
+                        onTap: _closeRoulette,
                         behavior: HitTestBehavior.opaque,
                         child: CustomPaint(
                         painter: _TrayPainter(
@@ -1520,7 +1564,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                                       left: 0, top: 0, bottom: 0, width: tabW,
                                       child: GestureDetector(
                                         behavior: HitTestBehavior.opaque,
-                                        onTap: () => setState(() => _rouletteOpen = false),
+                                        onTap: _closeRoulette,
                                         child: Center(
                                           child: Text(
                                             '\u25B6',
@@ -1570,7 +1614,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                                   alignment: Alignment.centerRight,
                                   child: GestureDetector(
                                     behavior: HitTestBehavior.opaque,
-                                    onTap: () => setState(() => _rouletteOpen = false),
+                                    onTap: _closeRoulette,
                                     child: Transform.translate(
                                       offset: const Offset(-8, 0),
                                       child: SizedBox(
@@ -1642,13 +1686,15 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                                       right: 8, top: 9,
                                       child: GestureDetector(
                                         behavior: HitTestBehavior.opaque,
-                                        onTap: () {
-                                          // TODO: タグ履歴
-                                        },
+                                        onTap: _toggleTagHistory,
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Icon(Icons.chevron_right, size: 12,
+                                            Icon(
+                                                _showTagHistory
+                                                    ? Icons.keyboard_arrow_down
+                                                    : Icons.chevron_right,
+                                                size: 12,
                                                 color: Colors.white.withValues(alpha: 0.8)),
                                             const SizedBox(width: 3),
                                             Text('履歴',
@@ -1772,6 +1818,212 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     await _onRouletteTagSelected(newTagId, true);
   }
 
+  /// ルーレットを閉じる（タグ履歴を記録）
+  Future<void> _closeRoulette() async {
+    if (!_rouletteOpen) return;
+    final db = ref.read(databaseProvider);
+    final attachedTags = await db.getTagsForTodoList(widget.listId);
+    final parentTag =
+        attachedTags.where((t) => t.parentTagId == null).firstOrNull;
+    if (parentTag != null) {
+      final childTag = attachedTags
+          .where((t) => t.parentTagId == parentTag.id)
+          .firstOrNull;
+      await db.recordTagHistory(parentTag.id, childTagId: childTag?.id);
+    }
+    if (mounted) {
+      setState(() {
+        _rouletteOpen = false;
+        _showTagHistory = false;
+      });
+    }
+  }
+
+  /// 履歴表示トグル
+  Future<void> _toggleTagHistory() async {
+    if (_showTagHistory) {
+      setState(() => _showTagHistory = false);
+    } else {
+      final db = ref.read(databaseProvider);
+      final items = await db.getRecentTagHistory();
+      setState(() {
+        _tagHistoryItems = items;
+        _showTagHistory = true;
+        _historyCanScrollUp = false;
+        _historyCanScrollDown = items.length > 4; // 4件超えたらスクロール可能とみなす
+      });
+    }
+  }
+
+  /// 履歴からタグを選択
+  Future<void> _selectFromHistory(TagHistory item) async {
+    // 親タグを選択
+    await _onRouletteTagSelected(item.parentTagId, false);
+    // 子タグがあれば選択
+    if (item.childTagId != null) {
+      await _onRouletteTagSelected(item.childTagId!, true);
+    }
+    setState(() => _showTagHistory = false);
+  }
+
+  /// タグ履歴オーバーレイ
+  Widget _buildTagHistoryOverlay() {
+    final allTags = ref.watch(allTagsProvider).valueOrNull ?? const <Tag>[];
+
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 250, maxHeight: 220),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 6, 6, 4),
+            child: Row(
+              children: [
+                const Text('タグ履歴',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: '.SF Pro Rounded',
+                    )),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => setState(() => _showTagHistory = false),
+                  child: Icon(CupertinoIcons.xmark_circle_fill,
+                      size: 16,
+                      color: Colors.grey.withValues(alpha: 0.5)),
+                ),
+              ],
+            ),
+          ),
+          if (_tagHistoryItems.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text('まだ履歴がありません',
+                  style: TextStyle(fontSize: 12, color: Colors.grey)),
+            )
+          else
+            Flexible(
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  final metrics = notification.metrics;
+                  final canUp = metrics.pixels > 0;
+                  final canDown = metrics.pixels < metrics.maxScrollExtent;
+                  if (canUp != _historyCanScrollUp ||
+                      canDown != _historyCanScrollDown) {
+                    setState(() {
+                      _historyCanScrollUp = canUp;
+                      _historyCanScrollDown = canDown;
+                    });
+                  }
+                  return false;
+                },
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+                  itemCount: _tagHistoryItems.length,
+                  itemBuilder: (context, index) {
+                  final item = _tagHistoryItems[index];
+                  final pTag = allTags
+                      .where((t) => t.id == item.parentTagId)
+                      .firstOrNull;
+                  if (pTag == null) return const SizedBox.shrink();
+                  final cTag = item.childTagId != null
+                      ? allTags
+                          .where((t) => t.id == item.childTagId)
+                          .firstOrNull
+                      : null;
+
+                  return GestureDetector(
+                    onTap: () => _selectFromHistory(item),
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: IntrinsicHeight(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Flexible(
+                              child: Container(
+                                constraints: const BoxConstraints(maxWidth: 130),
+                                padding: EdgeInsets.fromLTRB(
+                                    6, 3, cTag != null ? 9 : 6, 3),
+                                decoration: BoxDecoration(
+                                  color: TagColors.getColor(pTag.colorIndex),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  pTag.name,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    fontFamily: '.SF Pro Rounded',
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                            if (cTag != null)
+                              Flexible(
+                                child: Transform.translate(
+                                  offset: const Offset(-4, 1),
+                                  child: Container(
+                                    constraints: const BoxConstraints(maxWidth: 110),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 5, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: TagColors.getColor(cTag.colorIndex),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      cTag.name,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        fontFamily: '.SF Pro Rounded',
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              ),
+            ),
+          // 下スクロールシェブロン
+          if (_historyCanScrollDown)
+            Center(
+              child: Icon(Icons.keyboard_arrow_down,
+                  size: 32, color: Colors.grey.withValues(alpha: 0.5)),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildProgressDonut(List<TodoItem> items, double progress) {
     final percent = (progress * 100).round();
     final hasDone = items.any((i) => i.isDone);
@@ -1835,33 +2087,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 4),
-        // チェックが1つ以上あるときだけ表示
-        if (hasDone)
-          GestureDetector(
-            onTap: () => _showResetDialog(items, doneCount),
-            behavior: HitTestBehavior.opaque,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  CupertinoIcons.checkmark_square,
-                  size: 10,
-                  color: Colors.black.withValues(alpha: 0.4),
-                ),
-                const SizedBox(width: 2),
-                Text(
-                  'リセット',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                    fontFamily: 'Hiragino Sans',
-                    color: Colors.black.withValues(alpha: 0.4),
-                  ),
-                ),
-              ],
-            ),
-          ),
       ],
     );
   }
