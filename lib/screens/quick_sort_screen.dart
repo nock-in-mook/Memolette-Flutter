@@ -192,11 +192,11 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
             ),
           ),
 
-          // メモカード（画面高さの35%）
+          // メモカード（画面高さの28%、本家準拠）
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: SizedBox(
-              height: MediaQuery.of(context).size.height * 0.35,
+              height: MediaQuery.of(context).size.height * 0.28,
               child: _QuickSortCard(
                 memo: memo,
                 onTagged: () => _taggedMemoIds.add(memo.id),
