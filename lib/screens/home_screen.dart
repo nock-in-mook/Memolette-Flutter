@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:drift/drift.dart' hide Column;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../constants/design_constants.dart';
@@ -1855,6 +1856,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         gridSize: _gridSize,
         onTap: _openMemo,
         onTodoTap: _openTodoList,
+        onTodoLongPress: _showTodoActions,
         wrapBuilder: (memo, card) => _wrapMemoInContextMenu(memo, card),
         selectMode: _isSelectMode,
         selectedIds: _selectedMemoIds,
@@ -1870,6 +1872,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         gridSize: _gridSize,
         onTap: _openMemo,
         onTodoTap: _openTodoList,
+        onTodoLongPress: _showTodoActions,
         wrapBuilder: (memo, card) => _wrapMemoInContextMenu(memo, card),
         selectMode: _isSelectMode,
         selectedIds: _selectedMemoIds,
@@ -2772,6 +2775,250 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         break;
       case 'delete':
         await db.deleteMemo(memo.id);
+        break;
+    }
+  }
+
+  // ToDoカード長押しメニュー（メモと同じボトムシート方式）
+  // 項目: トップに移動 / 固定 / ロック / 削除
+  Future<void> _showTodoActions(TodoList list) async {
+    FocusScope.of(context).unfocus();
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.35),
+      builder: (sheetCtx) {
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 対象ToDoカードのプレビュー
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 100),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD8F7E0), // 薄緑
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: IgnorePointer(
+                      child: TodoCard(
+                        todoList: list,
+                        onTap: () {},
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // 項目リスト（すりガラス調）
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.88),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _MenuActionRow(
+                            icon: list.isPinned
+                                ? Icons.push_pin_outlined
+                                : Icons.push_pin,
+                            label: list.isPinned
+                                ? '固定を解除'
+                                : 'トップに常時固定',
+                            onTap: () =>
+                                Navigator.of(sheetCtx).pop('pin'),
+                          ),
+                          _MenuActionRow(
+                            icon: list.isLocked
+                                ? Icons.lock_open
+                                : Icons.lock_outline,
+                            label: list.isLocked ? 'ロックを解除' : '削除防止ロック',
+                            onTap: () =>
+                                Navigator.of(sheetCtx).pop('lock'),
+                          ),
+                          if (list.isLocked)
+                            _MenuActionRow(
+                              icon: Icons.lock,
+                              label: '削除ロック中',
+                              destructive: true,
+                              disabled: true,
+                              onTap: () {},
+                            )
+                          else
+                            _MenuActionRow(
+                              icon: Icons.delete_outline,
+                              label: '削除',
+                              destructive: true,
+                              onTap: () =>
+                                  Navigator.of(sheetCtx).pop('delete'),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // キャンセルボタン
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => Navigator.of(sheetCtx).pop(),
+                      child: Container(
+                        height: 50,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.95),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Text(
+                          'キャンセル',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF007AFF),
+                            fontFamily: 'Hiragino Sans',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted) return;
+    final db = ref.read(databaseProvider);
+    switch (action) {
+      case 'pin':
+        await (db.update(db.todoLists)
+              ..where((t) => t.id.equals(list.id)))
+            .write(TodoListsCompanion(
+          isPinned: Value(!list.isPinned),
+          updatedAt: Value(DateTime.now()),
+        ));
+        break;
+      case 'lock':
+        final wasLocked = list.isLocked;
+        await (db.update(db.todoLists)
+              ..where((t) => t.id.equals(list.id)))
+            .write(TodoListsCompanion(
+          isLocked: Value(!list.isLocked),
+          updatedAt: Value(DateTime.now()),
+        ));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              duration: const Duration(milliseconds: 1500),
+              content: Text(
+                wasLocked ? 'ロックを解除しました' : 'リストをロックしました',
+              ),
+            ),
+          );
+        }
+        break;
+      case 'delete':
+        // 削除確認ダイアログ
+        if (!mounted) return;
+        final confirmed = await showGeneralDialog<bool>(
+          context: context,
+          barrierDismissible: true, barrierLabel: '',
+          barrierColor: Colors.black.withValues(alpha: 0.3),
+          transitionDuration: const Duration(milliseconds: 150),
+          pageBuilder: (ctx, _, __) => Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 20, offset: const Offset(0, 4))],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('ToDoリストを削除', style: TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w600,
+                        fontFamily: 'Hiragino Sans')),
+                      const SizedBox(height: 12),
+                      const Text('ToDoリストを削除します。よろしいですか？',
+                        style: TextStyle(fontSize: 13,
+                          fontFamily: 'Hiragino Sans',
+                          color: Color(0x993C3C43))),
+                      const SizedBox(height: 16),
+                      GestureDetector(
+                        onTap: () => Navigator.of(ctx).pop(true),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8)),
+                          alignment: Alignment.center,
+                          child: const Text('削除する', style: TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w500,
+                            fontFamily: 'Hiragino Sans', color: Colors.red)),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      GestureDetector(
+                        onTap: () => Navigator.of(ctx).pop(false),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          alignment: Alignment.center,
+                          child: const Text('キャンセル', style: TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w500,
+                            fontFamily: 'Hiragino Sans',
+                            color: Color(0x993C3C43))),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          transitionBuilder: (_, anim, __, child) =>
+              FadeTransition(opacity: anim, child: child),
+        );
+        if (confirmed == true) {
+          await (db.delete(db.todoItems)
+                ..where((t) => t.listId.equals(list.id)))
+              .go();
+          await (db.delete(db.todoLists)
+                ..where((t) => t.id.equals(list.id)))
+              .go();
+        }
         break;
     }
   }
@@ -3694,6 +3941,7 @@ class _MemoGridView extends StatelessWidget {
   final GridSizeOption gridSize;
   final void Function(Memo) onTap;
   final void Function(TodoList)? onTodoTap;
+  final void Function(TodoList)? onTodoLongPress;
   final MemoCardWrapper? wrapBuilder;
   // 子タグバッジ用: 現在のフォルダの親タグID（無ければバッジなし）
   final String? parentTagId;
@@ -3719,6 +3967,7 @@ class _MemoGridView extends StatelessWidget {
     required this.gridSize,
     required this.onTap,
     this.onTodoTap,
+    this.onTodoLongPress,
     this.wrapBuilder,
     this.parentTagId,
     this.selectMode = false,
@@ -3830,10 +4079,13 @@ class _MemoGridView extends StatelessWidget {
   Widget _buildGridItem(_GridItem item) {
     return switch (item) {
       _MemoGridItem(memo: final memo) => _buildCard(memo),
-      _TodoGridItem(todoList: final list) => TodoCard(
+      _TodoGridItem(todoList: final list) => GestureDetector(
           key: ValueKey('todocard_${list.id}'),
-          todoList: list,
-          onTap: () => onTodoTap?.call(list),
+          onLongPress: () => onTodoLongPress?.call(list),
+          child: TodoCard(
+            todoList: list,
+            onTap: () => onTodoTap?.call(list),
+          ),
         ),
     };
   }
