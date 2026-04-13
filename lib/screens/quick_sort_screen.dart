@@ -192,14 +192,14 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
             ),
           ),
 
-          // カードを画面中央寄りに浮かせる
-          const Spacer(flex: 1),
+          // カードを画面中央寄りに浮かせる（下端位置を維持）
+          const Spacer(flex: 3),
 
-          // メモカード（画面高さの33%、本家準拠）
+          // メモカード（画面高さの29%）
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: SizedBox(
-              height: MediaQuery.of(context).size.height * 0.33,
+              height: MediaQuery.of(context).size.height * 0.29,
               child: _QuickSortCard(
                 memo: memo,
                 onTagged: () => _taggedMemoIds.add(memo.id),
