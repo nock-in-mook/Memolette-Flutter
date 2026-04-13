@@ -24,10 +24,6 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   // フェーズ管理
   _Phase _phase = _Phase.filter;
 
-  // フィルター設定
-  _FilterType _filterType = _FilterType.noTag;
-  final Set<String> _selectedTagIds = {};
-
   // 処理対象メモ
   List<Memo> _allFilteredMemos = [];
   List<Memo> _activeMemos = [];
@@ -49,202 +45,22 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       resizeToAvoidBottomInset: false,
-      appBar: AppBar(
-        title: const Text('爆速メモ整理'),
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-      ),
       body: KeyboardDoneBar(child: switch (_phase) {
-        _Phase.filter => _buildFilterPhase(),
+        _Phase.filter => _QuickSortFilterPhase(
+          onStart: (memos) {
+            setState(() {
+              _allFilteredMemos = memos;
+              _currentSetIndex = 0;
+              _loadCurrentSet();
+              _phase = _Phase.carousel;
+            });
+          },
+          onCancel: () => Navigator.of(context).pop(),
+        ),
         _Phase.carousel => _buildCarouselPhase(),
         _Phase.result => _buildResultPhase(),
       }),
     );
-  }
-
-  // ========================================
-  // Phase 1: フィルター選択
-  // ========================================
-  Widget _buildFilterPhase() {
-    final parentTagsAsync = ref.watch(parentTagsProvider);
-
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('整理するメモを選択',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 20),
-
-          // フィルターオプション
-          _filterOption('タグなしメモ', _FilterType.noTag, Icons.label_off),
-          _filterOption('タイトルなしメモ', _FilterType.noTitle, Icons.title),
-          _filterOption(
-              '3ヶ月以上見ていないメモ', _FilterType.old, Icons.history),
-          _filterOption('すべてのメモ', _FilterType.all, Icons.select_all),
-
-          const SizedBox(height: 16),
-          const Divider(),
-          const SizedBox(height: 8),
-          const Text('タグで絞り込み',
-              style: TextStyle(fontSize: 14, color: Colors.grey)),
-          const SizedBox(height: 8),
-
-          // 親タグ選択
-          parentTagsAsync.when(
-            data: (tags) => Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: tags.map((tag) {
-                final selected = _selectedTagIds.contains(tag.id);
-                return FilterChip(
-                  label: Text(tag.name),
-                  selected: selected,
-                  selectedColor: TagColors.getColor(tag.colorIndex),
-                  onSelected: (v) {
-                    setState(() {
-                      if (v) {
-                        _filterType = _FilterType.byTag;
-                        _selectedTagIds.add(tag.id);
-                      } else {
-                        _selectedTagIds.remove(tag.id);
-                        if (_selectedTagIds.isEmpty) {
-                          _filterType = _FilterType.noTag;
-                        }
-                      }
-                    });
-                  },
-                );
-              }).toList(),
-            ),
-            loading: () => const CircularProgressIndicator(),
-            error: (_, _) => const Text('タグ取得エラー'),
-          ),
-
-          const Spacer(),
-
-          // 開始ボタン
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              onPressed: _startSort,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blueAccent,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(CornerRadius.button)),
-              ),
-              child: const Text('整理を開始', style: TextStyle(fontSize: 16)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _filterOption(String label, _FilterType type, IconData icon) {
-    final selected = _filterType == type;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: GestureDetector(
-        onTap: () => setState(() {
-          _filterType = type;
-          if (type != _FilterType.byTag) _selectedTagIds.clear();
-        }),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: selected ? Colors.blueAccent.withValues(alpha: 0.1) : Colors.white,
-            borderRadius: BorderRadius.circular(CornerRadius.button),
-            border: Border.all(
-              color: selected ? Colors.blueAccent : Colors.grey.shade300,
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(icon,
-                  size: 20,
-                  color: selected ? Colors.blueAccent : Colors.grey),
-              const SizedBox(width: 12),
-              Text(label,
-                  style: TextStyle(
-                    color: selected ? Colors.blueAccent : Colors.black87,
-                    fontWeight:
-                        selected ? FontWeight.w600 : FontWeight.normal,
-                  )),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _startSort() async {
-    final db = ref.read(databaseProvider);
-    List<Memo> filtered;
-
-    switch (_filterType) {
-      case _FilterType.noTag:
-        // タグなしメモ
-        final allMemos = await db.select(db.memos).get();
-        final taggedIds = (await db.select(db.memoTags).get())
-            .map((mt) => mt.memoId)
-            .toSet();
-        filtered = allMemos.where((m) => !taggedIds.contains(m.id)).toList();
-        break;
-      case _FilterType.noTitle:
-        final allMemos = await db.select(db.memos).get();
-        filtered = allMemos.where((m) => m.title.trim().isEmpty).toList();
-        break;
-      case _FilterType.old:
-        final threshold =
-            DateTime.now().subtract(const Duration(days: 90));
-        final allMemos = await db.select(db.memos).get();
-        filtered = allMemos.where((m) {
-          final lastSeen = m.lastViewedAt ?? m.updatedAt;
-          return lastSeen.isBefore(threshold);
-        }).toList();
-        break;
-      case _FilterType.all:
-        filtered = await db.select(db.memos).get();
-        break;
-      case _FilterType.byTag:
-        final Set<String> memoIds = {};
-        for (final tagId in _selectedTagIds) {
-          final rows = await (db.select(db.memoTags)
-                ..where((t) => t.tagId.equals(tagId)))
-              .get();
-          memoIds.addAll(rows.map((r) => r.memoId));
-        }
-        final allMemos = await db.select(db.memos).get();
-        filtered = allMemos.where((m) => memoIds.contains(m.id)).toList();
-        break;
-    }
-
-    // ソート: ピン留め → 作成日時降順
-    filtered.sort((a, b) {
-      if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
-      return b.createdAt.compareTo(a.createdAt);
-    });
-
-    if (filtered.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('対象のメモがありません')),
-        );
-      }
-      return;
-    }
-
-    setState(() {
-      _allFilteredMemos = filtered;
-      _currentSetIndex = 0;
-      _loadCurrentSet();
-      _phase = _Phase.carousel;
-    });
   }
 
   void _loadCurrentSet() {
@@ -772,6 +588,537 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
   }
 }
 
-enum _Phase { filter, carousel, result }
+// ========================================
+// フィルター選択画面（Swift版準拠）
+// 複数条件OR選択、件数表示、タグ展開
+// ========================================
+class _QuickSortFilterPhase extends ConsumerStatefulWidget {
+  final void Function(List<Memo> memos) onStart;
+  final VoidCallback onCancel;
 
-enum _FilterType { noTag, noTitle, old, all, byTag }
+  const _QuickSortFilterPhase({
+    required this.onStart,
+    required this.onCancel,
+  });
+
+  @override
+  ConsumerState<_QuickSortFilterPhase> createState() =>
+      _QuickSortFilterPhaseState();
+}
+
+class _QuickSortFilterPhaseState
+    extends ConsumerState<_QuickSortFilterPhase> {
+  // フィルタ条件（複数選択可）
+  bool _filterNoTag = false;
+  bool _filterNoTitle = false;
+  bool _filterOld = false;
+  bool _filterAll = false;
+  bool _filterByTag = false;
+  final Set<String> _selectedTagIds = {};
+
+  // メモ・タグキャッシュ
+  List<Memo> _allMemos = [];
+  List<Tag> _parentTags = [];
+  Set<String> _taggedMemoIds = {};
+  // タグID → メモIDの逆引きマップ
+  Map<String, Set<String>> _tagToMemoIds = {};
+  bool _loaded = false;
+
+  DateTime get _threeMonthsAgo =>
+      DateTime.now().subtract(const Duration(days: 90));
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final db = ref.read(databaseProvider);
+    final memos = await db.select(db.memos).get();
+    final tags = await db.select(db.tags).get();
+    final memoTags = await db.select(db.memoTags).get();
+    // タグ→メモの逆引きマップを構築
+    final tagMap = <String, Set<String>>{};
+    for (final mt in memoTags) {
+      tagMap.putIfAbsent(mt.tagId, () => {}).add(mt.memoId);
+    }
+    if (!mounted) return;
+    setState(() {
+      _allMemos = memos;
+      _parentTags = tags.where((t) => t.parentTagId == null).toList();
+      _taggedMemoIds = memoTags.map((mt) => mt.memoId).toSet();
+      _tagToMemoIds = tagMap;
+      _loaded = true;
+    });
+  }
+
+  // フィルタ適用後のメモリスト
+  List<Memo> get _filteredMemos {
+    if (!_loaded) return [];
+    if (_filterAll) {
+      return _sortedMemos(_allMemos);
+    }
+    final result = <String>{};
+    for (final memo in _allMemos) {
+      if (_filterNoTag && !_taggedMemoIds.contains(memo.id)) {
+        result.add(memo.id);
+      }
+      if (_filterNoTitle && memo.title.trim().isEmpty) {
+        result.add(memo.id);
+      }
+      if (_filterOld) {
+        final lastAccess = memo.lastViewedAt ?? memo.updatedAt;
+        if (lastAccess.isBefore(_threeMonthsAgo)) {
+          result.add(memo.id);
+        }
+      }
+      if (_filterByTag && _selectedTagIds.isNotEmpty) {
+        // キャッシュ済みの逆引きマップで判定
+        for (final tagId in _selectedTagIds) {
+          final memoIds = _tagToMemoIds[tagId];
+          if (memoIds != null && memoIds.contains(memo.id)) {
+            result.add(memo.id);
+            break;
+          }
+        }
+      }
+    }
+    return _sortedMemos(
+        _allMemos.where((m) => result.contains(m.id)).toList());
+  }
+
+  List<Memo> _sortedMemos(List<Memo> memos) {
+    final sorted = List<Memo>.from(memos);
+    sorted.sort((a, b) {
+      if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
+      if (a.manualSortOrder != b.manualSortOrder) {
+        return b.manualSortOrder.compareTo(a.manualSortOrder);
+      }
+      return b.createdAt.compareTo(a.createdAt);
+    });
+    return sorted;
+  }
+
+  int get _filteredCount => _filteredMemos.length;
+
+  // 各フィルタ条件の件数
+  int get _noTagCount =>
+      _allMemos.where((m) => !_taggedMemoIds.contains(m.id)).length;
+  int get _noTitleCount =>
+      _allMemos.where((m) => m.title.trim().isEmpty).length;
+  int get _tagFilteredCount {
+    final memoIds = <String>{};
+    for (final tagId in _selectedTagIds) {
+      final ids = _tagToMemoIds[tagId];
+      if (ids != null) memoIds.addAll(ids);
+    }
+    return memoIds.length;
+  }
+
+  int get _oldCount => _allMemos.where((m) {
+        final lastAccess = m.lastViewedAt ?? m.updatedAt;
+        return lastAccess.isBefore(_threeMonthsAgo);
+      }).length;
+
+  // 排他制御: 「すべて」を選ぶと他OFF
+  void _toggleFilter(String key) {
+    setState(() {
+      switch (key) {
+        case 'noTag':
+          _filterNoTag = !_filterNoTag;
+          if (_filterNoTag) _filterAll = false;
+        case 'noTitle':
+          _filterNoTitle = !_filterNoTitle;
+          if (_filterNoTitle) _filterAll = false;
+        case 'old':
+          _filterOld = !_filterOld;
+          if (_filterOld) _filterAll = false;
+        case 'byTag':
+          _filterByTag = !_filterByTag;
+          if (_filterByTag) {
+            _filterAll = false;
+          } else {
+            _selectedTagIds.clear();
+          }
+        case 'all':
+          _filterAll = !_filterAll;
+          if (_filterAll) {
+            _filterNoTag = false;
+            _filterNoTitle = false;
+            _filterOld = false;
+            _filterByTag = false;
+            _selectedTagIds.clear();
+          }
+      }
+    });
+  }
+
+  bool get _anyFilterSelected =>
+      _filterNoTag ||
+      _filterNoTitle ||
+      _filterOld ||
+      _filterAll ||
+      (_filterByTag && _selectedTagIds.isNotEmpty);
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return SafeArea(
+      child: Column(
+        children: [
+          // ナビバー
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Row(
+              children: [
+                TextButton(
+                  onPressed: widget.onCancel,
+                  child: const Text('閉じる',
+                      style: TextStyle(fontSize: 16, color: Colors.blue)),
+                ),
+                const Spacer(),
+              ],
+            ),
+          ),
+
+          // スクロール領域
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  // ヘッダー
+                  _buildHeader(),
+                  const SizedBox(height: 20),
+                  // フィルタ条件リスト
+                  _buildFilterList(),
+                  const SizedBox(height: 24),
+                ],
+              ),
+            ),
+          ),
+
+          // 開始ボタン（固定フッター）
+          _buildStartButton(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Column(
+      children: [
+        const SizedBox(height: 8),
+        const Text(
+          '爆速メモ整理モード',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Icon(Icons.bolt, size: 36, color: Colors.orange),
+        const SizedBox(height: 12),
+
+        // 説明文
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            children: [
+              Text(
+                'お好みの条件で抽出したメモを連続で表示し、一気に',
+                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 6),
+              // チェックリスト
+              ...[
+                'タイトル編集',
+                'タグ付け',
+                '本文編集',
+                'ロック（削除防止）',
+                '削除',
+              ].map((text) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 1),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.check_box, size: 18, color: Colors.green),
+                        const SizedBox(width: 6),
+                        Text(text,
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  )),
+              const SizedBox(height: 2),
+              Text(
+                'ができるモードです。',
+                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ),
+
+        // 仕切り
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
+          child: Divider(color: Colors.grey[300]),
+        ),
+
+        // 案内
+        const Text('対象のメモを選んでください',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 2),
+        const Text('複数選択可',
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Colors.blue)),
+      ],
+    );
+  }
+
+  Widget _buildFilterList() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            // タグなし
+            _buildFilterRow(
+              icon: Icons.label_off,
+              iconColor: Colors.orange,
+              title: 'タグなしのメモ',
+              count: _noTagCount,
+              isOn: _filterNoTag,
+              onTap: () => _toggleFilter('noTag'),
+            ),
+            _filterDivider(),
+
+            // タイトルなし
+            _buildFilterRow(
+              icon: Icons.title,
+              iconColor: Colors.blue,
+              title: 'タイトルなしのメモ',
+              count: _noTitleCount,
+              isOn: _filterNoTitle,
+              onTap: () => _toggleFilter('noTitle'),
+            ),
+            _filterDivider(),
+
+            // 3ヶ月以上
+            _buildFilterRow(
+              icon: Icons.access_time,
+              iconColor: Colors.purple,
+              title: '3ヶ月以上開いていない',
+              count: _oldCount,
+              isOn: _filterOld,
+              onTap: () => _toggleFilter('old'),
+            ),
+            _filterDivider(),
+
+            // 特定のタグ
+            _buildFilterRow(
+              icon: Icons.label,
+              iconColor: Colors.green,
+              title: '特定のタグのメモ',
+              count: (_filterByTag && _selectedTagIds.isNotEmpty)
+                  ? _tagFilteredCount
+                  : null,
+              isOn: _filterByTag && _selectedTagIds.isNotEmpty,
+              trailing: Icon(
+                _filterByTag
+                    ? Icons.keyboard_arrow_down
+                    : Icons.keyboard_arrow_right,
+                size: 18,
+                color: _filterByTag ? Colors.orange : Colors.grey[400],
+              ),
+              onTap: () => _toggleFilter('byTag'),
+            ),
+
+            // タグ選択リスト（展開時のみ）
+            if (_filterByTag) _buildTagSelection(),
+
+            _filterDivider(),
+
+            // すべて
+            _buildFilterRow(
+              icon: Icons.all_inbox,
+              iconColor: Colors.grey,
+              title: 'すべてのメモ',
+              count: _allMemos.length,
+              isOn: _filterAll,
+              onTap: () => _toggleFilter('all'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterRow({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required int? count,
+    required bool isOn,
+    required VoidCallback onTap,
+    Widget? trailing,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: iconColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(title,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w500)),
+            ),
+            if (trailing != null) ...[
+              trailing,
+              const SizedBox(width: 8),
+            ],
+            if (count != null) ...[
+              Text('$count件',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[500])),
+              const SizedBox(width: 10),
+            ],
+            // チェックマーク円
+            Icon(
+              isOn ? Icons.check_circle : Icons.circle_outlined,
+              size: 22,
+              color: isOn ? Colors.orange : Colors.grey[300],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTagSelection() {
+    return Container(
+      color: Colors.grey[50],
+      child: Column(
+        children: _parentTags.map((tag) {
+          final isSelected = _selectedTagIds.contains(tag.id);
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              setState(() {
+                if (isSelected) {
+                  _selectedTagIds.remove(tag.id);
+                } else {
+                  _selectedTagIds.add(tag.id);
+                }
+              });
+            },
+            child: Padding(
+              padding:
+                  const EdgeInsets.only(left: 50, right: 16, top: 10, bottom: 10),
+              child: Row(
+                children: [
+                  // タグ色丸
+                  Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: TagColors.getColor(tag.colorIndex),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(tag.name,
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w500)),
+                  ),
+                  Text(
+                    '${_tagToMemoIds[tag.id]?.length ?? 0}件',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    isSelected
+                        ? Icons.check_circle
+                        : Icons.circle_outlined,
+                    size: 18,
+                    color: isSelected ? Colors.green : Colors.grey[300],
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _filterDivider() {
+    return Padding(
+      padding: const EdgeInsets.only(left: 50),
+      child: Divider(height: 1, color: Colors.grey[200]),
+    );
+  }
+
+  Widget _buildStartButton() {
+    final count = _filteredCount;
+    final enabled = _anyFilterSelected && count > 0;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: SizedBox(
+        width: double.infinity,
+        height: 52,
+        child: ElevatedButton(
+          onPressed: enabled ? () => widget.onStart(_filteredMemos) : null,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: enabled ? Colors.orange : Colors.grey[400],
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: Colors.grey[300],
+            disabledForegroundColor: Colors.white70,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14)),
+            elevation: enabled ? 2 : 0,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.bolt, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                '開始（$count件）',
+                style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.3),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+enum _Phase { filter, carousel, result }
