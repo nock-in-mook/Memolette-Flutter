@@ -159,6 +159,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                           style: const TextStyle(
                             fontSize: 32,
                             fontWeight: FontWeight.w900,
+                            fontFamily: '.AppleSystemUIFontRounded',
                             color: Colors.white,
                           ),
                         ),
@@ -168,6 +169,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                         style: const TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.w900,
+                          fontFamily: '.AppleSystemUIFontRounded',
                         ),
                       ),
                       const SizedBox(width: 2),
@@ -176,6 +178,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
+                          fontFamily: '.AppleSystemUIFontRounded',
                           color: Colors.grey[500],
                         ),
                       ),
@@ -794,6 +797,122 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
     return parent != null ? TagColors.getColor(parent.colorIndex) : null;
   }
 
+  // 全角換算8文字に丸め（本家 truncatedTagName 準拠）
+  String _truncated(String name) {
+    var width = 0.0;
+    var result = '';
+    for (final ch in name.characters) {
+      final w = ch.codeUnitAt(0) < 128 ? 0.5 : 1.0;
+      if (width + w > 8) return '$result…';
+      width += w;
+      result += ch;
+    }
+    return result;
+  }
+
+  // 親+子タグの重ねめり込みバッジ一覧を構築
+  List<Widget> _buildTagBadges() {
+    final parents = _memoTags.where((t) => t.parentTagId == null).toList();
+    final children = _memoTags.where((t) => t.parentTagId != null).toList();
+    final widgets = <Widget>[];
+
+    for (final parent in parents) {
+      // この親に属する子タグを探す
+      final child = children
+          .where((c) => c.parentTagId == parent.id)
+          .firstOrNull;
+      if (child != null) {
+        children.remove(child);
+      }
+      widgets.add(_tagBadgePair(parent, child));
+    }
+
+    // 親がないまま残った子タグ（単独表示）
+    for (final orphan in children) {
+      widgets.add(_tagBadgeSingle(orphan, isChild: true));
+    }
+
+    return widgets;
+  }
+
+  Widget _tagBadgePair(Tag parent, Tag? child) {
+    final parentColor = TagColors.getColor(parent.colorIndex);
+    final parentWidget = Container(
+      padding: const EdgeInsets.fromLTRB(8, 5, 11, 5),
+      decoration: BoxDecoration(
+        color: parentColor,
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Text(
+        _truncated(parent.name),
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: Colors.black,
+          height: 1.0,
+        ),
+      ),
+    );
+
+    if (child == null) return parentWidget;
+
+    final childColor = TagColors.getColor(child.colorIndex);
+    final childWidget = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: childColor,
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: Colors.white, width: 1.5),
+      ),
+      child: Text(
+        _truncated(child.name),
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          color: Colors.black,
+          height: 1.0,
+        ),
+      ),
+    );
+
+    return IntrinsicHeight(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Flexible(child: parentWidget),
+          Flexible(
+            child: Transform.translate(
+              offset: const Offset(-4, 1.5),
+              child: childWidget,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tagBadgeSingle(Tag tag, {bool isChild = false}) {
+    return Container(
+      padding: isChild
+          ? const EdgeInsets.symmetric(horizontal: 6, vertical: 3)
+          : const EdgeInsets.fromLTRB(8, 5, 11, 5),
+      decoration: BoxDecoration(
+        color: TagColors.getColor(tag.colorIndex),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Text(
+        _truncated(tag.name),
+        style: TextStyle(
+          fontSize: isChild ? 12 : 13,
+          fontWeight: isChild ? FontWeight.w500 : FontWeight.w600,
+          color: Colors.black,
+          height: 1.0,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     const tabHeight = 34.0;
@@ -897,7 +1016,7 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                                   expands: true,
                                   textAlignVertical: TextAlignVertical.top,
                                   style: const TextStyle(
-                                      fontSize: 15, height: 1.5),
+                                      fontSize: 15, fontWeight: FontWeight.w600, height: 1.5),
                                   decoration: const InputDecoration(
                                     border: InputBorder.none,
                                     hintText: 'メモを入力...',
@@ -915,6 +1034,7 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                                           : _contentController.text,
                                       style: TextStyle(
                                         fontSize: 15,
+                                        fontWeight: FontWeight.w600,
                                         height: 1.5,
                                         color:
                                             _contentController.text.isEmpty
@@ -927,15 +1047,22 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                         ),
                       ),
 
-                      // タグフッター
+                      // タグフッター（本文との仕切り線付き）
                       GestureDetector(
                         onTap: () => _showTagPicker(context),
                         child: Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
+                              horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
                             color: widget.tagFooterColor,
+                            border: Border(
+                              top: BorderSide(
+                                color: _parentTagColor?.withValues(alpha: 0.4) ??
+                                    Colors.grey.withValues(alpha: 0.2),
+                                width: 2.5,
+                              ),
+                            ),
                           ),
                           child: Row(
                             children: [
@@ -947,35 +1074,18 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: _memoTags.isEmpty
-                                    ? Text('タップでタグ付け',
-                                        style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[400]))
+                                    ? Align(
+                                        alignment: Alignment.centerRight,
+                                        child: Text('なし',
+                                            style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey[400])),
+                                      )
                                     : Wrap(
                                         spacing: 4,
-                                        children: _memoTags
-                                            .map((tag) => Container(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color:
-                                                        TagColors.getColor(
-                                                            tag.colorIndex),
-                                                    borderRadius:
-                                                        BorderRadius
-                                                            .circular(
-                                                                CornerRadius
-                                                                    .childTag),
-                                                  ),
-                                                  child: Text(tag.name,
-                                                      style:
-                                                          const TextStyle(
-                                                              fontSize:
-                                                                  11)),
-                                                ))
-                                            .toList(),
+                                        runSpacing: 4,
+                                        alignment: WrapAlignment.end,
+                                        children: _buildTagBadges(),
                                       ),
                               ),
                             ],
