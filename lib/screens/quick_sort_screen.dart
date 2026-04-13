@@ -1175,7 +1175,7 @@ class _QuickSortLoadingState extends State<_QuickSortLoading>
                               child: Container(
                                 decoration: BoxDecoration(
                                   gradient: const LinearGradient(
-                                    colors: [Colors.orange, Colors.yellow],
+                                    colors: [Colors.yellow, Colors.orange],
                                   ),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
