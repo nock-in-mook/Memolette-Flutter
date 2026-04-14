@@ -9,6 +9,7 @@ import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/keyboard_done_bar.dart';
 import '../utils/text_menu_dismisser.dart';
+import '../widgets/memo_input_area.dart' show EraserGlyph;
 import '../widgets/trapezoid_tab_shape.dart';
 
 // ========================================
@@ -60,33 +61,59 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   Future<void> _dl()async{final db=ref.read(databaseProvider);final m=await db.select(db.memos).get();if(!mounted||m.isEmpty)return;setState((){_allFilteredMemos=m;_loadCurrentSet();_phase=_Phase.carousel;});}
   @override
   Widget build(BuildContext context) {
+    final kbVisible = MediaQuery.of(context).viewInsets.bottom > 0;
+    final showFloats = _phase == _Phase.carousel && _isCardExpanded && kbVisible;
+    final hasContent = _cardController.hasContent?.call() ?? false;
+    final isContentFocused = _cardController.isContentFocused?.call() ?? false;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       resizeToAvoidBottomInset: false,
-      body: KeyboardDoneBar(child: switch (_phase) {
-        _Phase.intro => _QuickSortIntro(
-          onNext: () => setState(() => _phase = _Phase.filter),
-          onCancel: () => Navigator.of(context).pop(),
+      body: KeyboardDoneBar(
+        child: Stack(
+          children: [
+            switch (_phase) {
+              _Phase.intro => _QuickSortIntro(
+                  onNext: () => setState(() => _phase = _Phase.filter),
+                  onCancel: () => Navigator.of(context).pop(),
+                ),
+              _Phase.filter => _QuickSortFilterPhase(
+                  onStart: (memos) {
+                    setState(() {
+                      _allFilteredMemos = memos;
+                      _currentSetIndex = 0;
+                      _loadCurrentSet();
+                      _phase = _Phase.loading;
+                    });
+                  },
+                  onBack: () => setState(() => _phase = _Phase.intro),
+                  onCancel: () => Navigator.of(context).pop(),
+                ),
+              _Phase.loading => _QuickSortLoading(
+                  memoCount: _allFilteredMemos.length,
+                  onComplete: () => setState(() => _phase = _Phase.carousel),
+                ),
+              _Phase.carousel => _buildCarouselPhase(),
+              _Phase.result => _buildResultPhase(),
+            },
+
+            // 最大化+キーボード表示中: フロート縮小ボタン（完了ボタンの左）
+            if (showFloats)
+              Positioned(
+                right: 6 + 72 + 8, // 完了ボタン幅(~72) + 8px間隔
+                bottom: MediaQuery.of(context).viewInsets.bottom + 4,
+                child: _buildFloatingMinimizeButton(),
+              ),
+            // 最大化+キーボード表示中: フロート消しゴムボタン（左下）
+            if (showFloats && isContentFocused)
+              Positioned(
+                left: 16,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 6,
+                child: _buildFloatingEraserButton(hasContent),
+              ),
+          ],
         ),
-        _Phase.filter => _QuickSortFilterPhase(
-          onStart: (memos) {
-            setState(() {
-              _allFilteredMemos = memos;
-              _currentSetIndex = 0;
-              _loadCurrentSet();
-              _phase = _Phase.loading;
-            });
-          },
-          onBack: () => setState(() => _phase = _Phase.intro),
-          onCancel: () => Navigator.of(context).pop(),
-        ),
-        _Phase.loading => _QuickSortLoading(
-          memoCount: _allFilteredMemos.length,
-          onComplete: () => setState(() => _phase = _Phase.carousel),
-        ),
-        _Phase.carousel => _buildCarouselPhase(),
-        _Phase.result => _buildResultPhase(),
-      }),
+      ),
     );
   }
 
@@ -590,6 +617,60 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // 最大化中+キーボード表示中のフロート縮小ボタン
+  Widget _buildFloatingMinimizeButton() {
+    return GestureDetector(
+      onTap: () {
+        _cardController.unfocus?.call();
+        setState(() => _isCardExpanded = false);
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: Colors.blue.withValues(alpha: 0.7),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: const Icon(Icons.close_fullscreen,
+            size: 18, color: Colors.white),
+      ),
+    );
+  }
+
+  // 最大化中+キーボード表示中のフロート消しゴムボタン
+  Widget _buildFloatingEraserButton(bool hasContent) {
+    return GestureDetector(
+      onTap: hasContent ? () => _cardController.clearContent?.call() : null,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: hasContent
+              ? Colors.orange.withValues(alpha: 0.6)
+              : const Color.fromRGBO(142, 142, 147, 0.15),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: const Center(child: EraserGlyph()),
       ),
     );
   }
@@ -1098,6 +1179,13 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
       _titleFocus.unfocus();
       _contentFocus.unfocus();
     };
+    c.clearContent = () {
+      _contentController.clear();
+      _saveContent();
+      setState(() {});
+    };
+    c.isContentFocused = () => _contentFocus.hasFocus;
+    c.hasContent = () => _contentController.text.isNotEmpty;
   }
 
   void _onTitleFocusChanged() {
@@ -1321,29 +1409,56 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: TextField(
-                    controller: _titleController,
-                    focusNode: _titleFocus,
-                    onTap: TextMenuDismisser.wrap(null),
-                    contextMenuBuilder: TextMenuDismisser.builder,
-                    style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87),
-                    decoration: InputDecoration(
-                      hintText: 'タイトルなし',
-                      hintStyle: TextStyle(
-                        color: Colors.grey,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                  child: Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [
+                      TextField(
+                        controller: _titleController,
+                        focusNode: _titleFocus,
+                        onTap: TextMenuDismisser.wrap(null),
+                        contextMenuBuilder: TextMenuDismisser.builder,
+                        // 非フォーカス時はTextField本文を透明に → 下の省略表示Textが見える
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: _titleFocus.hasFocus
+                              ? Colors.black87
+                              : Colors.transparent,
+                        ),
+                        decoration: const InputDecoration(
+                          hintText: 'タイトルなし',
+                          hintStyle: TextStyle(
+                            color: Colors.grey,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        maxLines: 1,
+                        onChanged: (_) {
+                          _saveTitle();
+                          setState(() {}); // 省略表示Text更新
+                        },
+                        onSubmitted: (_) => _titleFocus.unfocus(),
                       ),
-                      border: InputBorder.none,
-                      isDense: true,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    maxLines: 1,
-                    onChanged: (_) => _saveTitle(),
-                    onSubmitted: (_) => _titleFocus.unfocus(),
+                      // 非フォーカス時のみ省略表示Textをオーバーレイ（タップはTextFieldに抜ける）
+                      if (!_titleFocus.hasFocus &&
+                          _titleController.text.isNotEmpty)
+                        IgnorePointer(
+                          child: Text(
+                            _titleController.text,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -1385,7 +1500,10 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                               isDense: true,
                               contentPadding: EdgeInsets.zero,
                             ),
-                            onChanged: (_) => _saveContent(),
+                            onChanged: (_) {
+                              _saveContent();
+                              setState(() {}); // 消しゴムボタンの表示切替用
+                            },
                           ),
                         ),
                       ),
@@ -1473,8 +1591,9 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                     ),
                   ),
 
-                  // 最大化/縮小ボタン（タグフッター上・右下）
-                  if (widget.onToggleExpanded != null)
+                  // 最大化/縮小ボタン（タグフッター上・右下、キーボード表示中は非表示→フロートが出る）
+                  if (widget.onToggleExpanded != null &&
+                      MediaQuery.of(context).viewInsets.bottom == 0)
                     Positioned(
                       right: 8,
                       bottom: 48,
@@ -1504,6 +1623,41 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                               color: Colors.white,
                             ),
                           ),
+                        ),
+                      ),
+                    ),
+
+                  // 消しゴムボタン（本文フォーカス時のみ、キーボード表示中はフロート側）
+                  if (_contentFocus.hasFocus &&
+                      MediaQuery.of(context).viewInsets.bottom == 0)
+                    Positioned(
+                      left: 8,
+                      bottom: 48,
+                      child: GestureDetector(
+                        onTap: _contentController.text.isNotEmpty
+                            ? () {
+                                _contentController.clear();
+                                _saveContent();
+                                setState(() {});
+                              }
+                            : null,
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _contentController.text.isNotEmpty
+                                ? Colors.orange.withValues(alpha: 0.6)
+                                : const Color.fromRGBO(142, 142, 147, 0.08),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.1),
+                                blurRadius: 0.5,
+                                offset: const Offset(-0.5, 0.5),
+                              ),
+                            ],
+                          ),
+                          child: const Center(child: EraserGlyph()),
                         ),
                       ),
                     ),
@@ -2346,6 +2500,9 @@ class _CardController {
   VoidCallback? focusContent;
   VoidCallback? openTagPicker;
   VoidCallback? unfocus;
+  VoidCallback? clearContent;
+  bool Function()? isContentFocused;
+  bool Function()? hasContent;
 }
 
 // ========================================
