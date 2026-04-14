@@ -48,6 +48,9 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   // カードスライドアニメーション方向（true=右へ進む、false=左へ戻る）
   bool _slideForward = true;
 
+  // 弧ボタンからカードにフォーカス要求するためのコントローラー
+  final _CardController _cardController = _CardController();
+
   int get _totalSets =>
       (_allFilteredMemos.length + _setSize - 1) ~/ _setSize;
   @override void initState(){super.initState();_dl();}
@@ -107,6 +110,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
     final canNext = _currentCardIndex < total - 1;
 
     return SafeArea(
+      maintainBottomViewPadding: true,
       child: Column(
         children: [
           // ヘッダー（76pt）
@@ -256,6 +260,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                       child: _QuickSortCard(
                         key: ValueKey(memo.id),
                         memo: memo,
+                        controller: _cardController,
                         onTagged: () => _taggedMemoIds.add(memo.id),
                         onTitled: () => _titledMemoIds.add(memo.id),
                         onEdited: () => _editedMemoIds.add(memo.id),
@@ -322,8 +327,8 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           ),
           ),
 
-          // カード下のスペース
-          const Spacer(flex: 1),
+          // カード下のスペース（固定。操作パネル位置を動かさない）
+          const SizedBox(height: 90),
 
           // 弧型コントローラー（弧線 + 3編集ボタン、同一Stack内で配置）
           Builder(builder: (context) {
@@ -371,9 +376,9 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                   // タイトル（t=0.2、-15°回転）
                   Positioned(
                     top: arcY(0.2),
-                    left: sw * 0.2 - 50,
+                    left: sw * 0.2 - 57,
                     child: Transform.rotate(
-                      angle: -11 * pi / 180,
+                      angle: -10 * pi / 180,
                       child: _ArcEditButton(
                         label: 'タイトル',
                         color: Colors.orange.withValues(alpha: 0.2),
@@ -384,14 +389,14 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                   ),
                   // タグ（t=0.8、+15°回転）
                   Positioned(
-                    top: arcY(0.8),
+                    top: arcY(0.8) - 1,
                     right: sw * 0.2 - 45,
                     child: Transform.rotate(
-                      angle: 11 * pi / 180,
+                      angle: 10 * pi / 180,
                       child: _ArcEditButton(
                         label: 'タグ',
                         color: Colors.cyan.withValues(alpha: 0.2),
-                        width: 85,
+                        width: 95,
                         onTap: () => _setEditMode(_EditMode.tag),
                       ),
                     ),
@@ -401,7 +406,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
             );
           }),
 
-          const Spacer(flex: 1),
+          const SizedBox(height: 48),
 
           // 下部操作パネル（本家準拠: ZStack方式）
           Padding(
@@ -431,8 +436,10 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                         offset: const Offset(0, 16),
                         child: _PressableButton(
                           onTap: memo.isLocked ? null : () => _deleteCurrent(memo),
-                          shadowHeight: 4,
-                          color: Colors.white,
+                          shadowHeight: memo.isLocked ? 0 : 4,
+                          color: memo.isLocked
+                              ? const Color(0xFFEEEEEE)
+                              : Colors.white,
                           isCircle: true,
                           size: 50,
                           child: Column(
@@ -441,14 +448,14 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                               Icon(CupertinoIcons.delete_simple,
                                   size: 22,
                                   color: memo.isLocked
-                                      ? Colors.grey.withValues(alpha: 0.3)
+                                      ? Colors.grey.shade400
                                       : Colors.red),
                               Text('削除',
                                   style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w600,
                                       color: memo.isLocked
-                                          ? Colors.grey.withValues(alpha: 0.3)
+                                          ? Colors.grey.shade400
                                           : Colors.red)),
                             ],
                           ),
@@ -554,11 +561,18 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
     );
   }
 
-  // 編集モード切替（カード内のフォーカスを制御）
+  // 編集モード切替（弧ボタンから呼ばれる）
   void _setEditMode(_EditMode mode) {
-    // TODO: カードの編集モードを切り替える
-    // 現在はカード内のタップで直接切り替えているが、
-    // 弧型ボタンからも制御できるようにする
+    switch (mode) {
+      case _EditMode.title:
+        _cardController.focusTitle?.call();
+      case _EditMode.content:
+        _cardController.focusContent?.call();
+      case _EditMode.tag:
+        _cardController.openTagPicker?.call();
+      case _EditMode.none:
+        _cardController.unfocus?.call();
+    }
   }
 
   // ✕ボタン等の丸いボタン
@@ -997,6 +1011,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
 // ========================================
 class _QuickSortCard extends ConsumerStatefulWidget {
   final Memo memo;
+  final _CardController? controller;
   final VoidCallback onTagged;
   final VoidCallback onTitled;
   final VoidCallback onEdited;
@@ -1006,6 +1021,7 @@ class _QuickSortCard extends ConsumerStatefulWidget {
   const _QuickSortCard({
     super.key,
     required this.memo,
+    this.controller,
     required this.onTagged,
     required this.onTitled,
     required this.onEdited,
@@ -1020,26 +1036,61 @@ class _QuickSortCard extends ConsumerStatefulWidget {
 class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
   late TextEditingController _titleController;
   late TextEditingController _contentController;
+  final FocusNode _titleFocus = FocusNode();
+  final FocusNode _contentFocus = FocusNode();
   List<Tag> _memoTags = [];
   bool _isEditingTitle = false;
-  bool _isEditingContent = false;
 
   @override
   void initState() {
     super.initState();
     _titleController = TextEditingController(text: widget.memo.title);
     _contentController = TextEditingController(text: widget.memo.content);
+    _titleFocus.addListener(_onTitleFocusChanged);
+    _contentFocus.addListener(_onContentFocusChanged);
+    _bindController(widget.controller);
     _loadTags();
+  }
+
+  void _bindController(_CardController? c) {
+    if (c == null) return;
+    c.focusTitle = () => _titleFocus.requestFocus();
+    c.focusContent = () => _contentFocus.requestFocus();
+    c.openTagPicker = () => _showTagPicker(context);
+    c.unfocus = () {
+      _titleFocus.unfocus();
+      _contentFocus.unfocus();
+    };
+  }
+
+  void _onTitleFocusChanged() {
+    if (_titleFocus.hasFocus) {
+      _contentFocus.unfocus();
+    } else {
+      // フォーカスが外れたら保存
+      _saveTitle();
+    }
+    if (mounted) setState(() => _isEditingTitle = _titleFocus.hasFocus);
+  }
+
+  void _onContentFocusChanged() {
+    if (_contentFocus.hasFocus) {
+      _titleFocus.unfocus();
+    }
   }
 
   @override
   void didUpdateWidget(covariant _QuickSortCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.controller != oldWidget.controller) {
+      _bindController(widget.controller);
+    }
     if (oldWidget.memo.id != widget.memo.id) {
       _titleController.text = widget.memo.title;
       _contentController.text = widget.memo.content;
+      _titleFocus.unfocus();
+      _contentFocus.unfocus();
       _isEditingTitle = false;
-      _isEditingContent = false;
       _loadTags();
     }
   }
@@ -1054,7 +1105,6 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
     final db = ref.read(databaseProvider);
     db.updateMemo(id: widget.memo.id, title: _titleController.text);
     if (_titleController.text.trim().isNotEmpty) widget.onTitled();
-    setState(() => _isEditingTitle = false);
   }
 
   void _saveContent() {
@@ -1065,6 +1115,8 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
 
   @override
   void dispose() {
+    _titleFocus.dispose();
+    _contentFocus.dispose();
     _titleController.dispose();
     _contentController.dispose();
     super.dispose();
@@ -1228,46 +1280,33 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
             SizedBox(
               width: tabWidth,
               height: tabHeight,
-              child: GestureDetector(
-                onTap: () {
-                  if (!_isEditingTitle) {
-                    setState(() => _isEditingTitle = true);
-                  }
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: _isEditingTitle
-                        ? TextField(
-                            controller: _titleController,
-                            autofocus: true,
-                            onTap: TextMenuDismisser.wrap(null),
-                            contextMenuBuilder: TextMenuDismisser.builder,
-                            style: const TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold),
-                            decoration: const InputDecoration(
-                              hintText: 'タイトルなし',
-                              border: InputBorder.none,
-                              isDense: true,
-                              contentPadding: EdgeInsets.zero,
-                            ),
-                            onSubmitted: (_) => _saveTitle(),
-                          )
-                        : Text(
-                            _titleController.text.isEmpty
-                                ? 'タイトルなし'
-                                : _titleController.text,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: _titleController.text.isEmpty
-                                  ? Colors.grey
-                                  : Colors.black87,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextField(
+                    controller: _titleController,
+                    focusNode: _titleFocus,
+                    onTap: TextMenuDismisser.wrap(null),
+                    contextMenuBuilder: TextMenuDismisser.builder,
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87),
+                    decoration: InputDecoration(
+                      hintText: 'タイトルなし',
+                      hintStyle: TextStyle(
+                        color: Colors.grey,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    maxLines: 1,
+                    onChanged: (_) => _saveTitle(),
+                    onSubmitted: (_) => _titleFocus.unfocus(),
                   ),
                 ),
               ),
@@ -1284,45 +1323,33 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                       Expanded(
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                          child: _isEditingContent
-                              ? TextField(
-                                  controller: _contentController,
-                                  autofocus: true,
-                                  onTap: TextMenuDismisser.wrap(null),
-                                  contextMenuBuilder:
-                                      TextMenuDismisser.builder,
-                                  maxLines: null,
-                                  expands: true,
-                                  textAlignVertical: TextAlignVertical.top,
-                                  style: const TextStyle(
-                                      fontSize: 15, fontWeight: FontWeight.w600, height: 1.5),
-                                  decoration: const InputDecoration(
-                                    border: InputBorder.none,
-                                    hintText: 'メモを入力...',
-                                  ),
-                                  onChanged: (_) => _saveContent(),
-                                )
-                              : GestureDetector(
-                                  onTap: () => setState(
-                                      () => _isEditingContent = true),
-                                  child: SingleChildScrollView(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      _contentController.text.isEmpty
-                                          ? '（内容なし）'
-                                          : _contentController.text,
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                        height: 1.5,
-                                        color:
-                                            _contentController.text.isEmpty
-                                                ? Colors.grey
-                                                : Colors.black87,
-                                      ),
-                                    ),
-                                  ),
-                                ),
+                          child: TextField(
+                            controller: _contentController,
+                            focusNode: _contentFocus,
+                            onTap: TextMenuDismisser.wrap(null),
+                            contextMenuBuilder: TextMenuDismisser.builder,
+                            maxLines: null,
+                            expands: true,
+                            textAlignVertical: TextAlignVertical.top,
+                            style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                height: 1.5,
+                                color: Colors.black87),
+                            decoration: const InputDecoration(
+                              border: InputBorder.none,
+                              hintText: 'メモを入力...',
+                              hintStyle: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                height: 1.5,
+                              ),
+                              isDense: true,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            onChanged: (_) => _saveContent(),
+                          ),
                         ),
                       ),
 
@@ -2241,6 +2268,14 @@ class _QuickSortIntro extends StatelessWidget {
 enum _Phase { intro, filter, loading, carousel, result }
 enum _EditMode { none, title, content, tag }
 
+/// カード内フォーカスを弧ボタンから操作するためのコントローラー
+class _CardController {
+  VoidCallback? focusTitle;
+  VoidCallback? focusContent;
+  VoidCallback? openTagPicker;
+  VoidCallback? unfocus;
+}
+
 // ========================================
 // 押下エフェクト付きボタン（本家 TapPressableView 準拠）
 // ========================================
@@ -2300,7 +2335,7 @@ class _PressableButtonState extends State<_PressableButton> {
                     : [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.15),
-                          blurRadius: sh,
+                          blurRadius: 1,
                           offset: Offset(0, sh),
                         ),
                       ],
@@ -2315,7 +2350,7 @@ class _PressableButtonState extends State<_PressableButton> {
                     : [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.15),
-                          blurRadius: sh,
+                          blurRadius: 1,
                           offset: Offset(0, sh),
                         ),
                       ],
@@ -2381,15 +2416,15 @@ class _ArcEditButtonState extends State<_ArcEditButton> {
           child: SizedBox(
             width: widget.width,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.edit_square, size: 14, color: Colors.black87),
-                  const SizedBox(width: 3),
+                  const Icon(Icons.edit_square, size: 17, color: Colors.black87),
+                  const SizedBox(width: 4),
                   Text(widget.label, style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 17,
                     fontWeight: FontWeight.bold,
                     fontFamily: '.AppleSystemUIFontRounded',
                   )),
@@ -2444,13 +2479,13 @@ class _ArcCapsulePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final path = _buildPath(size);
 
-    // 影
+    // 影（ぼかし1pt固定・真下）
     if (shadowColor != Colors.transparent && shadowHeight > 0) {
       canvas.save();
       canvas.translate(0, shadowHeight);
       canvas.drawPath(path, Paint()
         ..color = shadowColor
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, shadowHeight));
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1));
       canvas.restore();
     }
 
@@ -2501,9 +2536,6 @@ class _TriangleNavButtonState extends State<_TriangleNavButton> {
   @override
   Widget build(BuildContext context) {
     final color = widget.enabled ? Colors.blue : Colors.blue.withValues(alpha: 0.15);
-    final rotation = widget.direction == _TriangleDirection.left
-        ? -pi / 2  // -90°
-        : pi / 2;  // +90°
 
     return GestureDetector(
       onTapDown: widget.enabled ? (_) => setState(() => _isPressed = true) : null,
@@ -2518,17 +2550,15 @@ class _TriangleNavButtonState extends State<_TriangleNavButton> {
         transform: Matrix4.translationValues(0, _isPressed ? _sh : 0, 0),
         width: 40,
         height: 40,
-        child: Transform.rotate(
-          angle: rotation,
-          child: CustomPaint(
-            size: const Size(40, 40),
-            painter: _TrianglePainter(
-              color: color,
-              shadowColor: _isPressed
-                  ? Colors.transparent
-                  : Colors.black.withValues(alpha: 0.15),
-              shadowHeight: _isPressed ? 0 : _sh,
-            ),
+        child: CustomPaint(
+          size: const Size(40, 40),
+          painter: _TrianglePainter(
+            color: color,
+            shadowColor: (_isPressed || !widget.enabled)
+                ? Colors.transparent
+                : Colors.black.withValues(alpha: 0.15),
+            shadowHeight: (_isPressed || !widget.enabled) ? 0 : _sh,
+            direction: widget.direction,
           ),
         ),
       ),
@@ -2540,29 +2570,41 @@ class _TrianglePainter extends CustomPainter {
   final Color color;
   final Color shadowColor;
   final double shadowHeight;
+  final _TriangleDirection direction;
 
   const _TrianglePainter({
     required this.color,
     required this.shadowColor,
     required this.shadowHeight,
+    required this.direction,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 上向き三角形（top center → right bottom → left bottom）
-    final path = Path()
-      ..moveTo(size.width / 2, 0)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
+    // 横向き三角形を直接描く（回転なし→影が真下を保てる）
+    final w = size.width;
+    final h = size.height;
+    final path = Path();
+    if (direction == _TriangleDirection.left) {
+      // 左向き: 頂点左中央 → 右上 → 右下
+      path.moveTo(0, h / 2);
+      path.lineTo(w, 0);
+      path.lineTo(w, h);
+    } else {
+      // 右向き: 頂点右中央 → 左上 → 左下
+      path.moveTo(w, h / 2);
+      path.lineTo(0, 0);
+      path.lineTo(0, h);
+    }
+    path.close();
 
-    // 影
+    // 影（真下、ぼかし1pt固定）
     if (shadowColor != Colors.transparent && shadowHeight > 0) {
       canvas.save();
       canvas.translate(0, shadowHeight);
       canvas.drawPath(path, Paint()
         ..color = shadowColor
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, shadowHeight));
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1));
       canvas.restore();
     }
 
@@ -2572,7 +2614,9 @@ class _TrianglePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _TrianglePainter old) =>
-      old.color != color || old.shadowColor != shadowColor;
+      old.color != color ||
+      old.shadowColor != shadowColor ||
+      old.direction != direction;
 }
 
 class _ArcDividerPainter extends CustomPainter {
