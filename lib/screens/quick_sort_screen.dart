@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -217,9 +218,9 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           ),
 
           // カードを画面中央寄りに浮かせる
-          const Spacer(flex: 5),
+          const Spacer(flex: 2),
 
-          // メモカード（スワイプ＋スライドアニメーション）
+          // メモカード（スワイプ＋スライドアニメーション）+ ロックボタン
           GestureDetector(
             onHorizontalDragEnd: (details) {
               final v = details.primaryVelocity ?? 0;
@@ -233,31 +234,59 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: SizedBox(
                 height: MediaQuery.of(context).size.height * 0.29,
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 250),
-                  switchInCurve: Curves.easeOut,
-                  switchOutCurve: Curves.easeIn,
-                  transitionBuilder: (child, animation) {
-                    // 進む: 右からスライドイン / 戻る: 左からスライドイン
-                    final isEntering = child.key == ValueKey(memo.id);
-                    final offset = _slideForward
-                        ? (isEntering ? const Offset(1, 0) : const Offset(-1, 0))
-                        : (isEntering ? const Offset(-1, 0) : const Offset(1, 0));
-                    return SlideTransition(
-                      position: Tween(begin: offset, end: Offset.zero)
-                          .animate(animation),
-                      child: child,
-                    );
-                  },
-                  child: _QuickSortCard(
-                    key: ValueKey(memo.id),
-                    memo: memo,
-                    onTagged: () => _taggedMemoIds.add(memo.id),
-                    onTitled: () => _titledMemoIds.add(memo.id),
-                    onEdited: () => _editedMemoIds.add(memo.id),
-                    tabColor: _labTabColor,
-                    tagFooterColor: _labTagFooterColor,
-                  ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // カード
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 250),
+                      switchInCurve: Curves.easeOut,
+                      switchOutCurve: Curves.easeIn,
+                      transitionBuilder: (child, animation) {
+                        final isEntering = child.key == ValueKey(memo.id);
+                        final offset = _slideForward
+                            ? (isEntering ? const Offset(1, 0) : const Offset(-1, 0))
+                            : (isEntering ? const Offset(-1, 0) : const Offset(1, 0));
+                        return SlideTransition(
+                          position: Tween(begin: offset, end: Offset.zero)
+                              .animate(animation),
+                          child: child,
+                        );
+                      },
+                      child: _QuickSortCard(
+                        key: ValueKey(memo.id),
+                        memo: memo,
+                        onTagged: () => _taggedMemoIds.add(memo.id),
+                        onTitled: () => _titledMemoIds.add(memo.id),
+                        onEdited: () => _editedMemoIds.add(memo.id),
+                        tabColor: _labTabColor,
+                        tagFooterColor: _labTagFooterColor,
+                      ),
+                    ),
+                    // ロック中マーク（カード右上の凹み部分に表示）
+                    if (memo.isLocked)
+                      Positioned(
+                        right: 8,
+                        top: 4,
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.red.withValues(alpha: 0.4),
+                              width: 1,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.lock,
+                            size: 14,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -294,7 +323,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           ),
 
           // カード下のスペース
-          const Spacer(flex: 4),
+          const Spacer(flex: 1),
 
           // 弧型コントローラー（弧線 + 3編集ボタン、同一Stack内で配置）
           Builder(builder: (context) {
@@ -310,7 +339,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                 arcH * ((1 - t) * (1 - t) + t * t) + arcOff - btnHalf;
 
             return SizedBox(
-              height: arcH + arcOff + 20, // 弧全体+余白
+              height: arcH + arcOff - 30, // 弧全体（下端クリップ許容）
               width: sw,
               child: Stack(
                 clipBehavior: Clip.none,
@@ -374,82 +403,150 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
 
           const Spacer(flex: 1),
 
-          // 下部操作パネル（前へ/削除/ロック/次へ）
+          // 下部操作パネル（本家準拠: ZStack方式）
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // 前へ
-                _PressableButton(
-                  onTap: canPrev ? _prevCard : null,
-                  shadowHeight: 3,
-                  color: canPrev ? Colors.blue : Colors.grey[200]!,
-                  borderRadius: 8,
-                  padding: const EdgeInsets.all(6),
-                  child: Icon(Icons.arrow_left,
-                      size: 28,
-                      color: canPrev ? Colors.white : Colors.grey[400]),
-                ),
-                // 削除
-                _PressableButton(
-                  onTap: memo.isLocked ? null : () => _deleteCurrent(memo),
-                  shadowHeight: 4,
-                  color: Colors.white,
-                  isCircle: true,
-                  size: 50,
-                  child: Icon(Icons.delete_outline,
-                      size: 20,
-                      color: memo.isLocked ? Colors.grey[300] : Colors.red),
-                ),
-                // ロック
-                _PressableButton(
-                  onTap: () => _toggleLock(memo),
-                  shadowHeight: 3,
-                  color: Colors.white,
-                  isCircle: true,
-                  size: 36,
-                  child: Icon(
-                    memo.isLocked ? Icons.lock : Icons.lock_open,
-                    size: 14,
-                    color: memo.isLocked ? Colors.orange : Colors.grey,
+            child: SizedBox(
+              height: 70,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // 左端: 前へ（三角形）
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: _TriangleNavButton(
+                        onTap: canPrev ? _prevCard : null,
+                        enabled: canPrev,
+                        direction: _TriangleDirection.left,
+                      ),
+                    ),
                   ),
-                ),
-                // 次へ or 完了
-                if (isLast)
-                  _PressableButton(
-                    onTap: _finishCurrentSet,
-                    shadowHeight: 3,
-                    color: Colors.orange,
-                    borderRadius: 20,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
-                    child: const Row(
+                  // 中央: 削除（白丸50x50 + ラベル）
+                  Positioned.fill(
+                    child: Center(
+                      child: Transform.translate(
+                        offset: const Offset(0, 16),
+                        child: _PressableButton(
+                          onTap: memo.isLocked ? null : () => _deleteCurrent(memo),
+                          shadowHeight: 4,
+                          color: Colors.white,
+                          isCircle: true,
+                          size: 50,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(CupertinoIcons.delete_simple,
+                                  size: 22,
+                                  color: memo.isLocked
+                                      ? Colors.grey.withValues(alpha: 0.3)
+                                      : Colors.red),
+                              Text('削除',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: memo.isLocked
+                                          ? Colors.grey.withValues(alpha: 0.3)
+                                          : Colors.red)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // ロックボタン（削除の右上あたり）
+                  Positioned(
+                    left: MediaQuery.of(context).size.width / 2 - 20 + 64,
+                    top: 10,
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('完了',
-                            style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white)),
-                        SizedBox(width: 4),
-                        Icon(Icons.chevron_right,
-                            size: 16, color: Colors.white),
+                        GestureDetector(
+                          onTap: () => _toggleLock(memo),
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: memo.isLocked
+                                  ? Colors.red.withValues(alpha: 0.1)
+                                  : Colors.white,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: memo.isLocked
+                                    ? Colors.red.withValues(alpha: 0.4)
+                                    : Colors.grey.withValues(alpha: 0.4),
+                                width: 1,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.1),
+                                  blurRadius: 3,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              memo.isLocked ? Icons.lock : Icons.no_encryption_outlined,
+                              size: 13,
+                              color: memo.isLocked
+                                  ? Colors.red
+                                  : Colors.grey.withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          memo.isLocked ? 'ロック ON' : 'ロック OFF',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            color: memo.isLocked
+                                ? Colors.red
+                                : Colors.grey.withValues(alpha: 0.7),
+                          ),
+                        ),
                       ],
                     ),
-                  )
-                else
-                  _PressableButton(
-                    onTap: canNext ? _nextCard : null,
-                    shadowHeight: 3,
-                    color: canNext ? Colors.blue : Colors.grey[200]!,
-                    borderRadius: 8,
-                    padding: const EdgeInsets.all(6),
-                    child: Icon(Icons.arrow_right,
-                        size: 28,
-                        color: canNext ? Colors.white : Colors.grey[400]),
                   ),
-              ],
+                  // 右端: 次へ or 完了
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: isLast
+                          ? _PressableButton(
+                              onTap: _finishCurrentSet,
+                              shadowHeight: 3,
+                              color: Colors.orange,
+                              borderRadius: 20,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('完了',
+                                      style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white)),
+                                  SizedBox(width: 4),
+                                  Icon(Icons.chevron_right,
+                                      size: 16, color: Colors.white),
+                                ],
+                              ),
+                            )
+                          : _TriangleNavButton(
+                              onTap: canNext ? _nextCard : null,
+                              enabled: canNext,
+                              direction: _TriangleDirection.right,
+                            ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -563,9 +660,25 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
     );
   }
 
-  void _toggleLock(Memo memo) {
+  void _toggleLock(Memo memo) async {
     final db = ref.read(databaseProvider);
-    db.updateMemo(id: memo.id, isLocked: !memo.isLocked);
+    final newLocked = !memo.isLocked;
+    await db.updateMemo(id: memo.id, isLocked: newLocked);
+    if (!mounted) return;
+    // DBから最新のメモを再取得してローカルリストを更新
+    final updated = await (db.select(db.memos)
+      ..where((t) => t.id.equals(memo.id)))
+        .getSingleOrNull();
+    if (!mounted || updated == null) return;
+    final idx = _activeMemos.indexWhere((m) => m.id == memo.id);
+    if (idx >= 0) {
+      _activeMemos[idx] = updated;
+    }
+    // allFilteredMemosも更新
+    final allIdx = _allFilteredMemos.indexWhere((m) => m.id == memo.id);
+    if (allIdx >= 0) {
+      _allFilteredMemos[allIdx] = updated;
+    }
     setState(() {});
   }
 
@@ -1292,21 +1405,6 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                                       color: Colors.white)),
                             ),
                           ),
-                        if (widget.memo.isLocked)
-                          Container(
-                            width: 24,
-                            height: 24,
-                            decoration: BoxDecoration(
-                              color: Colors.orange.withValues(alpha: 0.1),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color:
-                                      Colors.orange.withValues(alpha: 0.4),
-                                  width: 1),
-                            ),
-                            child: const Icon(Icons.lock,
-                                size: 13, color: Colors.orange),
-                          ),
                       ],
                     ),
                   ),
@@ -1965,7 +2063,7 @@ class _QuickSortLoadingState extends State<_QuickSortLoading>
                             // 背景
                             Container(
                               decoration: BoxDecoration(
-                                color: Colors.grey.withValues(alpha: 0.15),
+                                color: const Color(0xFF858585).withValues(alpha: 0.04),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                             ),
@@ -2191,7 +2289,7 @@ class _PressableButtonState extends State<_PressableButton> {
         curve: _isPressed ? Curves.easeIn : Curves.easeOut,
         transform: Matrix4.translationValues(0, _isPressed ? sh : 0, 0),
         padding: widget.padding ??
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            (widget.isCircle ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 14, vertical: 8)),
         decoration: widget.isCircle
             ? BoxDecoration(
                 color: widget.color,
@@ -2376,6 +2474,107 @@ class _ArcCapsulePainter extends CustomPainter {
 // ========================================
 // 弧の仕切り線
 // ========================================
+// ========================================
+// 三角形ナビボタン（本家 Triangle 準拠）
+// ========================================
+enum _TriangleDirection { left, right }
+
+class _TriangleNavButton extends StatefulWidget {
+  final VoidCallback? onTap;
+  final bool enabled;
+  final _TriangleDirection direction;
+
+  const _TriangleNavButton({
+    required this.onTap,
+    required this.enabled,
+    required this.direction,
+  });
+
+  @override
+  State<_TriangleNavButton> createState() => _TriangleNavButtonState();
+}
+
+class _TriangleNavButtonState extends State<_TriangleNavButton> {
+  bool _isPressed = false;
+  static const double _sh = 4;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.enabled ? Colors.blue : Colors.blue.withValues(alpha: 0.15);
+    final rotation = widget.direction == _TriangleDirection.left
+        ? -pi / 2  // -90°
+        : pi / 2;  // +90°
+
+    return GestureDetector(
+      onTapDown: widget.enabled ? (_) => setState(() => _isPressed = true) : null,
+      onTapUp: widget.enabled ? (_) {
+        setState(() => _isPressed = false);
+        widget.onTap?.call();
+      } : null,
+      onTapCancel: widget.enabled ? () => setState(() => _isPressed = false) : null,
+      child: AnimatedContainer(
+        duration: Duration(milliseconds: _isPressed ? 35 : 50),
+        curve: _isPressed ? Curves.easeIn : Curves.easeOut,
+        transform: Matrix4.translationValues(0, _isPressed ? _sh : 0, 0),
+        width: 40,
+        height: 40,
+        child: Transform.rotate(
+          angle: rotation,
+          child: CustomPaint(
+            size: const Size(40, 40),
+            painter: _TrianglePainter(
+              color: color,
+              shadowColor: _isPressed
+                  ? Colors.transparent
+                  : Colors.black.withValues(alpha: 0.15),
+              shadowHeight: _isPressed ? 0 : _sh,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TrianglePainter extends CustomPainter {
+  final Color color;
+  final Color shadowColor;
+  final double shadowHeight;
+
+  const _TrianglePainter({
+    required this.color,
+    required this.shadowColor,
+    required this.shadowHeight,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // 上向き三角形（top center → right bottom → left bottom）
+    final path = Path()
+      ..moveTo(size.width / 2, 0)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+
+    // 影
+    if (shadowColor != Colors.transparent && shadowHeight > 0) {
+      canvas.save();
+      canvas.translate(0, shadowHeight);
+      canvas.drawPath(path, Paint()
+        ..color = shadowColor
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, shadowHeight));
+      canvas.restore();
+    }
+
+    // 塗り
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrianglePainter old) =>
+      old.color != color || old.shadowColor != shadowColor;
+}
+
 class _ArcDividerPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
