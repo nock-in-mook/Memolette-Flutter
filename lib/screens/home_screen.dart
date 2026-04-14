@@ -396,6 +396,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   /// IMEコミット＋縮小
   /// フォルダ最大化から開いた場合のみ復帰、それ以外は通常画面へ
+  /// 選択中のメモは入力欄に残したまま（クリアしない）
   void _minimizeWithCommit() {
     _inputAreaKey.currentState?.commitIME();
     if (_openedFromMemoList) {
@@ -404,7 +405,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         _isInputExpanded = false;
         _isMemoListExpanded = true;
         _openedFromMemoList = false;
-        _editingMemoId = null;
+        _editingMemoId = null; // フォルダ最大化へ戻る時は閉じる
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _suppressAnimation = false;
@@ -412,7 +413,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     } else {
       setState(() {
         _isInputExpanded = false;
-        _editingMemoId = null;
+        // _editingMemoId は保持 → メモが入力欄に残る
       });
     }
   }
