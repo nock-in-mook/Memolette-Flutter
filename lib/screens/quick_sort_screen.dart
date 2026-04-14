@@ -48,6 +48,9 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   // カードスライドアニメーション方向（true=右へ進む、false=左へ戻る）
   bool _slideForward = true;
 
+  // カード最大化状態
+  bool _isCardExpanded = false;
+
   // 弧ボタンからカードにフォーカス要求するためのコントローラー
   final _CardController _cardController = _CardController();
 
@@ -221,11 +224,20 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
             ),
           ),
 
-          // カードを画面中央寄りに浮かせる
-          const Spacer(flex: 2),
+          // カード+日付+下空白をExpandedで包み、上にSpacer、下は固定の弧+パネル
+          Expanded(
+            child: LayoutBuilder(builder: (context, constraints) {
+              final maxH = constraints.maxHeight;
+              final collapsedCardH =
+                  MediaQuery.of(context).size.height * 0.29;
+              // 最大化時はカードが利用可能空間いっぱいまで広がる（日付はExpanded外で計算済み）
+              final cardH = _isCardExpanded ? maxH : collapsedCardH;
+              return Column(
+                children: [
+                  const Spacer(flex: 2),
 
-          // メモカード（スワイプ＋スライドアニメーション）+ ロックボタン
-          GestureDetector(
+                  // メモカード（スワイプ＋スライドアニメーション）+ ロックボタン
+                  GestureDetector(
             onHorizontalDragEnd: (details) {
               final v = details.primaryVelocity ?? 0;
               if (v < -200 && canNext) {
@@ -236,8 +248,10 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
             },
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: SizedBox(
-                height: MediaQuery.of(context).size.height * 0.29,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOut,
+                height: cardH,
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
@@ -261,6 +275,9 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                         key: ValueKey(memo.id),
                         memo: memo,
                         controller: _cardController,
+                        isExpanded: _isCardExpanded,
+                        onToggleExpanded: () =>
+                            setState(() => _isCardExpanded = !_isCardExpanded),
                         onTagged: () => _taggedMemoIds.add(memo.id),
                         onTitled: () => _titledMemoIds.add(memo.id),
                         onEdited: () => _editedMemoIds.add(memo.id),
@@ -297,40 +314,55 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
             ),
           ),
 
-          // 日付情報
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 6, 24, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                Text(
-                  '更新日：${_formatDate(memo.updatedAt)}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.grey.withValues(alpha: 0.5),
+                  // 日付情報（AnimatedSizeで滑らかに出し入れ）
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOut,
+                    alignment: Alignment.topCenter,
+                    child: _isCardExpanded
+                        ? const SizedBox(width: double.infinity, height: 0)
+                        : Align(
+                            alignment: Alignment.centerLeft,
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(24, 6, 24, 0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '更新日：${_formatDate(memo.updatedAt)}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.grey.withValues(alpha: 0.5),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '作成日：${_formatDate(memo.createdAt)}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.grey.withValues(alpha: 0.5),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '作成日：${_formatDate(memo.createdAt)}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.grey.withValues(alpha: 0.5),
+
+                  // カード下のスペース（Expanded内。最大化時に縮みカードが上下に伸びる）
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOut,
+                    height: _isCardExpanded ? 0 : 90,
                   ),
-                ),
-              ],
-            ),
-          ),
+                ],
+              );
+            }),
           ),
 
-          // カード下のスペース（固定。操作パネル位置を動かさない）
-          const SizedBox(height: 90),
-
-          // 弧型コントローラー（弧線 + 3編集ボタン、同一Stack内で配置）
+          // 弧型コントローラー（弧線 + 3編集ボタン、最大化中も常時表示・固定位置）
           Builder(builder: (context) {
             final sw = MediaQuery.of(context).size.width;
             const arcH = 70.0;   // 弧の高さ
@@ -406,7 +438,8 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
             );
           }),
 
-          const SizedBox(height: 48),
+          // 弧と操作パネルの間（固定。旧値48で弧位置を元に戻す）
+          const SizedBox(height: 40),
 
           // 下部操作パネル（本家準拠: ZStack方式）
           Padding(
@@ -1012,6 +1045,8 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
 class _QuickSortCard extends ConsumerStatefulWidget {
   final Memo memo;
   final _CardController? controller;
+  final bool isExpanded;
+  final VoidCallback? onToggleExpanded;
   final VoidCallback onTagged;
   final VoidCallback onTitled;
   final VoidCallback onEdited;
@@ -1022,6 +1057,8 @@ class _QuickSortCard extends ConsumerStatefulWidget {
     super.key,
     required this.memo,
     this.controller,
+    this.isExpanded = false,
+    this.onToggleExpanded,
     required this.onTagged,
     required this.onTitled,
     required this.onEdited,
@@ -1435,6 +1472,41 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                       ],
                     ),
                   ),
+
+                  // 最大化/縮小ボタン（タグフッター上・右下）
+                  if (widget.onToggleExpanded != null)
+                    Positioned(
+                      right: 8,
+                      bottom: 48,
+                      child: GestureDetector(
+                        onTap: widget.onToggleExpanded,
+                        child: Container(
+                          width: 21,
+                          height: 21,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.blue.withValues(alpha: 0.6),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.2),
+                                blurRadius: 2,
+                                offset: const Offset(-1, 1),
+                              ),
+                            ],
+                          ),
+                          child: Transform.rotate(
+                            angle: 1.5708, // 90度回転
+                            child: Icon(
+                              widget.isExpanded
+                                  ? Icons.close_fullscreen
+                                  : Icons.open_in_full,
+                              size: 11,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
