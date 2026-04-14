@@ -376,7 +376,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             if (_isInputExpanded &&
                 MediaQuery.of(context).viewInsets.bottom > 0)
               Positioned(
-                right: 6 + 36 + 8, // グローバル収納ボタン (36) の左に8px間隔
+                right: 6 + 72 + 8, // 完了ボタン幅(~72) の左に8px間隔
                 bottom: MediaQuery.of(context).viewInsets.bottom + 4,
                 child: _buildFloatingMinimizeButton(),
               ),

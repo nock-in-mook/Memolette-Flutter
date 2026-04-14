@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -57,8 +58,6 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
 
   int get _totalSets =>
       (_allFilteredMemos.length + _setSize - 1) ~/ _setSize;
-  @override void initState(){super.initState();_dl();}
-  Future<void> _dl()async{final db=ref.read(databaseProvider);final m=await db.select(db.memos).get();if(!mounted||m.isEmpty)return;setState((){_allFilteredMemos=m;_loadCurrentSet();_phase=_Phase.carousel;});}
   @override
   Widget build(BuildContext context) {
     final kbVisible = MediaQuery.of(context).viewInsets.bottom > 0;
@@ -160,7 +159,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                         _circleButton(
                           icon: Icons.close,
                           size: 32,
-                          onTap: () => Navigator.of(context).pop(),
+                          onTap: _confirmExit,
                         ),
                         const SizedBox(width: 8),
                         _circleButton(
@@ -618,6 +617,131 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  // 終了確認ダイアログ（×ボタン）→ 本家 QuickSortView.exitConfirmDialog 準拠
+  void _confirmExit() {
+    showGeneralDialog<void>(
+      context: context,
+      barrierLabel: 'exit-confirm',
+      barrierDismissible: true,
+      barrierColor: Colors.black.withValues(alpha: 0.4),
+      transitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (ctx, _, __) {
+        return Material(
+          type: MaterialType.transparency,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 280),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    color: Colors.white.withValues(alpha: 0.65),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(20, 24, 20, 16),
+                          child: Column(
+                            children: [
+                              Icon(Icons.warning_rounded,
+                                  size: 36, color: Colors.orange),
+                              SizedBox(height: 10),
+                              Text('保存せず終了',
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                  )),
+                              SizedBox(height: 8),
+                              Text('変更は保存されません。\nよろしいですか？',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.black54,
+                                  )),
+                              SizedBox(height: 6),
+                              Text(
+                                  '保存するには「整理を終了」するか\n完走してください。',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.black38,
+                                  )),
+                            ],
+                          ),
+                        ),
+                        Container(
+                            height: 0.5,
+                            color: Colors.grey.withValues(alpha: 0.4)),
+                        IntrinsicHeight(
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () {
+                                    Navigator.of(ctx).pop();
+                                    Navigator.of(context).pop();
+                                  },
+                                  child: Container(
+                                    height: 48,
+                                    alignment: Alignment.center,
+                                    child: const Text(
+                                      '終了する',
+                                      style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.red),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                  width: 0.5,
+                                  color: Colors.grey.withValues(alpha: 0.4)),
+                              Expanded(
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () => Navigator.of(ctx).pop(),
+                                  child: Container(
+                                    height: 48,
+                                    alignment: Alignment.center,
+                                    child: const Text(
+                                      'キャンセル',
+                                      style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w500,
+                                          color: Color(0xFF007AFF)),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (ctx, anim, _, child) {
+        return FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.95, end: 1.0).animate(
+                CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+            child: child,
+          ),
+        );
+      },
     );
   }
 
@@ -1179,11 +1303,7 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
       _titleFocus.unfocus();
       _contentFocus.unfocus();
     };
-    c.clearContent = () {
-      _contentController.clear();
-      _saveContent();
-      setState(() {});
-    };
+    c.clearContent = _clearBodyWithConfirm;
     c.isContentFocused = () => _contentFocus.hasFocus;
     c.hasContent = () => _contentController.text.isNotEmpty;
   }
@@ -1230,6 +1350,34 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
     final db = ref.read(databaseProvider);
     db.updateMemo(id: widget.memo.id, title: _titleController.text);
     if (_titleController.text.trim().isNotEmpty) widget.onTitled();
+  }
+
+
+  /// 本文クリア（確認ダイアログ付き・メモ入力画面と同じ挙動）
+  Future<void> _clearBodyWithConfirm() async {
+    if (_contentController.text.isEmpty) return;
+    final ok = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('本文をクリアします。よろしいですか？'),
+        content: const Text('タイトルとタグはそのまま残ります。'),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('キャンセル'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('クリア'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    _contentController.clear();
+    _saveContent();
+    setState(() {});
   }
 
   void _saveContent() {
@@ -1471,41 +1619,65 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 本文
+                      // 本文（外側Scrollable方式で scrollPadding を効かせる）
+                      // カード内TextFieldはキーボード上の領域なので固定値でOK
                       Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                          child: TextField(
-                            controller: _contentController,
-                            focusNode: _contentFocus,
-                            onTap: TextMenuDismisser.wrap(null),
-                            contextMenuBuilder: TextMenuDismisser.builder,
-                            maxLines: null,
-                            expands: true,
-                            textAlignVertical: TextAlignVertical.top,
-                            style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                height: 1.5,
-                                color: Colors.black87),
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              hintText: 'メモを入力...',
-                              hintStyle: TextStyle(
-                                color: Colors.grey,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                height: 1.5,
+                        child: Builder(builder: (innerCtx) {
+                          final kb =
+                              MediaQuery.of(innerCtx).viewInsets.bottom;
+                          final scrollBottom = kb > 0 ? 180 : 100;
+                          final cursorBottomBuffer = 160;
+                          return LayoutBuilder(
+                              builder: (context, constraints) {
+                            return GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => _contentFocus.requestFocus(),
+                              child: SingleChildScrollView(
+                                padding: EdgeInsets.fromLTRB(
+                                    12, 8, 12, scrollBottom.toDouble()),
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    minHeight: (constraints.maxHeight - 100)
+                                        .clamp(0.0, double.infinity),
+                                  ),
+                                  child: TextField(
+                                    controller: _contentController,
+                                    focusNode: _contentFocus,
+                                    onTap: TextMenuDismisser.wrap(null),
+                                    contextMenuBuilder:
+                                        TextMenuDismisser.builder,
+                                    maxLines: null,
+                                    textAlignVertical: TextAlignVertical.top,
+                                    scrollPadding: EdgeInsets.only(
+                                        bottom:
+                                            cursorBottomBuffer.toDouble()),
+                                    style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        height: 1.5,
+                                        color: Colors.black87),
+                                    decoration: const InputDecoration(
+                                      border: InputBorder.none,
+                                      hintText: 'メモを入力...',
+                                      hintStyle: TextStyle(
+                                        color: Colors.grey,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        height: 1.5,
+                                      ),
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                    onChanged: (_) {
+                                      _saveContent();
+                                      setState(() {});
+                                    },
+                                  ),
+                                ),
                               ),
-                              isDense: true,
-                              contentPadding: EdgeInsets.zero,
-                            ),
-                            onChanged: (_) {
-                              _saveContent();
-                              setState(() {}); // 消しゴムボタンの表示切替用
-                            },
-                          ),
-                        ),
+                            );
+                          });
+                        }),
                       ),
 
                       // タグフッター（本文との仕切り線付き）
@@ -1591,9 +1763,10 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                     ),
                   ),
 
-                  // 最大化/縮小ボタン（タグフッター上・右下、キーボード表示中は非表示→フロートが出る）
+                  // 最大化/縮小ボタン（最大化中+キーボード時のみフロート側に切替）
                   if (widget.onToggleExpanded != null &&
-                      MediaQuery.of(context).viewInsets.bottom == 0)
+                      !(widget.isExpanded &&
+                          MediaQuery.of(context).viewInsets.bottom > 0))
                     Positioned(
                       right: 8,
                       bottom: 48,
@@ -1627,26 +1800,23 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                       ),
                     ),
 
-                  // 消しゴムボタン（本文フォーカス時のみ、キーボード表示中はフロート側）
-                  if (_contentFocus.hasFocus &&
-                      MediaQuery.of(context).viewInsets.bottom == 0)
+                  // 消しゴムボタン（常時表示。最大化中+キーボード時のみフロート側に切替）
+                  if (!(widget.isExpanded &&
+                      MediaQuery.of(context).viewInsets.bottom > 0))
                     Positioned(
                       left: 8,
                       bottom: 48,
                       child: GestureDetector(
                         onTap: _contentController.text.isNotEmpty
-                            ? () {
-                                _contentController.clear();
-                                _saveContent();
-                                setState(() {});
-                              }
+                            ? _clearBodyWithConfirm
                             : null,
                         child: Container(
                           width: 28,
                           height: 28,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: _contentController.text.isNotEmpty
+                            color: (_contentFocus.hasFocus &&
+                                    _contentController.text.isNotEmpty)
                                 ? Colors.orange.withValues(alpha: 0.6)
                                 : const Color.fromRGBO(142, 142, 147, 0.08),
                             boxShadow: [

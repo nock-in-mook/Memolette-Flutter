@@ -1366,50 +1366,74 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   );
 
   Widget _buildContent() {
+    // ToDoリストと同じパターン: 外側にScrollable、TextFieldはexpandsなし
+    // キーボード表示中は ScrollView padding.bottom にキーボード分を加えて、
+    // 文末付近でもカーソルをキーボード上にスクロールできる余地を確保
+    final kb = MediaQuery.of(context).viewInsets.bottom;
+    final scrollBottom = kb > 0 ? kb + 10 : 100;
+    final cursorBottomBuffer = kb > 0 ? kb - 10 : 20;
     return Flexible(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 9),
-        child: TextField(
-          controller: _contentController,
-          focusNode: _contentFocusNode,
-          onChanged: (_) => _onChanged(),
-          readOnly: _isViewMode,
-          onTap: TextMenuDismisser.wrap(() {
+      child: LayoutBuilder(builder: (context, constraints) {
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
             if (_isViewMode) {
               _enterEditMode(focusContent: true);
+            } else {
+              _contentFocusNode.requestFocus();
             }
-            // ルーレットが開いていたら閉じる
             if (_rouletteOpen) _closeRoulette();
-          }),
-          inputFormatters: [
-            // 5万字超過は自動カット + トースト通知 (連射防止)
-            _LimitWithToastFormatter(
-              maxLength: _maxContentLength,
-              onLimit: _showLimitReached,
+          },
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(9, 0, 9, scrollBottom.toDouble()),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: (constraints.maxHeight - 100)
+                    .clamp(0.0, double.infinity),
+              ),
+              child: TextField(
+                controller: _contentController,
+                focusNode: _contentFocusNode,
+                onChanged: (_) => _onChanged(),
+                readOnly: _isViewMode,
+                onTap: TextMenuDismisser.wrap(() {
+                  if (_isViewMode) {
+                    _enterEditMode(focusContent: true);
+                  }
+                  if (_rouletteOpen) _closeRoulette();
+                }),
+                inputFormatters: [
+                  _LimitWithToastFormatter(
+                    maxLength: _maxContentLength,
+                    onLimit: _showLimitReached,
+                  ),
+                ],
+                style: const TextStyle(
+                  fontSize: 16,
+                  height: 1.25,
+                  fontWeight: FontWeight.w500,
+                  fontFamily: 'PingFang JP',
+                  color: Colors.black87,
+                ),
+                decoration: InputDecoration(
+                  hintText: '\u30E1\u30E2\u3092\u5165\u529B...',
+                  border: InputBorder.none,
+                  hintStyle:
+                      TextStyle(color: Colors.grey.withValues(alpha: 0.4)),
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                contextMenuBuilder: TextMenuDismisser.builder,
+                maxLines: null,
+                textAlignVertical: TextAlignVertical.top,
+                keyboardType: TextInputType.multiline,
+                scrollPadding:
+                    EdgeInsets.only(bottom: cursorBottomBuffer.toDouble()),
+              ),
             ),
-          ],
-          // 16pt、行間 1.25 (控えめ)、角張った PingFang JP
-          style: const TextStyle(
-            fontSize: 16,
-            height: 1.25,
-            fontWeight: FontWeight.w500,
-            fontFamily: 'PingFang JP',
-            color: Colors.black87,
           ),
-          decoration: InputDecoration(
-            hintText: '\u30E1\u30E2\u3092\u5165\u529B...',
-            border: InputBorder.none,
-            hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.4)),
-          ),
-          contextMenuBuilder: TextMenuDismisser.builder,
-          maxLines: null,
-          expands: true,
-          textAlignVertical: TextAlignVertical.top,
-          keyboardType: TextInputType.multiline,
-          // 下に余白を確保して編集しやすくする（5行分≒100pt）
-          scrollPadding: const EdgeInsets.only(bottom: 100),
-        ),
-      ),
+        );
+      }),
     );
   }
 

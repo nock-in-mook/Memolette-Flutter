@@ -620,6 +620,55 @@ class AppDatabase extends _$AppDatabase {
     await recordTagHistory(longTestParentId, childTagId: longTestChildId);
   }
 
+  /// 長文メモのダミーデータ（開発用・「長文テスト」タグに紐付け）
+  Future<void> seedDummyLongMemos() async {
+    // 既にタイトル「長文テスト1」があればスキップ
+    final existing = await (select(memos)
+          ..where((t) => t.title.equals('長文テスト1')))
+        .get();
+    if (existing.isNotEmpty) return;
+
+    // タグが無ければ作る
+    var longTag = await (select(tags)
+          ..where((t) => t.name.equals('長文テスト')))
+        .getSingleOrNull();
+    longTag ??= await createTag(name: '長文テスト', colorIndex: 60);
+
+    // 基本パラグラフ（~200文字）
+    const para1 =
+        '朝の光が部屋に差し込む頃、窓辺のコーヒーカップから立ちのぼる湯気が、昨夜の考えごとをゆっくりと溶かしていくような気がする。日々の中で見過ごしがちな小さな瞬間こそ、後から振り返って意味を持つことが多い。'
+        'そういうものを丁寧に拾い集めていきたいと、最近よく思う。忙しない時間の中で、自分の呼吸を取り戻すための時間を意識して作ることが、結局は一番遠回りに見えて最短の道なのかもしれない。';
+    const para2 =
+        '本を読んでいると、まったく関係のない出来事の間に思いがけないつながりを見つけることがある。ある章で登場した言葉が、何日も経ってから別の場面で急に意味を持ちはじめる。'
+        '情報は蓄積されるだけでなく、発酵する時間を経て、ようやく自分の一部になっていく。急いで答えを出すよりも、保留にしておける余白を大切にしたい。';
+    const para3 =
+        '散歩の途中でふと立ち止まる。街路樹の葉が光を透かして揺れているのを見ながら、こういう景色は毎日あるのに気付くのはまれだ、と感じる。'
+        '観察する目を持つには、余裕が必要で、余裕は意識して作らないと勝手には生まれない。小さな非効率を肯定することが、豊かさの入り口なのかもしれない。';
+    const para4 =
+        '書きながら考えるという行為は、話しながら考えるのとはまるで違う。書き出すことで輪郭がはっきりしてくる。'
+        '曖昧な感覚のままでは扱えないが、言葉に起こすと、まるで別のものを観察するように自分の思考を見ることができる。';
+
+    // 3パターンの長文（約800 / 1600 / 3200文字）
+    final memo1Content =
+        [para1, para2, para3, para4].join('\n\n');
+    final memo2Content =
+        [para1, para2, para3, para4, para1, para2, para3, para4].join('\n\n');
+    final memo3Content = List.generate(
+            16, (i) => [para1, para2, para3, para4][i % 4])
+        .join('\n\n');
+
+    final seeds = [
+      ('長文テスト1', memo1Content),
+      ('長文テスト2 - 中程度の文量', memo2Content),
+      ('長文テスト3 - タイトルも長めにしてみる超長大なメモ', memo3Content),
+    ];
+
+    for (final (title, content) in seeds) {
+      final memo = await createMemo(title: title, content: content);
+      await addTagToMemo(memo.id, longTag.id);
+    }
+  }
+
   /// 全データ削除（開発用）
   Future<void> wipeAll() async {
     await transaction(() async {

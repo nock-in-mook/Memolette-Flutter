@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'db/database.dart';
 import 'screens/home_screen.dart';
-import 'screens/quick_sort_screen.dart';
 import 'utils/keyboard_done_bar.dart';
 
 void main() async {
@@ -12,6 +11,7 @@ void main() async {
   final db = AppDatabase();
   await db.seedDummyTags();
   await db.seedDummyTagHistory();
+  await db.seedDummyLongMemos();
   await db.close();
 
   runApp(
@@ -21,8 +21,6 @@ void main() async {
   );
 }
 
-class _DQS extends StatefulWidget{const _DQS();@override State<_DQS> createState()=>_DQSs();}
-class _DQSs extends State<_DQS>{@override void initState(){super.initState();WidgetsBinding.instance.addPostFrameCallback((_){Navigator.of(context).push(MaterialPageRoute(builder:(_)=>const QuickSortScreen()));});}@override Widget build(BuildContext c)=>const HomeScreen();}
 class MemolettApp extends StatelessWidget {
   const MemolettApp({super.key});
 
@@ -40,7 +38,7 @@ class MemolettApp extends StatelessWidget {
         fontFamily: 'PingFang JP',
         useMaterial3: true,
       ),
-      home: const _DQS(),
+      home: const HomeScreen(),
     );
   }
 }
