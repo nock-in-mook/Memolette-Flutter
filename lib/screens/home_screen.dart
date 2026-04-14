@@ -395,10 +395,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   /// IMEコミット＋縮小
+  /// フォルダ最大化から開いた場合のみ復帰、それ以外は通常画面へ
   void _minimizeWithCommit() {
     _inputAreaKey.currentState?.commitIME();
     if (_openedFromMemoList) {
-      // フォルダ全画面からメモを開いていた → アニメなしでフォルダ全画面に戻す
       _suppressAnimation = true;
       setState(() {
         _isInputExpanded = false;
@@ -410,7 +410,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         _suppressAnimation = false;
       });
     } else {
-      setState(() => _isInputExpanded = false);
+      setState(() {
+        _isInputExpanded = false;
+        _editingMemoId = null;
+      });
     }
   }
 
@@ -1855,6 +1858,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         todoListStream: ref.watch(allTodoListsProvider),
         gridSize: _gridSize,
         onTap: _openMemo,
+        onDoubleTap: _openMemoExpanded,
         onTodoTap: _openTodoList,
         onTodoLongPress: _showTodoActions,
         wrapBuilder: (memo, card) => _wrapMemoInContextMenu(memo, card),
@@ -1871,6 +1875,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         todoListStream: ref.watch(untaggedTodoListsProvider),
         gridSize: _gridSize,
         onTap: _openMemo,
+        onDoubleTap: _openMemoExpanded,
         onTodoTap: _openTodoList,
         onTodoLongPress: _showTodoActions,
         wrapBuilder: (memo, card) => _wrapMemoInContextMenu(memo, card),
@@ -1890,6 +1895,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         todoListStream: ref.watch(todoListsForTagProvider(tagId)),
         gridSize: _gridSize,
         onTap: _openMemo,
+        onDoubleTap: _openMemoExpanded,
         onTodoTap: _openTodoList,
         // 親タグフォルダ表示時のみ子タグバッジ用にIDを渡す
         parentTagId: parentId,
@@ -2333,6 +2339,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   // メモタップ: 全画面エディタへ遷移するのではなく、上部の入力エリアに読み込む
   // 入力エリアは閲覧モードで開き、本文タップで編集モードへ切替 (Swift 本家準拠)
+  /// ダブルタップでメモを開く → 即最大化
+  /// 閉じたときは元の画面（通常メモ一覧）に戻る
+  void _openMemoExpanded(Memo memo) {
+    ref.read(databaseProvider).incrementViewCount(memo.id);
+    if (!_isSearchActive) _clearSearchIfActive();
+    // フォルダ最大化中に開かれた場合のみ戻り先をフォルダ最大化に
+    final cameFromListExpanded = _isMemoListExpanded;
+    _suppressAnimation = true;
+    setState(() {
+      _editingMemoId = memo.id;
+      _highlightedMemoId = memo.id;
+      _isMemoListExpanded = false;
+      _isInputExpanded = true;
+      _openedFromMemoList = cameFromListExpanded;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _suppressAnimation = false;
+    });
+  }
+
   void _openMemo(Memo memo) {
     // 閲覧回数を増やす (よく見る/最近見たに反映)
     ref.read(databaseProvider).incrementViewCount(memo.id);
@@ -3940,6 +3966,7 @@ class _MemoGridView extends StatelessWidget {
   final AsyncValue<List<TodoList>>? todoListStream;
   final GridSizeOption gridSize;
   final void Function(Memo) onTap;
+  final void Function(Memo)? onDoubleTap;
   final void Function(TodoList)? onTodoTap;
   final void Function(TodoList)? onTodoLongPress;
   final MemoCardWrapper? wrapBuilder;
@@ -3966,6 +3993,7 @@ class _MemoGridView extends StatelessWidget {
     this.todoListStream,
     required this.gridSize,
     required this.onTap,
+    this.onDoubleTap,
     this.onTodoTap,
     this.onTodoLongPress,
     this.wrapBuilder,
@@ -4031,6 +4059,7 @@ class _MemoGridView extends StatelessWidget {
       key: ValueKey('memocard_${memo.id}'),
       memo: memo,
       onTap: () => onTap(memo),
+      onDoubleTap: onDoubleTap != null ? () => onDoubleTap!(memo) : null,
       parentTagId: parentTagId,
       gridSize: gridSize,
       isHighlighted: memo.id == editingMemoId,

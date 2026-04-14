@@ -12,6 +12,7 @@ import '../screens/home_screen.dart' show GridSizeOption;
 class MemoCard extends ConsumerWidget {
   final Memo memo;
   final VoidCallback onTap;
+  final VoidCallback? onDoubleTap;
   final String? parentTagId;
   final GridSizeOption gridSize;
   final bool isHighlighted;
@@ -20,6 +21,7 @@ class MemoCard extends ConsumerWidget {
     super.key,
     required this.memo,
     required this.onTap,
+    this.onDoubleTap,
     this.parentTagId,
     this.gridSize = GridSizeOption.grid2x3,
     this.isHighlighted = false,
@@ -82,6 +84,7 @@ class MemoCard extends ConsumerWidget {
     final displayTitle = hasTitle ? memo.title : '無題';
     return GestureDetector(
       onTap: onTap,
+      onDoubleTap: onDoubleTap,
       child: Container(
         clipBehavior: Clip.hardEdge,
         decoration: BoxDecoration(
@@ -251,6 +254,7 @@ class MemoCard extends ConsumerWidget {
 
     return GestureDetector(
       onTap: onTap,
+      onDoubleTap: onDoubleTap,
       // 子タグバッジは右下にカード端からはみ出して表示
       // 親の高さ制約が有限ならカードがセル全体を埋め(StackFit.expand)、
       // 無限なら内容に合わせて縮む(StackFit.loose) — 両ケースに対応

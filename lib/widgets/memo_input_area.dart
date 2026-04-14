@@ -1385,7 +1385,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             if (_rouletteOpen) _closeRoulette();
           },
           child: SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(9, 0, 9, scrollBottom.toDouble()),
+            padding: EdgeInsets.fromLTRB(9, 9, 9, scrollBottom.toDouble()),
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 minHeight: (constraints.maxHeight - 100)
