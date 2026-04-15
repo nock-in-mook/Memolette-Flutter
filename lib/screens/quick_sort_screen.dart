@@ -58,6 +58,13 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
 
   int get _totalSets =>
       (_allFilteredMemos.length + _setSize - 1) ~/ _setSize;
+
+  /// 現在のセットに含まれるメモ数（ロード画面用）
+  int get _currentSetMemoCount {
+    final start = _currentSetIndex * _setSize;
+    final end = (start + _setSize).clamp(0, _allFilteredMemos.length);
+    return end - start;
+  }
   @override
   Widget build(BuildContext context) {
     final kbVisible = MediaQuery.of(context).viewInsets.bottom > 0;
@@ -81,17 +88,25 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                     setState(() {
                       _allFilteredMemos = memos;
                       _currentSetIndex = 0;
-                      _loadCurrentSet();
-                      _phase = _Phase.loading;
+                      // 50件超ならまずセット確認、それ以外はロード→カルーセル
+                      _phase = memos.length > _setSize
+                          ? _Phase.setConfirm
+                          : _Phase.loading;
                     });
                   },
                   onBack: () => setState(() => _phase = _Phase.intro),
                   onCancel: () => Navigator.of(context).pop(),
                 ),
               _Phase.loading => _QuickSortLoading(
-                  memoCount: _allFilteredMemos.length,
-                  onComplete: () => setState(() => _phase = _Phase.carousel),
+                  memoCount: _currentSetMemoCount,
+                  onComplete: () {
+                    setState(() {
+                      _loadCurrentSet();
+                      _phase = _Phase.carousel;
+                    });
+                  },
                 ),
+              _Phase.setConfirm => _buildSetConfirmPhase(),
               _Phase.carousel => _buildCarouselPhase(),
               _Phase.result => _buildResultPhase(),
             },
@@ -524,7 +539,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                   ),
                   // ロックボタン（削除の右上あたり）
                   Positioned(
-                    left: MediaQuery.of(context).size.width / 2 - 20 + 64,
+                    left: MediaQuery.of(context).size.width / 2 - 20 + 54,
                     top: 10,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -685,7 +700,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                                   behavior: HitTestBehavior.opaque,
                                   onTap: () {
                                     Navigator.of(ctx).pop();
-                                    Navigator.of(context).pop();
+                                    _finishAndClose();
                                   },
                                   child: Container(
                                     height: 48,
@@ -951,6 +966,20 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
       );
       return;
     }
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.4),
+      builder: (ctx) => _DeleteConfirmDialog(
+        onConfirm: () {
+          Navigator.of(ctx).pop();
+          _performDelete(memo);
+        },
+        onCancel: () => Navigator.of(ctx).pop(),
+      ),
+    );
+  }
+
+  void _performDelete(Memo memo) {
     setState(() {
       _deleteQueue.add(memo.id);
       _activeMemos.removeAt(_currentCardIndex);
@@ -1146,99 +1175,619 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   }
 
   void _finishCurrentSet() {
-    // 削除キューを実行
-    final db = ref.read(databaseProvider);
-    for (final id in _deleteQueue) {
-      db.deleteMemo(id);
-    }
-
+    // 削除はまだコミットしない（「整理画面にもどる」で取り消せるように）
     setState(() {
       _phase = _Phase.result;
     });
   }
 
+  /// 削除キューをDBにコミット
+  Future<void> _commitPendingDeletes() async {
+    if (_deleteQueue.isEmpty) return;
+    final db = ref.read(databaseProvider);
+    await db.deleteMemos(List.of(_deleteQueue));
+  }
+
   // ========================================
-  // Phase 3: 結果サマリー
+  // Phase 2.5: セット確認（50件超えた時）
   // ========================================
-  Widget _buildResultPhase() {
-    final hasNextSet = _currentSetIndex + 1 < _totalSets;
-
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          const SizedBox(height: 40),
-          const Icon(Icons.check_circle_outline,
-              size: 72, color: Colors.green),
-          const SizedBox(height: 16),
-          const Text('整理完了！',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 32),
-
-          // 結果カウンター
-          _resultCounter(Icons.label, 'タグ付け', _taggedMemoIds.length),
-          _resultCounter(Icons.title, 'タイトル追加', _titledMemoIds.length),
-          _resultCounter(Icons.edit, '内容編集', _editedMemoIds.length),
-          _resultCounter(
-              Icons.delete, '削除', _deleteQueue.length,
-              color: Colors.red),
-
-          const Spacer(),
-
-          if (hasNextSet)
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _currentSetIndex++;
-                    _loadCurrentSet();
-                    _taggedMemoIds.clear();
-                    _titledMemoIds.clear();
-                    _editedMemoIds.clear();
-                    _deleteQueue.clear();
-                    _phase = _Phase.carousel;
-                  });
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueAccent,
-                  foregroundColor: Colors.white,
-                ),
-                child: Text(
-                    '次のセットへ (${_currentSetIndex + 2}/$_totalSets)'),
+  Widget _buildSetConfirmPhase() {
+    final total = _allFilteredMemos.length;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Column(
+          children: [
+            const Spacer(),
+            const Icon(Icons.dashboard_customize_rounded,
+                size: 44, color: Colors.orange),
+            const SizedBox(height: 12),
+            const Text(
+              'セットを組みます',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.3,
               ),
             ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: OutlinedButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('ホームに戻る'),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                '一度に処理できるのは$_setSize枚までです。\n下記のようにセットを組んで、順番に処理します。',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              ),
             ),
+            const SizedBox(height: 20),
+
+            // セット一覧
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFEFF4),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  for (int i = 0; i < _totalSets; i++) ...[
+                    _buildSetRow(i, total),
+                    if (i < _totalSets - 1)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 50),
+                        child: Divider(
+                          height: 1,
+                          color: Colors.grey[300],
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '途中でいつでも保存・終了できます',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[500],
+              ),
+            ),
+            const Spacer(),
+
+            // 開始ボタン
+            _primaryButton(
+              label: '開始',
+              onTap: () {
+                setState(() => _phase = _Phase.loading);
+              },
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              onPressed: _finishAndClose,
+              child: Text(
+                '終了する',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSetRow(int i, int total) {
+    final start = i * _setSize + 1;
+    final end = ((i + 1) * _setSize).clamp(0, total);
+    final isCurrent = i == _currentSetIndex;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Icon(
+            isCurrent
+                ? Icons.play_circle_fill_rounded
+                : Icons.radio_button_unchecked,
+            size: 20,
+            color: isCurrent ? Colors.orange : Colors.grey[400],
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'セット${i + 1}',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            '$start〜$end枚目（${end - start + 1}枚）',
+            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
           ),
         ],
       ),
     );
   }
 
-  Widget _resultCounter(IconData icon, String label, int count,
-      {Color? color}) {
+  // ========================================
+  // Phase 3: 結果サマリー（リッチUI）
+  // ========================================
+  Widget _buildResultPhase() {
+    final hasNextSet = _currentSetIndex + 1 < _totalSets;
+    final tagged = _taggedMemoIds.length;
+    final titled = _titledMemoIds.length;
+    final edited = _editedMemoIds.length;
+    final deleted = _deleteQueue.length;
+    final total = tagged + titled + edited + deleted;
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        child: Column(
+          children: [
+            const Spacer(flex: 2),
+
+            // ヘッダー: オレンジのsealチェック
+            Icon(Icons.verified_rounded,
+                size: 56, color: Colors.orange),
+            const SizedBox(height: 12),
+            Text(
+              hasNextSet
+                  ? 'セット ${_currentSetIndex + 1}/$_totalSets 完了！'
+                  : '振り分け完了！',
+              style: const TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              total > 0 ? '$total件の操作を実行しました' : '操作はありませんでした',
+              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 28),
+
+            // 戦績カード（白地・角丸・軽い影）
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  _resultRow(
+                    icon: Icons.label_rounded,
+                    iconColor: Colors.blue,
+                    count: tagged,
+                    suffix: 'にタグ付け',
+                  ),
+                  _resultDivider(),
+                  _resultRow(
+                    icon: Icons.text_fields_rounded,
+                    iconColor: Colors.grey,
+                    count: titled,
+                    suffix: 'にタイトル付け',
+                  ),
+                  _resultDivider(),
+                  _resultRow(
+                    icon: Icons.edit_rounded,
+                    iconColor: Colors.blue,
+                    count: edited,
+                    suffix: 'の本文を編集',
+                  ),
+                  _resultDivider(),
+                  _resultRow(
+                    icon: CupertinoIcons.delete_simple,
+                    iconColor: Colors.red,
+                    count: deleted,
+                    suffix: 'を削除',
+                    isDestructive: true,
+                    onReview: deleted > 0 ? _showDeletedReview : null,
+                  ),
+                ],
+              ),
+            ),
+
+            const Spacer(flex: 3),
+
+            // メインボタン: オレンジ「完了」/「次のセットへ」
+            _primaryButton(
+              label: hasNextSet ? '次のセットへ' : '終了',
+              onTap: hasNextSet ? _goToNextSet : _finishAndClose,
+            ),
+            if (hasNextSet) ...[
+              const SizedBox(height: 4),
+              TextButton(
+                onPressed: _finishAndClose,
+                child: Text(
+                  '終了する',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 2),
+            TextButton(
+              onPressed: _backToCarousel,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.undo_rounded,
+                      size: 14, color: Colors.blueAccent),
+                  const SizedBox(width: 4),
+                  const Text(
+                    '整理画面にもどる',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.blueAccent,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _resultDivider() => Padding(
+        padding: const EdgeInsets.only(left: 56),
+        child: Divider(height: 1, color: Colors.grey[200]),
+      );
+
+  Widget _resultRow({
+    required IconData icon,
+    required Color iconColor,
+    required int count,
+    required String suffix,
+    bool isDestructive = false,
+    VoidCallback? onReview,
+  }) {
+    final hasCount = count > 0;
+    final textColor = isDestructive && hasCount
+        ? Colors.red
+        : hasCount
+            ? Colors.black87
+            : Colors.grey[500];
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
         children: [
-          Icon(icon, color: color ?? Colors.blueAccent),
+          SizedBox(
+            width: 28,
+            child: Icon(icon, size: 22, color: iconColor),
+          ),
           const SizedBox(width: 12),
-          Text(label, style: const TextStyle(fontSize: 16)),
-          const Spacer(),
-          Text('$count件',
+          Expanded(
+            child: Text(
+              '$count件$suffix',
               style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: color ?? Colors.blueAccent)),
+                fontSize: 16,
+                fontWeight: hasCount ? FontWeight.bold : FontWeight.w400,
+                color: textColor,
+              ),
+            ),
+          ),
+          if (onReview != null && hasCount) ...[
+            GestureDetector(
+              onTap: onReview,
+              child: Text(
+                '確認',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.red[700],
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          if (hasCount)
+            Icon(
+              Icons.check_circle_rounded,
+              size: 20,
+              color: isDestructive ? Colors.red : Colors.green,
+            ),
         ],
+      ),
+    );
+  }
+
+  Widget _primaryButton({
+    required String label,
+    IconData? icon,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: Material(
+        color: Colors.orange,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                if (icon != null) ...[
+                  const SizedBox(width: 8),
+                  Icon(icon, size: 18, color: Colors.white),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ========================================
+  // 結果画面のアクション
+  // ========================================
+  Future<void> _goToNextSet() async {
+    await _commitPendingDeletes();
+    if (!mounted) return;
+    setState(() {
+      _currentSetIndex++;
+      _taggedMemoIds.clear();
+      _titledMemoIds.clear();
+      _editedMemoIds.clear();
+      _deleteQueue.clear();
+      // セット開始前にロード画面を挟む
+      _phase = _Phase.loading;
+    });
+  }
+
+  Future<void> _finishAndClose() async {
+    await _commitPendingDeletes();
+    if (!mounted) return;
+    setState(() {
+      // オープニング画面に戻す（状態リセット）
+      _phase = _Phase.intro;
+      _currentSetIndex = 0;
+      _currentCardIndex = 0;
+      _allFilteredMemos = [];
+      _activeMemos = [];
+      _taggedMemoIds.clear();
+      _titledMemoIds.clear();
+      _editedMemoIds.clear();
+      _deleteQueue.clear();
+      _isCardExpanded = false;
+    });
+  }
+
+  void _backToCarousel() {
+    // 削除はコミットせずに戻す。_activeMemosから削除済みメモを復元
+    setState(() {
+      if (_deleteQueue.isNotEmpty) {
+        final restored = _allFilteredMemos
+            .where((m) => _deleteQueue.contains(m.id))
+            .toList();
+        _activeMemos.addAll(restored);
+        _deleteQueue.clear();
+      }
+      if (_currentCardIndex >= _activeMemos.length) {
+        _currentCardIndex =
+            (_activeMemos.length - 1).clamp(0, _activeMemos.length);
+      }
+      _phase = _Phase.carousel;
+    });
+  }
+
+  // 削除予定メモの確認ダイアログ
+  void _showDeletedReview() {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.4),
+      builder: (ctx) => _DeletedReviewDialog(
+        memoIds: List.of(_deleteQueue),
+        allMemos: _allFilteredMemos,
+        onRestore: (id) {
+          setState(() {
+            _deleteQueue.remove(id);
+            final memo = _allFilteredMemos.firstWhere(
+              (m) => m.id == id,
+              orElse: () => _allFilteredMemos.first,
+            );
+            if (!_activeMemos.any((m) => m.id == id)) {
+              _activeMemos.add(memo);
+            }
+          });
+        },
+      ),
+    );
+  }
+}
+
+// 削除予定メモを一覧表示し、個別に復元できるダイアログ
+class _DeletedReviewDialog extends StatefulWidget {
+  final List<String> memoIds;
+  final List<Memo> allMemos;
+  final void Function(String id) onRestore;
+
+  const _DeletedReviewDialog({
+    required this.memoIds,
+    required this.allMemos,
+    required this.onRestore,
+  });
+
+  @override
+  State<_DeletedReviewDialog> createState() => _DeletedReviewDialogState();
+}
+
+class _DeletedReviewDialogState extends State<_DeletedReviewDialog> {
+  late List<String> _ids = List.of(widget.memoIds);
+
+  @override
+  Widget build(BuildContext context) {
+    final memos = _ids
+        .map((id) => widget.allMemos.firstWhere(
+              (m) => m.id == id,
+              orElse: () => widget.allMemos.first,
+            ))
+        .toList();
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ヘッダー
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+                  child: Row(
+                    children: [
+                      const Icon(CupertinoIcons.delete_simple,
+                          color: Colors.red, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        '削除予定 (${memos.length}件)',
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close_rounded, size: 20),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Divider(height: 1, color: Colors.grey[300]),
+                // リスト
+                Flexible(
+                  child: memos.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Text(
+                            '削除予定のメモはありません',
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                        )
+                      : ListView.separated(
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          itemCount: memos.length,
+                          separatorBuilder: (_, __) => Divider(
+                            height: 1,
+                            color: Colors.grey[200],
+                            indent: 16,
+                            endIndent: 16,
+                          ),
+                          itemBuilder: (_, i) {
+                            final memo = memos[i];
+                            final preview = memo.title.trim().isNotEmpty
+                                ? memo.title
+                                : memo.content.trim().isNotEmpty
+                                    ? memo.content
+                                    : '(空のメモ)';
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 10),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      preview,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  TextButton(
+                                    onPressed: () {
+                                      widget.onRestore(memo.id);
+                                      setState(() => _ids.remove(memo.id));
+                                    },
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: Colors.blueAccent,
+                                      minimumSize: const Size(0, 32),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10),
+                                    ),
+                                    child: const Text(
+                                      '復元',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                Divider(height: 1, color: Colors.grey[300]),
+                // フッター
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      child: const Text(
+                        '閉じる',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1970,16 +2519,20 @@ class _QuickSortFilterPhaseState
     final memos = await db.select(db.memos).get();
     final tags = await db.select(db.tags).get();
     final memoTags = await db.select(db.memoTags).get();
+    // 現存メモIDのセットで memo_tags をフィルタ（孤児レコード対策）
+    final existingMemoIds = memos.map((m) => m.id).toSet();
+    final validMemoTags =
+        memoTags.where((mt) => existingMemoIds.contains(mt.memoId)).toList();
     // タグ→メモの逆引きマップを構築
     final tagMap = <String, Set<String>>{};
-    for (final mt in memoTags) {
+    for (final mt in validMemoTags) {
       tagMap.putIfAbsent(mt.tagId, () => {}).add(mt.memoId);
     }
     if (!mounted) return;
     setState(() {
       _allMemos = memos;
       _parentTags = tags.where((t) => t.parentTagId == null).toList();
-      _taggedMemoIds = memoTags.map((mt) => mt.memoId).toSet();
+      _taggedMemoIds = validMemoTags.map((mt) => mt.memoId).toSet();
       _tagToMemoIds = tagMap;
       _loaded = true;
     });
@@ -2418,10 +2971,8 @@ class _QuickSortLoadingState extends State<_QuickSortLoading>
   @override
   void initState() {
     super.initState();
-    // 10件以下: 1.5秒、11件以上: 3秒（Swift版準拠）
-    final duration = widget.memoCount <= 10
-        ? const Duration(milliseconds: 1500)
-        : const Duration(milliseconds: 3000);
+    // 件数によらず2秒固定
+    const duration = Duration(milliseconds: 2000);
 
     _controller = AnimationController(vsync: this, duration: duration);
     // イーズアウト風カーブ（最初速く、最後ゆっくり）
@@ -2661,7 +3212,7 @@ class _QuickSortIntro extends StatelessWidget {
   }
 }
 
-enum _Phase { intro, filter, loading, carousel, result }
+enum _Phase { intro, filter, loading, setConfirm, carousel, result }
 enum _EditMode { none, title, content, tag }
 
 /// カード内フォーカスを弧ボタンから操作するためのコントローラー
@@ -3205,4 +3756,123 @@ class _CardWithTabPainter extends CustomPainter {
       old.tabColor != tabColor ||
       old.bodyColor != bodyColor ||
       old.borderColor != borderColor;
+}
+
+// 爆速モードの削除確認ダイアログ（本家準拠）
+class _DeleteConfirmDialog extends StatelessWidget {
+  final VoidCallback onConfirm;
+  final VoidCallback onCancel;
+
+  const _DeleteConfirmDialog({
+    required this.onConfirm,
+    required this.onCancel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+              child: Column(
+                children: [
+                  Icon(
+                    CupertinoIcons.delete_simple,
+                    size: 32,
+                    color: Colors.red.withValues(alpha: 0.8),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'メモを削除します',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'よろしいですか？',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '結果表示画面で復元できます。',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: Colors.grey[300]),
+            InkWell(
+              onTap: onConfirm,
+              borderRadius: const BorderRadius.vertical(
+                bottom: Radius.zero,
+              ),
+              child: const SizedBox(
+                width: double.infinity,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 14),
+                  child: Center(
+                    child: Text(
+                      '削除する',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Divider(height: 1, color: Colors.grey[300]),
+            InkWell(
+              onTap: onCancel,
+              borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(18),
+              ),
+              child: const SizedBox(
+                width: double.infinity,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 14),
+                  child: Center(
+                    child: Text(
+                      'キャンセル',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.blue,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

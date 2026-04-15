@@ -103,15 +103,21 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
-  /// メモを削除
-  Future<void> deleteMemo(String id) {
-    return (delete(memos)..where((t) => t.id.equals(id))).go();
+  /// メモを削除（memo_tags もカスケード削除）
+  Future<void> deleteMemo(String id) async {
+    await transaction(() async {
+      await (delete(memoTags)..where((t) => t.memoId.equals(id))).go();
+      await (delete(memos)..where((t) => t.id.equals(id))).go();
+    });
   }
 
-  /// 複数メモをまとめて削除
+  /// 複数メモをまとめて削除（memo_tags もカスケード削除）
   Future<void> deleteMemos(List<String> ids) async {
     if (ids.isEmpty) return;
-    await (delete(memos)..where((t) => t.id.isIn(ids))).go();
+    await transaction(() async {
+      await (delete(memoTags)..where((t) => t.memoId.isIn(ids))).go();
+      await (delete(memos)..where((t) => t.id.isIn(ids))).go();
+    });
   }
 
   /// メモをトップに移動: 既存最大の manualSortOrder + 1 を設定
@@ -666,6 +672,33 @@ class AppDatabase extends _$AppDatabase {
     for (final (title, content) in seeds) {
       final memo = await createMemo(title: title, content: content);
       await addTagToMemo(memo.id, longTag.id);
+    }
+  }
+
+  /// 爆速モード動作確認用: 指定タグに大量のダミーメモを投入
+  Future<void> seedDummyBulkMemos({
+    String tagName = 'ダミー70',
+    int count = 70,
+  }) async {
+    // 既に同名タグ＋ダミーメモがあればスキップ
+    final existingTag = await (select(tags)
+          ..where((t) => t.name.equals(tagName)))
+        .getSingleOrNull();
+    if (existingTag != null) {
+      final existingMemos = await (select(memos)
+            ..where((m) => m.title.like('$tagName-%')))
+          .get();
+      if (existingMemos.length >= count) return;
+    }
+
+    final tag = existingTag ?? await createTag(name: tagName, colorIndex: 42);
+
+    for (int i = 1; i <= count; i++) {
+      final memo = await createMemo(
+        title: '$tagName-${i.toString().padLeft(3, '0')}',
+        content: 'ダミーメモ#$i: 爆速整理モードの動作確認用です。適当な本文を入れておきます。',
+      );
+      await addTagToMemo(memo.id, tag.id);
     }
   }
 

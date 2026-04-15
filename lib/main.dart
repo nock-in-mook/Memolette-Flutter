@@ -12,6 +12,7 @@ void main() async {
   await db.seedDummyTags();
   await db.seedDummyTagHistory();
   await db.seedDummyLongMemos();
+  await db.seedDummyBulkMemos(tagName: 'ダミー70', count: 70);
   await db.close();
 
   runApp(
