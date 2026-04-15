@@ -1098,7 +1098,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 Flexible(
                   child: Stack(
                     children: [
-                      // 常にTextFieldを配置（フォーカス時に使う）
+                      // 常にTextFieldを配置（フォーカス時に見える）
                       Opacity(
                         opacity: _titleFocusNode.hasFocus ? 1.0 : 0.0,
                         child: TextField(
@@ -1117,46 +1117,54 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                             fontFamily: 'PingFang JP',
                             color: Colors.black87,
                           ),
-                          decoration: InputDecoration(
-                            hintText: '\u30BF\u30A4\u30C8\u30EB\uFF08\u4EFB\u610F\uFF09',
-                            hintStyle: TextStyle(
-                                color: Colors.grey.withValues(alpha: 0.4)),
+                          decoration: const InputDecoration(
+                            // プレースホルダーはフォーカス時に出さず、
+                            // 非フォーカス時のTextオーバーレイのみで見せる
                             border: InputBorder.none,
                             isDense: true,
-                            contentPadding:
-                                const EdgeInsets.symmetric(vertical: 4),
+                            contentPadding: EdgeInsets.symmetric(vertical: 4),
                           ),
                           maxLines: 1,
                         ),
                       ),
-                      // 非フォーカス時: Textで省略表示
+                      // 非フォーカス時: Textで省略表示（TextFieldと同じ位置に重ねる）
                       if (!_titleFocusNode.hasFocus)
-                        GestureDetector(
-                          onTap: () {
-                            if (_isViewMode) {
-                              _enterEditMode(focusContent: false, focusTitle: true);
-                            } else {
-                              _titleFocusNode.requestFocus();
-                            }
-                          },
-                          child: Container(
-                            height: 40,
-                            alignment: Alignment.centerLeft,
-                            color: Colors.transparent,
-                            child: Text(
-                              _titleController.text.isEmpty
-                                  ? '\u30BF\u30A4\u30C8\u30EB\uFF08\u4EFB\u610F\uFF09'
-                                  : _titleController.text,
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w700,
-                                fontFamily: 'PingFang JP',
-                                color: _titleController.text.isEmpty
-                                    ? Colors.grey.withValues(alpha: 0.4)
-                                    : Colors.black87,
+                        Positioned.fill(
+                          child: GestureDetector(
+                            onTap: () {
+                              if (_isViewMode) {
+                                _enterEditMode(
+                                    focusContent: false, focusTitle: true);
+                              } else {
+                                _titleFocusNode.requestFocus();
+                              }
+                            },
+                            child: Container(
+                              color: Colors.transparent,
+                              // TextField(isDense + contentPadding vertical:4)は
+                              // 実際にはテキストを中央寄せで描画するため centerLeft
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                _titleController.text.isEmpty
+                                    ? '\u30BF\u30A4\u30C8\u30EB\uFF08\u4EFB\u610F\uFF09'
+                                    : _titleController.text,
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                  fontFamily: 'PingFang JP',
+                                  color: _titleController.text.isEmpty
+                                      ? Colors.grey.withValues(alpha: 0.4)
+                                      : Colors.black87,
+                                ),
+                                // TextFieldと同じ行高メトリクスに揃える
+                                strutStyle: const StrutStyle(
+                                  fontSize: 17,
+                                  fontFamily: 'PingFang JP',
+                                  forceStrutHeight: true,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ),
@@ -1367,11 +1375,14 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
   Widget _buildContent() {
     // ToDoリストと同じパターン: 外側にScrollable、TextFieldはexpandsなし
-    // キーボード表示中は ScrollView padding.bottom にキーボード分を加えて、
-    // 文末付近でもカーソルをキーボード上にスクロールできる余地を確保
+    // 最大化時のみ、キーボード分の余白を確保してカーソルがキーボード上に来るよう
+    // スクロールさせる。縮小時(316固定)は枠が小さいので、キーボード対策が強すぎると
+    // テキストが上に吹き飛ぶ → 縮小時は固定値のみ使う。
     final kb = MediaQuery.of(context).viewInsets.bottom;
-    final scrollBottom = kb > 0 ? kb + 10 : 100;
-    final cursorBottomBuffer = kb > 0 ? kb - 10 : 20;
+    final scrollBottom =
+        widget.isExpanded && kb > 0 ? kb + 10 : 100;
+    final cursorBottomBuffer =
+        widget.isExpanded && kb > 0 ? kb - 10 : 20;
     return Flexible(
       child: LayoutBuilder(builder: (context, constraints) {
         return GestureDetector(
@@ -1416,7 +1427,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                   color: Colors.black87,
                 ),
                 decoration: InputDecoration(
-                  hintText: '\u30E1\u30E2\u3092\u5165\u529B...',
+                  // フォーカス時はプレースホルダー非表示（空で抜けたら再表示）
+                  hintText: _contentFocusNode.hasFocus
+                      ? null
+                      : '\u30E1\u30E2\u3092\u5165\u529B...',
                   border: InputBorder.none,
                   hintStyle:
                       TextStyle(color: Colors.grey.withValues(alpha: 0.4)),
