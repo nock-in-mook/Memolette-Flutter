@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../constants/design_constants.dart';
@@ -10,6 +11,8 @@ import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/text_menu_dismisser.dart';
 import 'frosted_alert_dialog.dart';
+import 'markdown_text_controller.dart';
+import 'markdown_toolbar.dart';
 import 'new_tag_sheet.dart';
 import 'tag_dial_view.dart';
 
@@ -74,7 +77,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   static const int _maxUndoSnapshots = 50;
 
   final _titleController = TextEditingController();
-  final _contentController = TextEditingController();
+  final _contentController = MarkdownTextController();
   final _titleFocusNode = FocusNode();
   final _contentFocusNode = FocusNode();
   bool get _isInputFocused =>
@@ -85,6 +88,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   // 閲覧モード: 既存メモをカードからタップして開いた直後はキーボードを出さず
   // テキストを表示するだけ。本文/タイトルをタップすると編集モードへ遷移 (本家準拠)
   bool _isViewMode = false;
+  // マークダウンモード: ON時は記号ツールバー表示 + プレビュー切替可能
+  bool _isMarkdown = false;
+  // マークダウンプレビュー表示中か（エディタ↔プレビュー切替）
+  bool _showMarkdownPreview = false;
   // メモ未作成時にルーレットで先に選んだタグの保持先（事前選択状態）
   Tag? _pendingParentTag;
   Tag? _pendingChildTag;
@@ -214,6 +221,38 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     return buf.toString();
   }
 
+  // マークダウンツールバーのOverlay管理
+  OverlayEntry? _mdToolbarOverlay;
+
+  void _updateMdToolbarOverlay() {
+    final shouldShow = _isMarkdown && _contentFocusNode.hasFocus;
+    if (shouldShow && _mdToolbarOverlay == null) {
+      _mdToolbarOverlay = OverlayEntry(builder: (ctx) {
+        final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+        if (bottom <= 0) return const SizedBox.shrink();
+        return Positioned(
+          left: 0,
+          right: 0,
+          bottom: bottom,
+          child: Material(
+            elevation: 0,
+            child: MarkdownToolbar(
+              controller: _contentController,
+              onChanged: _onChanged,
+            ),
+          ),
+        );
+      });
+      Overlay.of(context).insert(_mdToolbarOverlay!);
+    } else if (!shouldShow && _mdToolbarOverlay != null) {
+      _mdToolbarOverlay!.remove();
+      _mdToolbarOverlay = null;
+    } else if (shouldShow && _mdToolbarOverlay != null) {
+      // キーボード高さ変化時にリビルド
+      _mdToolbarOverlay!.markNeedsBuild();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -223,7 +262,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   }
 
   void _onFocusChange() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+      _updateMdToolbarOverlay();
+    }
   }
 
   @override
@@ -260,9 +302,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       _attachedTags = await db.getTagsForMemo(id);
       _suppressUndo = false;
       _resetUndoHistory();
+      _contentController.enabled = memo.isMarkdown;
       setState(() {
         _hasMemo = true;
         _isViewMode = true; // カードから開いたら最初は閲覧モード
+        _isMarkdown = memo.isMarkdown;
+        _showMarkdownPreview = false;
       });
     }
   }
@@ -276,6 +321,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _pendingChildTag = null;
     _suppressUndo = false;
     _resetUndoHistory();
+    _isMarkdown = false;
+    _showMarkdownPreview = false;
+    _contentController.enabled = false;
+    _updateMdToolbarOverlay();
     setState(() {
       _hasMemo = false;
       _isViewMode = false;
@@ -319,6 +368,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     final memo = await db.createMemo(
       title: _titleController.text,
       content: _contentController.text,
+      isMarkdown: _isMarkdown,
     );
     // pending（ルーレットで先に選んだタグ）を優先、無ければwidgetから渡されたタブのタグを使う
     final parentId = _pendingParentTag?.id ?? widget.selectedParentTagId;
@@ -386,6 +436,34 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     widget.onClosed();
   }
 
+  // マークダウンモード切替
+  void _toggleMarkdown(bool value) {
+    _contentController.enabled = value;
+    setState(() {
+      _isMarkdown = value;
+      _showMarkdownPreview = false;
+    });
+    _updateMdToolbarOverlay();
+    // 既存メモならDBに反映
+    if (widget.editingMemoId != null) {
+      ref.read(databaseProvider).updateMemo(
+            id: widget.editingMemoId!,
+            isMarkdown: value,
+          );
+    }
+    // トースト表示
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(milliseconds: 1200),
+          content: Text(
+            value ? 'マークダウンモード オン' : 'マークダウンモード オフ',
+          ),
+        ),
+      );
+    }
+  }
+
   /// 本文だけを消す (消しゴムボタン): タイトル/タグはそのまま
   /// 公開: home_screen のフロート消しゴムから呼べるようにする
   Future<void> clearBody() async {
@@ -445,6 +523,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
   @override
   void dispose() {
+    _mdToolbarOverlay?.remove();
+    _mdToolbarOverlay = null;
     _titleController.dispose();
     _contentController.dispose();
     _titleFocusNode.dispose();
@@ -1374,6 +1454,67 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   );
 
   Widget _buildContent() {
+    // プレビューモード: マークダウン描画を表示（タップでエディタに戻す）
+    if (_isMarkdown && _showMarkdownPreview) {
+      return Flexible(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            setState(() => _showMarkdownPreview = false);
+            _enterEditMode(focusContent: true);
+          },
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(9, 9, 9, 20),
+            child: MarkdownBody(
+              data: _contentController.text.isEmpty
+                  ? '*タップで編集に戻る*'
+                  : _contentController.text,
+              selectable: false,
+              styleSheet: MarkdownStyleSheet(
+                h1: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87),
+                h2: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87),
+                h3: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87),
+                p: const TextStyle(
+                    fontSize: 16,
+                    height: 1.4,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.black87),
+                listBullet: const TextStyle(fontSize: 16),
+                blockquoteDecoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                      color: Colors.grey.withValues(alpha: 0.4),
+                      width: 3,
+                    ),
+                  ),
+                ),
+                code: TextStyle(
+                  fontSize: 14,
+                  fontFamily: 'monospace',
+                  color: Colors.grey[700],
+                  backgroundColor: Colors.grey[100],
+                ),
+                codeblockDecoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // エディタモード
     // ToDoリストと同じパターン: 外側にScrollable、TextFieldはexpandsなし
     // 最大化時のみ、キーボード分の余白を確保してカーソルがキーボード上に来るよう
     // スクロールさせる。縮小時(316固定)は枠が小さいので、キーボード対策が強すぎると
@@ -1385,6 +1526,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
         widget.isExpanded && kb > 0 ? kb - 10 : 20;
     return Flexible(
       child: LayoutBuilder(builder: (context, constraints) {
+        // Overlay更新（キーボード高さ変化に対応）
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _updateMdToolbarOverlay();
+        });
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
@@ -1430,7 +1575,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                   // フォーカス時はプレースホルダー非表示（空で抜けたら再表示）
                   hintText: _contentFocusNode.hasFocus
                       ? null
-                      : '\u30E1\u30E2\u3092\u5165\u529B...',
+                      : _isMarkdown
+                          ? 'タップでマークダウン編集...'
+                          : 'メモを入力...',
                   border: InputBorder.none,
                   hintStyle:
                       TextStyle(color: Colors.grey.withValues(alpha: 0.4)),
@@ -1471,7 +1618,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
                 fontFamily: 'monospace',
-                color: Colors.grey[500],
+                color: _isMarkdown ? const Color(0xFF007AFF) : Colors.grey[500],
               )),
           const SizedBox(width: 4),
           Transform.scale(
@@ -1480,12 +1627,46 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               width: 34,
               height: 20,
               child: Switch(
-                value: false,
-                onChanged: (_) {},
+                value: _isMarkdown,
+                onChanged: (v) => _toggleMarkdown(v),
+                activeColor: const Color(0xFF007AFF),
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
           ),
+          // プレビューボタン（MD ON時のみ表示）
+          if (_isMarkdown) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                if (!_showMarkdownPreview) {
+                  // プレビュー表示前にキーボードを閉じる
+                  FocusScope.of(context).unfocus();
+                }
+                setState(() => _showMarkdownPreview = !_showMarkdownPreview);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(5),
+                  color: _showMarkdownPreview
+                      ? Colors.orange
+                      : Colors.transparent,
+                ),
+                child: Text(
+                  'プレビュー',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: _showMarkdownPreview
+                        ? Colors.white
+                        : Colors.grey[500],
+                  ),
+                ),
+              ),
+            ),
+          ],
           const Spacer(),
           // Undo (本家: arrow.uturn.backward, blue when enabled)
           GestureDetector(

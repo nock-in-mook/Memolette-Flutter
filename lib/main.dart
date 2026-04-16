@@ -30,7 +30,15 @@ class MemolettApp extends StatelessWidget {
     return MaterialApp(
       title: 'Memolette',
       debugShowCheckedModeBanner: false,
-      builder: (context, child) => KeyboardDoneBar(child: child!),
+      builder: (context, child) {
+        // システムのテキストスケールを無視してアプリ内は1.0固定
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.noScaling,
+          ),
+          child: KeyboardDoneBar(child: child!),
+        );
+      },
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.blueAccent,

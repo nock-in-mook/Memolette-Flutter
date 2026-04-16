@@ -56,13 +56,14 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// メモを新規作成
-  Future<Memo> createMemo({String title = '', String content = ''}) async {
+  Future<Memo> createMemo({String title = '', String content = '', bool isMarkdown = false}) async {
     final id = _uuid.v4();
     final now = DateTime.now();
     final companion = MemosCompanion.insert(
       id: id,
       title: Value(title),
       content: Value(content),
+      isMarkdown: Value(isMarkdown),
       createdAt: Value(now),
       updatedAt: Value(now),
     );
