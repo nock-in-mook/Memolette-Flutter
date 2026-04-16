@@ -843,9 +843,11 @@ class _NewListDialogState extends State<_NewListDialog> {
   @override
   Widget build(BuildContext context) {
     return SuppressKeyboardDoneBar(
-      child: Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40),
+        padding: const EdgeInsets.only(bottom: 300),
+        child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
         child: Material(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -979,6 +981,7 @@ class _NewListDialogState extends State<_NewListDialog> {
           ),
         ),
       ),
+    ),
     ),
     );
   }
