@@ -1629,12 +1629,15 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     // スクロールさせる。縮小時(316固定)は枠が小さいので、キーボード対策が強すぎると
     // テキストが上に吹き飛ぶ → 縮小時は固定値のみ使う。
     final kb = MediaQuery.of(context).viewInsets.bottom;
-    final scrollBottom =
-        widget.isExpanded && kb > 0 ? kb + 10 : 100;
     final cursorBottomBuffer =
         widget.isExpanded && kb > 0 ? kb - 10 : 20;
+    // viewInsetsの変化をコンテンツ領域に伝播させない
+    // （キーボード開閉アニメ中の毎フレームrebuildによるガタつきを防止）
+    // カーソル追従はscrollPaddingで十分対応できる
     return Flexible(
-      child: LayoutBuilder(builder: (context, constraints) {
+      child: MediaQuery(
+        data: MediaQuery.of(context).copyWith(viewInsets: EdgeInsets.zero),
+        child: LayoutBuilder(builder: (context, constraints) {
         // Overlay更新（キーボード高さ変化に対応）
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _updateMdToolbarOverlay();
@@ -1651,7 +1654,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           },
           child: SingleChildScrollView(
             controller: _contentScrollController,
-            padding: EdgeInsets.fromLTRB(9, 9, 9, scrollBottom.toDouble()),
+            padding: const EdgeInsets.fromLTRB(9, 9, 9, 100),
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 minHeight: (constraints.maxHeight - 100)
@@ -1705,6 +1708,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           ),
         );
       }),
+      ),
     );
   }
 
