@@ -765,7 +765,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             AnimatedContainer(
               duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
               curve: Curves.easeInOut,
-              height: (_isInputExpanded || _isMemoListExpanded || _isEditingCompact) ? 0 : null,
+              height: (_isInputExpanded || _isMemoListExpanded || _isEditingCompact || _isInFolderSearch) ? 0 : null,
               clipBehavior: Clip.hardEdge,
               decoration: const BoxDecoration(),
               child: _buildFunctionBar(),
@@ -1744,7 +1744,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
                 child: Text(
-                  '"$_folderSearchTagName" フォルダ内の検索',
+                  '"${_folderSearchTagName.length > 15 ? '${_folderSearchTagName.substring(0, 15)}…' : _folderSearchTagName}" フォルダ',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   strutStyle: const StrutStyle(
