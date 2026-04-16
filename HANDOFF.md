@@ -1,50 +1,57 @@
 # 引き継ぎメモ
 
 ## 現在の状況
-- セッション#14完了: 爆速整理モード UI完成 + キーボード追従問題を解決
+- セッション#15完了: 爆速整理モード終了画面刷新 + タグルーレット実装 + メモ入力欄修正
 - ブランチ: `feature/todo`
 
-## 今回（セッション#14）完了したこと
+## 今回（セッション#15）完了したこと
 
-### 爆速整理モード
-- **カード最大化機能**: 右下青丸ボタンでトグル、LayoutBuilderで利用可能空間いっぱいに
-- **編集機能**:
-  - タイトル/本文を常駐TextField化（タップ位置にカーソル）
-  - `_CardController`でフォーカス・クリア・ピッカー開閉を外部から制御
-  - 弧型コントローラー（タイトル/本文/タグボタン）からフォーカス可能
-- **タイトル省略表示**: TextField(透明)+IgnorePointer(Text ellipsis)で「…」表示
-- **操作パネル改善**:
-  - 三角ナビボタンの影を真下固定（方向別パス描画）
-  - 影のぼかしを1pt（本家クッキリ感）
-  - 削除・ロックボタンは元の位置をキープ（カード変形でも動かない）
-- **フロートボタン**: 最大化+キーボード表示時に縮小・消しゴムがフロート
-- **消しゴムボタン**: カード内常時表示、編集時オレンジ、確認ダイアログ
-- **×ボタン**: 本家準拠の終了確認ダイアログ（すりガラス・オレンジ警告アイコン）
-- **デバッグショートカット撤去**: intro→filter→loading→carouselの正規ルート復元
+### 爆速整理モード — 終了画面
+- 本家Swift版準拠のリッチUIに刷新（オレンジseal、戦績カード「○件にタグ付け」等）
+- 削除をディファコミット化（「整理画面にもどる」で取り消し可能）
+- 削除メモの確認ダイアログ（個別復元可）
+- 削除ボタンに確認ダイアログ追加（本家準拠）
+- ゴミ箱アイコンをCupertinoIcons.delete_simpleに統一
+- 完了/終了/×ボタンでintro画面に戻す（ホーム画面ではなく）
 
-### 本文TextFieldのキーボード追従（両方）
-- ToDoリストと同じ構造に：SingleChildScrollView + ConstrainedBox + TextField(maxLines:null, expands:false)
-- これで `scrollPadding` が祖先Scrollableで本来通り機能
-- 通常メモ入力: `scrollBottom=kb+10` / `cursorBuffer=kb-10`
-- 爆速整理カード: `scrollBottom=180` / `cursorBuffer=160`（固定値）
-- 文末タップでもカーソルが常にキーボード上にスクロール
+### 爆速整理モード — 50件分割
+- 50件超え時のセット確認画面（本家準拠UI）
+- ロード画面はセット開始時に挿入、件数もセット単位で表示
+- ロード時間を2秒固定に
 
-### メモ一覧
-- **ダブルタップで最大化**: MemoCard.onDoubleTap追加、_openMemoExpanded実装
-- 開いた場所（通常/フォルダ最大化）に応じて戻り先を使い分け
-- 通常画面への復帰時は `_editingMemoId` 保持 → メモが入力欄に残る
+### 爆速整理モード — タグルーレット
+- TagDialView + グレートレー（Todo版完全移植）をカード下に配置
+  - 左上▶タブ、右側大シェブロン、親/子タグラベル、追加/履歴ボタン
+  - _TrayPainterQSで左上タブ付きトレー形状を描画
+- 右端からスライドイン/アウトのアニメーション
+- ルーレット開時: カード縮小+上詰め、日付非表示
+- タグ選択→DB反映+カードリロード+カウント追跡
+- 親タグ追加/子タグ追加ボタン→NewTagSheet連携
+- 履歴ボタン→タグ履歴オーバーレイ（Todo版と同じUI）
+- タグフッタータップでルーレット開閉（旧リスト式は廃止）
 
-### その他
-- 長文テスト用ダミーメモ3件（800/1600/3200文字）をseed
-- フロート縮小ボタン位置修正（完了ボタン幅72pt考慮）
-- メモ入力エリア上paddingを9pt（左右と揃え）
+### 爆速整理モード — その他
+- 弧ボタンのタップ領域拡大
+- ロックボタン位置を10pt左に調整
+- カード位置を70pt上からに調整
+- カラーラボ完全削除、DEVショートカット無効化
+- ダミー70件投入用seedDummyBulkMemos追加
+
+### メモ入力欄
+- タイトル/本文: フォーカス時はプレースホルダー非表示（空で抜けたら再表示）
+- タイトル非フォーカス時のTextオーバーレイ位置をTextFieldに合わせて修正
+- 縮小時（固定316高）はキーボード追従スクロールを無効化（上跳ね防止）
+
+### DB修正
+- deleteMemo/deleteMemosでmemo_tagsもカスケード削除
+- フィルタ画面のタグ件数計算で孤児memo_tagsを除外
 
 ## 次のアクション
 
 ### 爆速整理モードの残タスク
-- **50件分割**: メモが50件超えたとき複数セットに分割する動作の実装
-- **終了画面**: 完走時のサマリー表示（整理件数・タグ付け・削除など）
-- **リセット**: セットやり直し機能
+- ルーレット閉じ時のタグ履歴記録（recordTagHistory）
+- 連続タグ付け（ルーレット開いたまま前/次カード送り）の動作確認
+- リセット: セットやり直し機能
 
 ### ロードマップ（残タスク）
 - URL自動検出リンク
@@ -59,21 +66,20 @@
 ## 技術メモ
 - **ビルド回避策**: `/tmp/memolette-run` に rsync してから build（Google Driveで codesign エラー回避）
 - **シミュレータ**: Flutter版 `29B0ACCA-D4C6-4A55-BD2F-CDB13CF5917C`
-- **ホットリロード**: `kill -SIGUSR1 <flutter_tools_pid>`
-- **TextFieldのキーボード追従**: 外側SingleChildScrollViewが必須。`expands:true`だとscrollPaddingが効かない
+- **ホットリロード**: SIGUSR1はDartコンパイラクラッシュ頻発のため、毎回フルリビルドが安定
+- **TextFieldのキーボード追従**: 最大化時のみ有効、縮小時は固定値（上跳ね防止）
 - **すりガラス標準値**: blur sigma 12, 白 alpha 0.65
 - **キーボード完了ボタン**: main.dartのbuilderでグローバル適用
-- **SuppressKeyboardDoneBar**: モーダル内で完了ボタン非表示
+- **ルーレット配置**: SafeArea直下Stack overlay（bottom:182, right:0）でhit test問題回避
+- **タグ履歴overlay**: ルーレットの上にbottom:182+45+8で配置
 
 ## ファイル構成（今回の主な変更）
 ```
 lib/
-  main.dart                          — _DQSデバッグ遷移を撤去
-  db/database.dart                   — seedDummyLongMemos追加
+  main.dart                          — seedDummyBulkMemos追加
+  db/database.dart                   — カスケード削除、孤児フィルタ、bulk seed
   screens/
-    home_screen.dart                 — ダブルタップ最大化、_minimizeWithCommit改善
-    quick_sort_screen.dart           — 最大化、編集、終了ダイアログ、キーボード追従
+    quick_sort_screen.dart           — 終了画面刷新、セット確認、タグルーレット、カラーラボ削除
   widgets/
-    memo_card.dart                   — onDoubleTapプロパティ追加
-    memo_input_area.dart             — SingleChildScrollView方式に刷新
+    memo_input_area.dart             — プレースホルダー修正、キーボード対策
 ```
