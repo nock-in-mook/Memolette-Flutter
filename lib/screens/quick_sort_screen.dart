@@ -32,7 +32,7 @@ class QuickSortScreen extends ConsumerStatefulWidget {
 class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   // フェーズ管理
   // DEV: trueで起動時に全メモを対象にカルーセルへ直行（開発中の動作確認用）
-  static const bool _devJumpToCarousel = true;
+  static const bool _devJumpToCarousel = false;
   _Phase _phase = _Phase.intro;
 
   // 処理対象メモ
@@ -213,12 +213,6 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                           icon: Icons.close,
                           size: 32,
                           onTap: _confirmExit,
-                        ),
-                        const SizedBox(width: 8),
-                        _circleButton(
-                          icon: Icons.science,
-                          size: 32,
-                          onTap: () => _showColorLab(context),
                         ),
                       ],
                     ),
@@ -1588,184 +1582,8 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   }
 
   // ========================================
-  // カラーラボ（開発用）
-  // ========================================
   String _formatDate(DateTime dt) {
     return '${dt.year}/${dt.month.toString().padLeft(2, '0')}/${dt.day.toString().padLeft(2, '0')}';
-  }
-
-  void _showColorLab(BuildContext context) {
-    // タブ用カラーパレット: ベース色 × alpha
-    final tabSamples = <_ColorSample>[];
-    final baseCols = {
-      // オレンジ系
-      'FF9800': Colors.orange,
-      'FF9500': const Color(0xFFFF9500),  // SwiftのColor.orange
-      'FFB74D': const Color(0xFFFFB74D),  // orange[300]
-      'FFCC80': const Color(0xFFFFCC80),  // orange[200]
-      'FFE0B2': const Color(0xFFFFE0B2),  // orange[100]
-      'FFF3E0': const Color(0xFFFFF3E0),  // orange[50]
-      // ピンク〜オレンジ間（サーモン〜ピーチ〜コーラル）
-      'FF8A65': const Color(0xFFFF8A65),  // deepOrange[300]
-      'FFAB91': const Color(0xFFFFAB91),  // deepOrange[200]
-      'FFCCBC': const Color(0xFFFFCCBC),  // deepOrange[100]
-      'FBE9E7': const Color(0xFFFBE9E7),  // deepOrange[50]
-      'FF7043': const Color(0xFFFF7043),  // deepOrange[400]
-      'E08060': const Color(0xFFE08060),  // サーモン
-      'F4A460': const Color(0xFFF4A460),  // サンディブラウン
-      'FFBEA0': const Color(0xFFFFBEA0),  // ライトサーモン
-      'FFD0B0': const Color(0xFFFFD0B0),  // ピーチ
-      'FFDAB9': const Color(0xFFFFDAB9),  // ピーチパフ
-      'FFE4C4': const Color(0xFFFFE4C4),  // ビスク
-      'FF6F61': const Color(0xFFFF6F61),  // コーラル（パントン）
-      'FF8C69': const Color(0xFFFF8C69),  // サーモン2
-      'FFA07A': const Color(0xFFFFA07A),  // ライトサーモン
-      'FFB088': const Color(0xFFFFB088),  // ピーチ系
-      'FFC0A0': const Color(0xFFFFC0A0),  // ヌード系
-      // ピンク系
-      'FF80AB': const Color(0xFFFF80AB),  // pink accent[100]
-      'F48FB1': const Color(0xFFF48FB1),  // pink[200]
-      'F8BBD0': const Color(0xFFF8BBD0),  // pink[100]
-      'FCE4EC': const Color(0xFFFCE4EC),  // pink[50]
-      // アンバー系
-      'FFC107': Colors.amber,
-      'FFD54F': const Color(0xFFFFD54F),  // amber[300]
-      'FFE082': const Color(0xFFFFE082),  // amber[200]
-    };
-    for (final e in baseCols.entries) {
-      for (final a in [0.04, 0.06, 0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.22, 0.28]) {
-        tabSamples.add(_ColorSample(
-          '${e.key} @${(a * 100).toInt()}%',
-          e.value.withValues(alpha: a),
-        ));
-      }
-    }
-
-    // タグフッター用カラーパレット
-    final footerSamples = <_ColorSample>[];
-    final footerCols = {
-      'cyan': Colors.cyan,
-      '00BCD4': const Color(0xFF00BCD4),
-      'B2EBF2': const Color(0xFFB2EBF2),  // cyan[100]
-      '80DEEA': const Color(0xFF80DEEA),  // cyan[200]
-      '4DD0E1': const Color(0xFF4DD0E1),  // cyan[300]
-      'E0F7FA': const Color(0xFFE0F7FA),  // cyan[50]
-    };
-    for (final e in footerCols.entries) {
-      for (final a in [0.02, 0.04, 0.06, 0.08, 0.10, 0.14]) {
-        footerSamples.add(_ColorSample(
-          '${e.key} @${(a * 100).toInt()}%',
-          e.value.withValues(alpha: a),
-        ));
-      }
-    }
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.4,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (ctx, scrollController) => Column(
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text('Color Lab',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Expanded(
-              child: ListView(
-                controller: scrollController,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                children: [
-                  const Text('タイトルタブ',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: tabSamples.map((s) => GestureDetector(
-                      onTap: () {
-                        setState(() => _labTabColor = s.color);
-                        Navigator.pop(ctx);
-                      },
-                      child: Tooltip(
-                        message: s.label,
-                        child: Container(
-                          width: 44, height: 44,
-                          decoration: BoxDecoration(
-                            color: s.color,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: _labTabColor == s.color
-                                  ? Colors.blue : Colors.grey[300]!,
-                              width: _labTabColor == s.color ? 2 : 1,
-                            ),
-                          ),
-                        ),
-                      ),
-                    )).toList(),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text('タグフッター',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: footerSamples.map((s) => GestureDetector(
-                      onTap: () {
-                        setState(() => _labTagFooterColor = s.color);
-                        Navigator.pop(ctx);
-                      },
-                      child: Tooltip(
-                        message: s.label,
-                        child: Container(
-                          width: 44, height: 44,
-                          decoration: BoxDecoration(
-                            color: s.color,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: _labTagFooterColor == s.color
-                                  ? Colors.blue : Colors.grey[300]!,
-                              width: _labTagFooterColor == s.color ? 2 : 1,
-                            ),
-                          ),
-                        ),
-                      ),
-                    )).toList(),
-                  ),
-                  const SizedBox(height: 20),
-                  // 現在の値を表示
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      'Tab: ${_labTabColor.toString()}\n'
-                      'Footer: ${_labTagFooterColor.toString()}',
-                      style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   void _finishCurrentSet() {
@@ -4191,12 +4009,6 @@ class _ArcDividerPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// カラーラボ用
-class _ColorSample {
-  final String label;
-  final Color color;
-  const _ColorSample(this.label, this.color);
-}
 
 /// タブ付きカード全体を1つの形状で描画（ボーダー+影がタブまで包む）
 class _CardWithTabPainter extends CustomPainter {
