@@ -10,7 +10,9 @@ import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/keyboard_done_bar.dart';
 import '../utils/text_menu_dismisser.dart';
+import '../widgets/frosted_alert_dialog.dart';
 import '../widgets/memo_input_area.dart' show EraserGlyph;
+import '../widgets/new_tag_sheet.dart';
 import '../widgets/tag_dial_view.dart';
 import '../widgets/trapezoid_tab_shape.dart';
 
@@ -177,9 +179,15 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
     final canPrev = _currentCardIndex > 0;
     final canNext = _currentCardIndex < total - 1;
 
+    // ルーレット用の寸法（外側Stackで使用）
+    const double traySlideW = 300.0 + 19.0 + 60.0;
+    final slideOffset = _rouletteOpen ? 0.0 : traySlideW;
+
     return SafeArea(
       maintainBottomViewPadding: true,
-      child: Column(
+      child: Stack(
+        children: [
+          Column(
         children: [
           // ヘッダー（76pt）
           SizedBox(
@@ -297,8 +305,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                   MediaQuery.of(context).size.height * 0.29;
               // 最大化時はカードが利用可能空間いっぱいまで広がる（日付はExpanded外で計算済み）
               // ルーレット開時はカードを若干縮めて、下に出るルーレットのスペースを確保
-              // ルーレットtrayの高さ278、bottom:-40 → tray上端=maxH-238
-              // カード下端をtray上端の30pt上に置く
+              // カード高さ（ルーレット表示時）
               final rouletteCardH = maxH - 238;
               final cardH = _isCardExpanded
                   ? maxH
@@ -306,14 +313,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                       ? rouletteCardH.clamp(100.0, collapsedCardH)
                       : collapsedCardH;
               // ルーレット用の寸法
-              const double _trayW = 300.0 + 19.0 + 60.0; // tray + tab + overhang
-              final slideOffset = _rouletteOpen ? 0.0 : _trayW;
-
-              return Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  // メインColumn（カード+日付+スペース）
-                  Column(children: [
+              return Column(children: [
                   // カード位置: ルーレット開時は詰める（滑らかに）
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
@@ -445,19 +445,6 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                     height: (_isCardExpanded || _rouletteOpen) ? 0 : 90,
                   ),
                   ],
-                  ),
-                  // ルーレット: 右端に固定、スライドで出し入れ（Stack overlay）
-                  Positioned(
-                    right: 0,
-                    bottom: -40,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOutCubic,
-                      transform: Matrix4.translationValues(slideOffset, 0, 0),
-                      child: _buildTagRouletteOverlay(memo),
-                    ),
-                  ),
-                ],
               );
             }),
           ),
@@ -691,6 +678,19 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           ),
         ],
       ),
+          // ルーレット: SafeArea直下Stackに配置（操作パネルの上に右からスライド）
+          Positioned(
+            right: 0,
+            bottom: 182,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              transform: Matrix4.translationValues(slideOffset, 0, 0),
+              child: _buildTagRouletteOverlay(memo),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -752,10 +752,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           // トレー背景（タップで収納）
           Positioned(
             right: 0, top: 0, bottom: 0,
-            child: GestureDetector(
-              onTap: () => setState(() => _rouletteOpen = false),
-              behavior: HitTestBehavior.opaque,
-              child: CustomPaint(
+            child: CustomPaint(
                 painter: _TrayPainterQS(
                   color: trayColor,
                   tabWidth: tabW,
@@ -865,7 +862,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                               right: 191, top: 5,
                               child: GestureDetector(
                                 behavior: HitTestBehavior.opaque,
-                                onTap: () {}, // TODO: 親タグ追加
+                                onTap: () => _openAddParentTag(memo),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -889,7 +886,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                               right: 78, top: 5,
                               child: GestureDetector(
                                 behavior: HitTestBehavior.opaque,
-                                onTap: () {}, // TODO: 子タグ追加
+                                onTap: () => _openAddChildTag(memo),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -941,7 +938,6 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                 ),
               ),
             ),
-          ),
           // ダイヤル（トレーから左へはみ出す）
           Positioned(
             right: 0, top: 22, height: 211,
@@ -1006,6 +1002,36 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
     ref.invalidate(tagsForMemoProvider(memo.id));
     _cardController.reloadTags?.call();
     if (mounted) setState(() {});
+  }
+
+  Future<void> _openAddParentTag(Memo memo) async {
+    FocusScope.of(context).unfocus();
+    final newTagId = await NewTagSheet.show(context: context);
+    if (newTagId == null || !mounted) return;
+    await _onRouletteTagSelected(memo, newTagId, false);
+  }
+
+  Future<void> _openAddChildTag(Memo memo) async {
+    FocusScope.of(context).unfocus();
+    final db = ref.read(databaseProvider);
+    final attached = await db.getTagsForMemo(memo.id);
+    final parentTag =
+        attached.where((t) => t.parentTagId == null).firstOrNull;
+    if (parentTag == null) {
+      if (!mounted) return;
+      await showFrostedAlert(
+        context: context,
+        title: '親タグを選んでください',
+        message: '子タグを追加するには、先にルーレットで親タグを選択してください。',
+      );
+      return;
+    }
+    final newTagId = await NewTagSheet.show(
+      context: context,
+      parentTagId: parentTag.id,
+    );
+    if (newTagId == null || !mounted) return;
+    await _onRouletteTagSelected(memo, newTagId, true);
   }
 
   // 終了確認ダイアログ（×ボタン）→ 本家 QuickSortView.exitConfirmDialog 準拠
