@@ -332,12 +332,17 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   }
 
   // 閲覧モードを抜けて編集モードへ。本文タップ等から呼ばれる
+  // readOnly解除後にフォーカスを当てるが、ScrollableのscrollPadding計算は
+  // readOnly=false が反映された後のフレームで走るため、2フレーム待つ
   void _enterEditMode({bool focusContent = true, bool focusTitle = false}) {
     setState(() => _isViewMode = false);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (focusTitle) _titleFocusNode.requestFocus();
-      if (focusContent) _contentFocusNode.requestFocus();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (focusTitle) _titleFocusNode.requestFocus();
+        if (focusContent) _contentFocusNode.requestFocus();
+      });
     });
   }
 
@@ -352,6 +357,13 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       return;
     }
     final db = ref.read(databaseProvider);
+    // タイトルも本文も空になったらメモを削除（空メモが残らないように）
+    if (_titleController.text.isEmpty && _contentController.text.isEmpty) {
+      db.deleteMemo(widget.editingMemoId!);
+      _clearInput();
+      widget.onClosed();
+      return;
+    }
     db.updateMemo(
       id: widget.editingMemoId!,
       title: _titleController.text,
@@ -1343,39 +1355,49 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     final parent = _parentTag!;
     final child = _childTag;
     final parentColor = TagColors.getColor(parent.colorIndex);
+    final screenWidth = MediaQuery.of(context).size.width;
+    // 親タグ・子タグそれぞれの最大幅（長いタグ名で片方が押し出されないように）
+    final maxParentTagWidth = screenWidth * 0.18;
+    final maxChildTagWidth = screenWidth * 0.14;
 
     if (child != null) {
       final childColor = TagColors.getColor(child.colorIndex);
       // 親タグと子タグを4ptめり込ませる（本家 HStack(spacing: -4) 準拠）
-      final parentWidget = Container(
-        padding: const EdgeInsets.fromLTRB(7, 4, 10, 4),
-        decoration: BoxDecoration(
-          color: parentColor,
-          borderRadius: BorderRadius.circular(CornerRadius.badge),
-        ),
-        child: Text(
-          parent.name,
-          style: _parentTagTextStyle,
-          strutStyle: _parentStrutStyle,
-          textHeightBehavior: _tightHeightBehavior,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+      final parentWidget = ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxParentTagWidth),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+          decoration: BoxDecoration(
+            color: parentColor,
+            borderRadius: BorderRadius.circular(CornerRadius.badge),
+          ),
+          child: Text(
+            parent.name,
+            style: _parentTagTextStyle,
+            strutStyle: _parentStrutStyle,
+            textHeightBehavior: _tightHeightBehavior,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       );
-      final childWidget = Container(
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-        decoration: BoxDecoration(
-          color: childColor,
-          borderRadius: BorderRadius.circular(CornerRadius.badge),
-          border: Border.all(color: Colors.white, width: 1.5),
-        ),
-        child: Text(
-          child.name,
-          style: _childTagTextStyle,
-          strutStyle: _childStrutStyle,
-          textHeightBehavior: _tightHeightBehavior,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+      final childWidget = ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxChildTagWidth),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+          decoration: BoxDecoration(
+            color: childColor,
+            borderRadius: BorderRadius.circular(CornerRadius.badge),
+            border: Border.all(color: Colors.white, width: 1.5),
+          ),
+          child: Text(
+            child.name,
+            style: _childTagTextStyle,
+            strutStyle: _childStrutStyle,
+            textHeightBehavior: _tightHeightBehavior,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       );
       // IntrinsicHeight + Row で bottom-align、子タグを -4pt マージンで重ねる
@@ -1394,20 +1416,24 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       );
     }
 
-    // 親タグのみ
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-      decoration: BoxDecoration(
-        color: parentColor,
-        borderRadius: BorderRadius.circular(CornerRadius.badge),
-      ),
-      child: Text(
-        parent.name,
-        style: _parentTagTextStyle,
-        strutStyle: _parentStrutStyle,
-        textHeightBehavior: _tightHeightBehavior,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+    // 親タグのみ（子タグなしなら少し広めに使える）
+    final maxParentOnly = screenWidth * 0.35;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxParentOnly),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+        decoration: BoxDecoration(
+          color: parentColor,
+          borderRadius: BorderRadius.circular(CornerRadius.badge),
+        ),
+        child: Text(
+          parent.name,
+          style: _parentTagTextStyle,
+          strutStyle: _parentStrutStyle,
+          textHeightBehavior: _tightHeightBehavior,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     );
   }

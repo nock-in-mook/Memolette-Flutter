@@ -18,7 +18,7 @@ class MarkdownToolbar extends StatelessWidget {
       color: Colors.grey[100],
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.only(left: 8, right: 120),
         children: [
           _button('H1', () => _insertPrefix('# ')),
           _button('H2', () => _insertPrefix('## ')),
