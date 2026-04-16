@@ -1906,7 +1906,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             fontFamily: 'Hiragino Sans',
             leadingDistribution: TextLeadingDistribution.even,
             fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
-            color: isSelected ? Colors.black : Colors.black54,
+            color: Colors.black,
           ),
         ),
       ),
@@ -2553,6 +2553,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Future<void> _showSpecialTabActions(BuildContext tabContext,
       {required _SpecialKind specialKind}) async {
     FocusScope.of(context).unfocus();
+    // 編集中なら閉じる
+    if (_editingMemoId != null) {
+      _inputAreaKey.currentState?.closeMemo();
+      setState(() => _editingMemoId = null);
+    }
     final box = tabContext.findRenderObject() as RenderBox?;
     Rect? rect;
     if (box != null) {
@@ -2591,6 +2596,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     if (!mounted) return;
     FocusScope.of(context).unfocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) FocusScope.of(context).unfocus();
+    });
     switch (action) {
       case 'reorder':
         // 並び替え前のスクロール位置とタブ順を保存
@@ -2641,14 +2649,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // メニュー閉時にダイアログがフォーカスを直前のWidgetに戻して
     // 入力欄が再フォーカス→キーボード再表示するのを防ぐ
     FocusScope.of(context).unfocus();
+    // 編集中なら閉じる
+    if (_editingMemoId != null) {
+      _inputAreaKey.currentState?.closeMemo();
+      setState(() => _editingMemoId = null);
+    }
     final box = tabContext.findRenderObject() as RenderBox?;
     Rect? rect;
     if (box != null) {
       final overlay =
           Overlay.of(context).context.findRenderObject() as RenderBox;
       final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
+      // タブの上にメニューを出す
       rect = Rect.fromLTWH(
-          topLeft.dx, topLeft.dy, box.size.width, box.size.height);
+          topLeft.dx, topLeft.dy - box.size.height, box.size.width, box.size.height);
     }
     _showTagActions(tag, sourceRect: rect);
   }
@@ -2680,6 +2694,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (!mounted) return;
     // ダイアログが直前のフォーカス（テキスト入力欄）を復元しないように
     FocusScope.of(context).unfocus();
+    // 次フレームでも念押しでフォーカス解除（ダイアログ復元との競合防止）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) FocusScope.of(context).unfocus();
+    });
     switch (action) {
       case 'reorder':
         // 並び替え前のスクロール位置とタブ順を保存
@@ -4909,10 +4927,10 @@ class _TabContextMenuOverlay extends StatelessWidget {
       left = screen.width - 8 - menuWidth;
     }
     if (left < 8) left = 8;
-    // 下に出すと隠れる場合は上に
-    double top = buttonRect.bottom + 6;
-    if (top + menuHeight > screen.height - 80) {
-      top = buttonRect.top - menuHeight - 6;
+    // タブのすぐ上にメニューを出す。上に収まらない場合は下に
+    double top = buttonRect.top - menuHeight - 2;
+    if (top < 50) {
+      top = buttonRect.bottom + 2;
     }
 
     return Stack(
@@ -4921,8 +4939,10 @@ class _TabContextMenuOverlay extends StatelessWidget {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => Navigator.of(context).pop(),
-            // 長押しもバリアで吸収（下のタブのonLongPressに届かないように）
             onLongPress: () => Navigator.of(context).pop(),
+            // 他のジェスチャーも全て吸収
+            onVerticalDragStart: (_) => Navigator.of(context).pop(),
+            onHorizontalDragStart: (_) => Navigator.of(context).pop(),
           ),
         ),
         Positioned(
@@ -5203,9 +5223,10 @@ class _SpecialTabContextMenuOverlay extends StatelessWidget {
       left = screen.width - 8 - menuWidth;
     }
     if (left < 8) left = 8;
-    double top = buttonRect.bottom + 6;
-    if (top + menuHeight > screen.height - 80) {
-      top = buttonRect.top - menuHeight - 6;
+    // タブのすぐ上にメニューを出す。上に収まらない場合は下に
+    double top = buttonRect.top - menuHeight - 2;
+    if (top < 50) {
+      top = buttonRect.bottom + 2;
     }
 
     return Stack(
@@ -5214,8 +5235,10 @@ class _SpecialTabContextMenuOverlay extends StatelessWidget {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => Navigator.of(context).pop(),
-            // 長押しもバリアで吸収（下のタブのonLongPressに届かないように）
             onLongPress: () => Navigator.of(context).pop(),
+            // 他のジェスチャーも全て吸収
+            onVerticalDragStart: (_) => Navigator.of(context).pop(),
+            onHorizontalDragStart: (_) => Navigator.of(context).pop(),
           ),
         ),
         Positioned(

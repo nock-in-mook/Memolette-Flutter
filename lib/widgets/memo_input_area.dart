@@ -1654,7 +1654,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           },
           child: SingleChildScrollView(
             controller: _contentScrollController,
-            padding: const EdgeInsets.fromLTRB(9, 9, 9, 100),
+            padding: EdgeInsets.fromLTRB(9, 9, 9,
+                widget.isExpanded && !_isViewMode ? 400 : 100),
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 minHeight: (constraints.maxHeight - 100)

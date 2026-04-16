@@ -149,7 +149,7 @@ class MemoCard extends ConsumerWidget {
     }
     // 本家準拠: タイトル空なら "(タイトルなし)" を薄く、本文は常に memo.content
     final hasTitle = memo.title.isNotEmpty;
-    final displayTitle = hasTitle ? memo.title : '(タイトルなし)';
+    final displayTitle = hasTitle ? memo.title : '(無題)';
     final displayBody = memo.content;
 
     // 現在のフォルダの親タグに属する子タグを1つ見つける（本家 childTagForBadge 準拠）
@@ -199,25 +199,35 @@ class MemoCard extends ConsumerWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (displayBody.isNotEmpty)
+                Container(
+                  height: 0.5,
+                  margin: const EdgeInsets.only(top: 4, bottom: 3),
+                  color: Colors.grey.withValues(alpha: 0.6),
+                ),
+                if (displayBody.isNotEmpty) ...[
                   Flexible(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        displayBody,
-                        style: TextStyle(
-                          fontSize: _bodyFont,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.grey[600],
-                          height: 1.4,
-                        ),
-                        // 本家準拠: …で省略、グラデーションフェードしない
-                        // bodyLines == 0 は無制限
-                        maxLines: _bodyLines == 0 ? null : _bodyLines,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        // 利用可能な高さから表示できる行数を動的計算
+                        final lineHeight = _bodyFont * 1.4;
+                        final maxLines = (constraints.maxHeight / lineHeight)
+                            .floor()
+                            .clamp(1, _bodyLines == 0 ? 999 : _bodyLines);
+                        return Text(
+                          displayBody,
+                          style: TextStyle(
+                            fontSize: _bodyFont,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black87,
+                            height: 1.4,
+                          ),
+                          maxLines: maxLines,
+                          overflow: TextOverflow.ellipsis,
+                        );
+                      },
                     ),
                   ),
+                ],
               ],
             ),
           ),
