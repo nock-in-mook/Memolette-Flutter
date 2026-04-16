@@ -61,6 +61,12 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   // タグルーレット開閉状態
   bool _rouletteOpen = false;
 
+  // タグ履歴
+  bool _showTagHistory = false;
+  List<TagHistory> _tagHistoryItems = [];
+  bool _historyCanScrollUp = false;
+  bool _historyCanScrollDown = false;
+
   // 弧ボタンからカードにフォーカス要求するためのコントローラー
   final _CardController _cardController = _CardController();
 
@@ -689,6 +695,13 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
               child: _buildTagRouletteOverlay(memo),
             ),
           ),
+          // タグ履歴オーバーレイ
+          if (_showTagHistory && _rouletteOpen)
+            Positioned(
+              right: 16,
+              bottom: 182 + 45 + 8,
+              child: _buildTagHistoryOverlay(memo),
+            ),
         ],
       ),
     );
@@ -910,7 +923,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                               right: 8, top: 14,
                               child: GestureDetector(
                                 behavior: HitTestBehavior.opaque,
-                                onTap: () {}, // TODO: 履歴
+                                onTap: _toggleTagHistory,
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -1002,6 +1015,188 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
     ref.invalidate(tagsForMemoProvider(memo.id));
     _cardController.reloadTags?.call();
     if (mounted) setState(() {});
+  }
+
+  Future<void> _toggleTagHistory() async {
+    if (_showTagHistory) {
+      setState(() => _showTagHistory = false);
+    } else {
+      final db = ref.read(databaseProvider);
+      final items = await db.getRecentTagHistory();
+      if (!mounted) return;
+      setState(() {
+        _tagHistoryItems = items;
+        _showTagHistory = true;
+        _historyCanScrollUp = false;
+        _historyCanScrollDown = items.length > 4;
+      });
+    }
+  }
+
+  Future<void> _selectFromHistory(Memo memo, TagHistory item) async {
+    await _onRouletteTagSelected(memo, item.parentTagId, false);
+    if (item.childTagId != null) {
+      await _onRouletteTagSelected(memo, item.childTagId!, true);
+    }
+    if (mounted) setState(() => _showTagHistory = false);
+  }
+
+  Widget _buildTagHistoryOverlay(Memo memo) {
+    final allTags = ref.watch(allTagsProvider).valueOrNull ?? const <Tag>[];
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 250, maxHeight: 220),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 6, 6, 4),
+            child: Row(
+              children: [
+                const Text('タグ履歴',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    )),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => setState(() => _showTagHistory = false),
+                  child: Icon(CupertinoIcons.xmark_circle_fill,
+                      size: 16,
+                      color: Colors.grey.withValues(alpha: 0.5)),
+                ),
+              ],
+            ),
+          ),
+          if (_tagHistoryItems.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text('まだ履歴がありません',
+                  style: TextStyle(fontSize: 12, color: Colors.grey)),
+            )
+          else
+            Flexible(
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  final metrics = notification.metrics;
+                  final canUp = metrics.pixels > 0;
+                  final canDown =
+                      metrics.pixels < metrics.maxScrollExtent;
+                  if (canUp != _historyCanScrollUp ||
+                      canDown != _historyCanScrollDown) {
+                    setState(() {
+                      _historyCanScrollUp = canUp;
+                      _historyCanScrollDown = canDown;
+                    });
+                  }
+                  return false;
+                },
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+                  itemCount: _tagHistoryItems.length,
+                  itemBuilder: (context, index) {
+                    final item = _tagHistoryItems[index];
+                    final pTag = allTags
+                        .where((t) => t.id == item.parentTagId)
+                        .firstOrNull;
+                    if (pTag == null) return const SizedBox.shrink();
+                    final cTag = item.childTagId != null
+                        ? allTags
+                            .where((t) => t.id == item.childTagId)
+                            .firstOrNull
+                        : null;
+                    return GestureDetector(
+                      onTap: () => _selectFromHistory(memo, item),
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: IntrinsicHeight(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Flexible(
+                                child: Container(
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 130),
+                                  padding: EdgeInsets.fromLTRB(
+                                      6, 3, cTag != null ? 9 : 6, 3),
+                                  decoration: BoxDecoration(
+                                    color: TagColors.getColor(
+                                        pTag.colorIndex),
+                                    borderRadius:
+                                        BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    pTag.name,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              if (cTag != null)
+                                Flexible(
+                                  child: Transform.translate(
+                                    offset: const Offset(-4, 1),
+                                    child: Container(
+                                      constraints: const BoxConstraints(
+                                          maxWidth: 110),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 5, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: TagColors.getColor(
+                                            cTag.colorIndex),
+                                        borderRadius:
+                                            BorderRadius.circular(4),
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        cTag.name,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          if (_historyCanScrollDown)
+            Center(
+              child: Icon(Icons.keyboard_arrow_down,
+                  size: 32, color: Colors.grey.withValues(alpha: 0.5)),
+            ),
+        ],
+      ),
+    );
   }
 
   Future<void> _openAddParentTag(Memo memo) async {
