@@ -55,7 +55,7 @@ class MemoInputArea extends ConsumerStatefulWidget {
 
 class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   /// 外部から本文の有無を確認するゲッター（ゼロ幅スペースは無視）
-  bool get hasContent => _contentController.text.replaceAll(_zwsp, '').isNotEmpty;
+  bool get hasContent => _contentController.text.isNotEmpty;
   /// 外部から本文フォーカス状態を確認するゲッター
   bool get isContentFocused => _contentFocusNode.hasFocus;
   /// 外部から入力欄全体のフォーカス状態を確認するゲッター（タイトル or 本文）
@@ -276,23 +276,23 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _contentFocusNode.addListener(_onFocusChange);
   }
 
-  // ゼロ幅スペース: カスタムキーボードの「空欄+確定で消える」バグ回避用
-  // TextFieldが空の状態でカスタムキーボードのcomposing確定が走ると
-  // テキストが消失するため、見えない文字を1つ入れておく
-  static const _zwsp = '\u200B';
-
   void _onFocusChange() {
     if (mounted) {
-      // 本文フォーカス取得時: 空なら見えないゼロ幅スペースを挿入
-      if (_contentFocusNode.hasFocus && _contentController.text.isEmpty) {
-        _contentController.value = const TextEditingValue(
-          text: _zwsp,
-          selection: TextSelection.collapsed(offset: 1),
-        );
-      }
       // フォーカスを得た時点でメモ未作成なら空メモを先行作成
       if (_isInputFocused && widget.editingMemoId == null && !_hasMemo) {
         _preCreateEmptyMemo();
+      }
+      // フォーカスが外れたとき、空メモなら削除
+      if (!_isInputFocused && widget.editingMemoId != null) {
+        final t = _titleController.text;
+        final c = _contentController.text;
+        if (t.isEmpty && c.isEmpty) {
+          final db = ref.read(databaseProvider);
+          db.deleteMemo(widget.editingMemoId!);
+          _clearInput();
+          widget.onClosed();
+          return;
+        }
       }
       setState(() {});
       _updateMdToolbarOverlay();
@@ -417,27 +417,21 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       // 次フレームで作成（rebuildとの干渉を避けるため遅延）
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || widget.editingMemoId != null) return;
-        final rt = _titleController.text.replaceAll(_zwsp, '');
-        final rc = _contentController.text.replaceAll(_zwsp, '');
-        if (rt.isNotEmpty || rc.isNotEmpty) {
+        if (_titleController.text.isNotEmpty ||
+            _contentController.text.isNotEmpty) {
           _preCreateEmptyMemo();
         }
       });
       return;
     }
     final db = ref.read(databaseProvider);
-    // ゼロ幅スペースを除去した実テキストで判定・保存
-    final realTitle = _titleController.text.replaceAll(_zwsp, '');
-    final realContent = _contentController.text.replaceAll(_zwsp, '');
     // タイトルも本文も空になったらメモを削除
-    // ただしカスタムキーボードが確定時に一瞬テキストをクリアするケースがあるため
+    // カスタムキーボードが確定時に一瞬テキストをクリアするケースがあるため
     // 即削除せず次フレームで再確認する
-    if (realTitle.isEmpty && realContent.isEmpty) {
+    if (_titleController.text.isEmpty && _contentController.text.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || widget.editingMemoId == null) return;
-        final t = _titleController.text.replaceAll(_zwsp, '');
-        final c = _contentController.text.replaceAll(_zwsp, '');
-        if (t.isEmpty && c.isEmpty) {
+        if (_titleController.text.isEmpty && _contentController.text.isEmpty) {
           db.deleteMemo(widget.editingMemoId!);
           _clearInput();
           widget.onClosed();
@@ -447,8 +441,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     }
     db.updateMemo(
       id: widget.editingMemoId!,
-      title: realTitle,
-      content: realContent,
+      title: _titleController.text,
+      content: _contentController.text,
     );
     if (mounted) setState(() {}); // Undo/Redoボタンの状態更新用
   }
@@ -1810,58 +1804,70 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           ),
           const SizedBox(width: 12),
           // コピー (本家: doc.on.doc + テキスト)
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _contentController.text.isEmpty ? null : _copyContent,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  CupertinoIcons.doc_on_doc,
-                  size: 14,
-                  color: _contentController.text.isEmpty
-                      ? Colors.grey.shade400
-                      : const Color(0xFF007AFF),
-                ),
-                const SizedBox(width: 3),
-                Text(
-                  'コピー',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: _contentController.text.isEmpty
-                        ? Colors.grey.shade400
-                        : const Color(0xFF007AFF),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          // フォーカス中: 確定 (キーボード閉じるだけ)
-          // 非フォーカス + メモ/タイトルあり: メモを閉じる (クリア)
-          if (_isInputFocused)
-            GestureDetector(
+          // 実質的な文字がある場合のみ有効（ゼロ幅スペースは無視）
+          Builder(builder: (_) {
+            final hasRealContent = _contentController.text.isNotEmpty;
+            return GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: _confirm,
+              onTap: hasRealContent ? _copyContent : null,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
-                children: const [
+                children: [
                   Icon(
-                    CupertinoIcons.checkmark_circle,
-                    size: 16,
-                    color: Color(0xFF007AFF),
+                    CupertinoIcons.doc_on_doc,
+                    size: 14,
+                    color: hasRealContent
+                        ? const Color(0xFF007AFF)
+                        : Colors.grey.shade400,
                   ),
-                  SizedBox(width: 3),
+                  const SizedBox(width: 3),
                   Text(
-                    '確定',
+                    'コピー',
                     style: TextStyle(
                       fontSize: 14,
-                      color: Color(0xFF007AFF),
+                      color: hasRealContent
+                          ? const Color(0xFF007AFF)
+                          : Colors.grey.shade400,
                     ),
                   ),
                 ],
               ),
-            )
+            );
+          }),
+          const SizedBox(width: 12),
+          // フォーカス中: 確定 (キーボード閉じるだけ) — 実質文字がある場合のみ有効
+          // 非フォーカス + メモ/タイトルあり: 閉じる (クリア)
+          if (_isInputFocused)
+            Builder(builder: (_) {
+              final hasReal = _contentController.text.isNotEmpty ||
+                  _titleController.text.isNotEmpty;
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: hasReal ? _confirm : null,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      CupertinoIcons.checkmark_circle,
+                      size: 16,
+                      color: hasReal
+                          ? const Color(0xFF007AFF)
+                          : Colors.grey.shade400,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      '確定',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: hasReal
+                            ? const Color(0xFF007AFF)
+                            : Colors.grey.shade400,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            })
           else if (_hasMemo || _titleController.text.isNotEmpty)
             GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -1876,7 +1882,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                   ),
                   SizedBox(width: 3),
                   Text(
-                    'メモを閉じる',
+                    '閉じる',
                     style: TextStyle(
                       fontSize: 14,
                       color: Color(0xFF007AFF),
