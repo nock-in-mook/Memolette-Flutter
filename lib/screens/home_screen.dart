@@ -207,6 +207,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       _selectedMemoIds.clear();
     });
     _animateDrawer(false);
+    _scrollTabBarToSelected(next);
+  }
+
+  /// 選択されたタブが画面内に見えるようにタブバーを自動スクロール
+  void _scrollTabBarToSelected(int selectedIndex) {
+    if (!_tabBarScrollController.hasClients) return;
+    // 各タブの幅を概算（表示名最大5文字+padding 28px、平均約80px）
+    const estimatedTabWidth = 80.0;
+    final screenWidth = MediaQuery.of(context).size.width;
+    // 選択タブの中央が画面中央に来るようにスクロール
+    final targetOffset =
+        (selectedIndex * estimatedTabWidth) - (screenWidth / 2) + (estimatedTabWidth / 2);
+    final clampedOffset = targetOffset.clamp(
+      0.0,
+      _tabBarScrollController.position.maxScrollExtent,
+    );
+    _tabBarScrollController.animateTo(
+      clampedOffset,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
   }
 
   // スワイプ・タブ切替時のスライドイン方向 (true: 右から、false: 左から)
@@ -253,6 +274,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _suppressAnimation = false;
   // 入力エリアへの GlobalKey（フロート消しゴムから clearBody() を呼ぶ）
   final _inputAreaKey = GlobalKey<MemoInputAreaState>();
+  /// 通常サイズ + 入力欄フォーカス中 → 編集コンパクトモード
+  bool get _isEditingCompact =>
+      !_isInputExpanded &&
+      !_isMemoListExpanded &&
+      (_inputAreaKey.currentState?.isInputFocused ?? false);
   // 検索 (ヘッダの全フォルダ横断検索)
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
@@ -411,6 +437,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         _suppressAnimation = false;
       });
     } else {
+      // フォーカスを外して編集を中断（メモ一覧が見えるように）
+      FocusScope.of(context).unfocus();
       setState(() {
         _isInputExpanded = false;
         // _editingMemoId は保持 → メモが入力欄に残る
@@ -686,7 +714,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   _clearSearchIfActive();
                   setState(() => _editingMemoId = id);
                 },
-                onClosed: () => setState(() => _editingMemoId = null),
+                onClosed: () {
+                  if (_isInputExpanded && _openedFromMemoList) {
+                    // パターンA: フォルダ最大化→メモ開いた → フォルダ最大化に戻る
+                    _suppressAnimation = true;
+                    setState(() {
+                      _editingMemoId = null;
+                      _isInputExpanded = false;
+                      _isMemoListExpanded = true;
+                      _openedFromMemoList = false;
+                    });
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _suppressAnimation = false;
+                    });
+                  } else if (_isInputExpanded) {
+                    // パターンB: 手動最大化 → 通常ビューに戻る
+                    setState(() {
+                      _editingMemoId = null;
+                      _isInputExpanded = false;
+                    });
+                  } else {
+                    setState(() => _editingMemoId = null);
+                  }
+                },
                 selectedParentTagId: _currentParentTagId(parentTags),
                 selectedChildTagId: _selectedChildTagId,
                 focusRequest: _focusInputTrigger,
@@ -694,6 +744,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 onToggleExpanded: () =>
                     setState(() => _isInputExpanded = !_isInputExpanded),
                 onTagHistoryChanged: () => setState(() {}),
+                onFocusChanged: () => setState(() {}),
               ),
             ),
             // 2b. 入力欄最大化時: 下端シェブロン
@@ -710,10 +761,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ),
               ),
             // 3. 機能バー（アニメーション付きで表示/非表示）
+            // 編集コンパクトモード時も非表示
             AnimatedContainer(
               duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
               curve: Curves.easeInOut,
-              height: (_isInputExpanded || _isMemoListExpanded) ? 0 : null,
+              height: (_isInputExpanded || _isMemoListExpanded || _isEditingCompact) ? 0 : null,
               clipBehavior: Clip.hardEdge,
               decoration: const BoxDecoration(),
               child: _buildFunctionBar(),
@@ -805,16 +857,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                 key: ValueKey(_selectedTabKey),
                                 child: Column(
                                   children: [
-                                    _buildCountBar(parentTags),
-                                    Expanded(
-                                      child: parentTagsAsync.when(
-                                        data: (tags) => _buildMemoGrid(tags),
-                                        loading: () => const Center(
-                                            child: CircularProgressIndicator()),
-                                        error: (e, _) => Center(
-                                            child: Text('エラー: $e')),
+                                    if (_isEditingCompact)
+                                      _buildSaveToFolderButton(parentTags)
+                                    else ...[
+                                      _buildCountBar(parentTags),
+                                      Expanded(
+                                        child: parentTagsAsync.when(
+                                          data: (tags) => _buildMemoGrid(tags),
+                                          loading: () => const Center(
+                                              child: CircularProgressIndicator()),
+                                          error: (e, _) => Center(
+                                              child: Text('エラー: $e')),
+                                        ),
                                       ),
-                                    ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -856,10 +912,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       Positioned.fill(
                         child: _buildReorderOverlay(),
                       ),
-                    // フロートする下部ボタン群（検索中・並び替え中・フォルダ内検索中は非表示）
+                    // フロートする下部ボタン群（検索中・並び替え中・フォルダ内検索中・編集コンパクトモードは非表示）
                     if (!_isReorderMode &&
                         !_isSearchActive &&
-                        !_isInFolderSearch)
+                        !_isInFolderSearch &&
+                        !_isEditingCompact)
                       Positioned(
                         left: 0,
                         right: 0,
@@ -872,6 +929,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         !_isSearchActive &&
                         !_isInFolderSearch &&
                         !_isSelectMode &&
+                        !_isEditingCompact &&
                         _currentParentTagId(parentTags) != null)
                       Positioned(
                         right: 12,
@@ -1063,6 +1121,106 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 画面中央にトースト表示（キーボード上でも見える）
+  void _showCenterToast(String message) {
+    final overlay = Overlay.of(context);
+    late OverlayEntry entry;
+    entry = OverlayEntry(builder: (ctx) {
+      return Positioned(
+        top: MediaQuery.of(ctx).size.height * 0.35,
+        left: 40,
+        right: 40,
+        child: IgnorePointer(
+          child: Material(
+            color: Colors.transparent,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.0, end: 1.0),
+              duration: const Duration(milliseconds: 200),
+              builder: (_, opacity, child) => Opacity(opacity: opacity, child: child),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.75),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    message,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    });
+    overlay.insert(entry);
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      entry.remove();
+    });
+  }
+
+  /// 編集コンパクトモード時:「このフォルダにメモを保存」ボタン
+  Widget _buildSaveToFolderButton(List<Tag> parentTags) {
+    // 現在のタブ名を取得
+    String folderName;
+    if (_selectedTabKey == kAllTabKey) {
+      folderName = 'すべて';
+    } else if (_selectedTabKey == kUntaggedTabKey) {
+      folderName = 'タグなし';
+    } else if (_selectedTabKey == kFrequentTabKey) {
+      folderName = 'よく見る';
+    } else {
+      final tag = parentTags.where((t) => t.id == _selectedTabKey).firstOrNull;
+      folderName = tag?.name ?? '';
+    }
+
+    // 特殊タブ（すべて/タグなし/よく見る）ではボタン不要
+    final isSpecialTab = _selectedTabKey == kAllTabKey ||
+        _selectedTabKey == kUntaggedTabKey ||
+        _selectedTabKey == kFrequentTabKey;
+
+    // スワイプでフォルダ切替も受け付ける
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragEnd: _onSwipeEnd,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Center(
+          child: isSpecialTab
+              ? const SizedBox.shrink()
+              : _SaveToFolderBtn(
+                  folderName: folderName,
+                  onTap: () async {
+                    // 現在のタブのタグをメモに付与
+                    final memoId = _editingMemoId;
+                    if (memoId == null) return;
+                    final db = ref.read(databaseProvider);
+                    await db.addTagToMemo(memoId, _selectedTabKey);
+                    if (!mounted) return;
+                    // キーボードを閉じる
+                    FocusScope.of(context).unfocus();
+                    // 入力欄を閉じてメモ一覧に戻す
+                    setState(() {
+                      _editingMemoId = null;
+                      _highlightedMemoId = memoId;
+                    });
+                    _inputAreaKey.currentState?.closeMemo();
+                    // トースト表示
+                    _showCenterToast('"$folderName" に保存しました');
+                  },
+                ),
+        ),
       ),
     );
   }
@@ -2380,9 +2538,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         _suppressAnimation = false;
       });
     } else {
+      // 通常モード: メモデータを直接渡して即表示（DBクエリ待ちなし）
       setState(() {
         _editingMemoId = memo.id;
         _highlightedMemoId = memo.id;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _inputAreaKey.currentState?.loadMemoDirectly(memo);
       });
     }
   }
@@ -3048,6 +3210,63 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         }
         break;
     }
+  }
+}
+
+// ========================================
+// 「フォルダにメモを保存」ボタン（タップで色反転フィードバック）
+// ========================================
+class _SaveToFolderBtn extends StatefulWidget {
+  final String folderName;
+  final VoidCallback onTap;
+  const _SaveToFolderBtn({required this.folderName, required this.onTap});
+
+  @override
+  State<_SaveToFolderBtn> createState() => _SaveToFolderBtnState();
+}
+
+class _SaveToFolderBtnState extends State<_SaveToFolderBtn> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = _pressed ? Colors.grey[700]! : Colors.white.withValues(alpha: 0.85);
+    final fg = _pressed ? Colors.white : Colors.grey[700]!;
+
+    return GestureDetector(
+      onTap: () async {
+        setState(() => _pressed = true);
+        widget.onTap();
+        await Future.delayed(const Duration(milliseconds: 400));
+        if (mounted) setState(() => _pressed = false);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: _pressed ? Colors.grey[700]! : Colors.grey.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.add_circle_outline, size: 18, color: fg),
+            const SizedBox(width: 6),
+            Text(
+              '"${widget.folderName}" にメモを保存',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: fg,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

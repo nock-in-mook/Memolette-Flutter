@@ -32,6 +32,8 @@ class MemoInputArea extends ConsumerStatefulWidget {
   final VoidCallback? onToggleExpanded;
   /// タグ履歴表示状態が変わったときの通知（親のsetStateを呼ぶ用）
   final VoidCallback? onTagHistoryChanged;
+  /// フォーカス状態が変わったときの通知（親のsetStateを呼ぶ用）
+  final VoidCallback? onFocusChanged;
 
   const MemoInputArea({
     super.key,
@@ -44,6 +46,7 @@ class MemoInputArea extends ConsumerStatefulWidget {
     this.isExpanded = false,
     this.onToggleExpanded,
     this.onTagHistoryChanged,
+    this.onFocusChanged,
   });
 
   @override
@@ -51,10 +54,21 @@ class MemoInputArea extends ConsumerStatefulWidget {
 }
 
 class MemoInputAreaState extends ConsumerState<MemoInputArea> {
-  /// 外部から本文の有無を確認するゲッター
-  bool get hasContent => _contentController.text.isNotEmpty;
+  /// 外部から本文の有無を確認するゲッター（ゼロ幅スペースは無視）
+  bool get hasContent => _contentController.text.replaceAll(_zwsp, '').isNotEmpty;
   /// 外部から本文フォーカス状態を確認するゲッター
   bool get isContentFocused => _contentFocusNode.hasFocus;
+  /// 外部から入力欄全体のフォーカス状態を確認するゲッター（タイトル or 本文）
+  bool get isInputFocused => _isInputFocused;
+  /// 外部からメモを閉じる（入力欄クリア）
+  void closeMemo() => _clearInput();
+  /// 外部からタグ表示を再読み込み（保存ボタン等でタグ付与後に呼ぶ）
+  Future<void> reloadTags() async {
+    if (widget.editingMemoId == null) return;
+    final db = ref.read(databaseProvider);
+    _attachedTags = await db.getTagsForMemo(widget.editingMemoId!);
+    if (mounted) setState(() {});
+  }
   /// ルーレットが開いてるか
   bool get isRouletteOpen => _rouletteOpen;
   /// ルーレットを閉じる（外部から呼べる）
@@ -80,6 +94,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   final _contentController = MarkdownTextController();
   final _titleFocusNode = FocusNode();
   final _contentFocusNode = FocusNode();
+  final _contentScrollController = ScrollController();
   bool get _isInputFocused =>
       _titleFocusNode.hasFocus || _contentFocusNode.hasFocus;
   List<Tag> _attachedTags = [];
@@ -261,10 +276,27 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _contentFocusNode.addListener(_onFocusChange);
   }
 
+  // ゼロ幅スペース: カスタムキーボードの「空欄+確定で消える」バグ回避用
+  // TextFieldが空の状態でカスタムキーボードのcomposing確定が走ると
+  // テキストが消失するため、見えない文字を1つ入れておく
+  static const _zwsp = '\u200B';
+
   void _onFocusChange() {
     if (mounted) {
+      // 本文フォーカス取得時: 空なら見えないゼロ幅スペースを挿入
+      if (_contentFocusNode.hasFocus && _contentController.text.isEmpty) {
+        _contentController.value = const TextEditingValue(
+          text: _zwsp,
+          selection: TextSelection.collapsed(offset: 1),
+        );
+      }
+      // フォーカスを得た時点でメモ未作成なら空メモを先行作成
+      if (_isInputFocused && widget.editingMemoId == null && !_hasMemo) {
+        _preCreateEmptyMemo();
+      }
       setState(() {});
       _updateMdToolbarOverlay();
+      widget.onFocusChanged?.call();
     }
   }
 
@@ -276,6 +308,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
         // 自分で作成したメモなら再ロード不要（閲覧モードにしない）
         if (widget.editingMemoId == _selfCreatedMemoId) {
           _selfCreatedMemoId = null;
+        } else if (_directLoadApplied) {
+          // loadMemoDirectlyで既にロード済み → スキップ
+          _directLoadApplied = false;
         } else {
           _loadMemo(widget.editingMemoId!);
         }
@@ -296,20 +331,44 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     final db = ref.read(databaseProvider);
     final memo = await db.getMemoById(id);
     if (memo != null && mounted) {
-      _suppressUndo = true;
-      _titleController.text = memo.title;
-      _contentController.text = memo.content;
+      _applyMemoData(memo);
+      // タグはバックグラウンドで読み込み
       _attachedTags = await db.getTagsForMemo(id);
-      _suppressUndo = false;
-      _resetUndoHistory();
-      _contentController.enabled = memo.isMarkdown;
-      setState(() {
-        _hasMemo = true;
-        _isViewMode = true; // カードから開いたら最初は閲覧モード
-        _isMarkdown = memo.isMarkdown;
-        _showMarkdownPreview = false;
-      });
+      if (mounted) setState(() {});
     }
+  }
+
+  /// メモデータを直接適用する（DBクエリ不要で高速）
+  void loadMemoDirectly(Memo memo) {
+    _directLoadApplied = true;
+    _applyMemoData(memo);
+    // タグは非同期で読み込み
+    final db = ref.read(databaseProvider);
+    db.getTagsForMemo(memo.id).then((tags) {
+      if (mounted) {
+        _attachedTags = tags;
+        setState(() {});
+      }
+    });
+  }
+
+  void _applyMemoData(Memo memo) {
+    _suppressUndo = true;
+    _titleController.text = memo.title;
+    _contentController.text = memo.content;
+    _suppressUndo = false;
+    _resetUndoHistory();
+    _contentController.enabled = memo.isMarkdown;
+    // スクロール位置を先頭にリセット
+    if (_contentScrollController.hasClients) {
+      _contentScrollController.jumpTo(0);
+    }
+    setState(() {
+      _hasMemo = true;
+      _isViewMode = true;
+      _isMarkdown = memo.isMarkdown;
+      _showMarkdownPreview = false;
+    });
   }
 
   void _clearInput() {
@@ -325,6 +384,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _showMarkdownPreview = false;
     _contentController.enabled = false;
     _updateMdToolbarOverlay();
+    // スクロール位置を先頭にリセット
+    if (_contentScrollController.hasClients) {
+      _contentScrollController.jumpTo(0);
+    }
     setState(() {
       _hasMemo = false;
       _isViewMode = false;
@@ -350,41 +413,60 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   void _onChanged() {
     _pushUndoIfChanged();
     if (widget.editingMemoId == null) {
-      if (_titleController.text.isNotEmpty ||
-          _contentController.text.isNotEmpty) {
-        _createAndSave();
-      }
+      // 通常はフォーカス時に先行作成済みだが、フォールバックとして
+      // 次フレームで作成（rebuildとの干渉を避けるため遅延）
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || widget.editingMemoId != null) return;
+        final rt = _titleController.text.replaceAll(_zwsp, '');
+        final rc = _contentController.text.replaceAll(_zwsp, '');
+        if (rt.isNotEmpty || rc.isNotEmpty) {
+          _preCreateEmptyMemo();
+        }
+      });
       return;
     }
     final db = ref.read(databaseProvider);
-    // タイトルも本文も空になったらメモを削除（空メモが残らないように）
-    if (_titleController.text.isEmpty && _contentController.text.isEmpty) {
-      db.deleteMemo(widget.editingMemoId!);
-      _clearInput();
-      widget.onClosed();
+    // ゼロ幅スペースを除去した実テキストで判定・保存
+    final realTitle = _titleController.text.replaceAll(_zwsp, '');
+    final realContent = _contentController.text.replaceAll(_zwsp, '');
+    // タイトルも本文も空になったらメモを削除
+    // ただしカスタムキーボードが確定時に一瞬テキストをクリアするケースがあるため
+    // 即削除せず次フレームで再確認する
+    if (realTitle.isEmpty && realContent.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || widget.editingMemoId == null) return;
+        final t = _titleController.text.replaceAll(_zwsp, '');
+        final c = _contentController.text.replaceAll(_zwsp, '');
+        if (t.isEmpty && c.isEmpty) {
+          db.deleteMemo(widget.editingMemoId!);
+          _clearInput();
+          widget.onClosed();
+        }
+      });
       return;
     }
     db.updateMemo(
       id: widget.editingMemoId!,
-      title: _titleController.text,
-      content: _contentController.text,
+      title: realTitle,
+      content: realContent,
     );
     if (mounted) setState(() {}); // Undo/Redoボタンの状態更新用
   }
 
   // 自分で作成したメモのID（_loadMemoで閲覧モードにしないため）
   String? _selfCreatedMemoId;
+  // loadMemoDirectlyで直接ロード済み → didUpdateWidgetでの_loadMemoをスキップ
+  bool _directLoadApplied = false;
 
-  Future<void> _createAndSave() async {
+  /// フォーカス取得時に空メモを先行作成
+  /// 以降の入力はすべてupdateMemoで処理されるため、rebuildが発生せず
+  /// カスタムキーボードのテキスト消失を防ぐ
+  Future<void> _preCreateEmptyMemo() async {
     final db = ref.read(databaseProvider);
-    final memo = await db.createMemo(
-      title: _titleController.text,
-      content: _contentController.text,
-      isMarkdown: _isMarkdown,
-    );
-    // pending（ルーレットで先に選んだタグ）を優先、無ければwidgetから渡されたタブのタグを使う
-    final parentId = _pendingParentTag?.id ?? widget.selectedParentTagId;
-    final childId = _pendingChildTag?.id ?? widget.selectedChildTagId;
+    final memo = await db.createMemo(isMarkdown: _isMarkdown);
+    // ルーレットで先に選んだタグを付与
+    final parentId = _pendingParentTag?.id;
+    final childId = _pendingChildTag?.id;
     if (parentId != null) {
       await db.addTagToMemo(memo.id, parentId);
     }
@@ -396,7 +478,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _pendingChildTag = null;
     _selfCreatedMemoId = memo.id;
     widget.onMemoCreated(memo.id);
-    setState(() => _hasMemo = true);
+    if (mounted) setState(() => _hasMemo = true);
   }
 
   // 確定: キーボードを閉じるだけ。メモは残す（本家準拠）
@@ -539,6 +621,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _mdToolbarOverlay = null;
     _titleController.dispose();
     _contentController.dispose();
+    _contentScrollController.dispose();
     _titleFocusNode.dispose();
     _contentFocusNode.dispose();
     super.dispose();
@@ -1567,6 +1650,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             if (_rouletteOpen) _closeRoulette();
           },
           child: SingleChildScrollView(
+            controller: _contentScrollController,
             padding: EdgeInsets.fromLTRB(9, 9, 9, scrollBottom.toDouble()),
             child: ConstrainedBox(
               constraints: BoxConstraints(
