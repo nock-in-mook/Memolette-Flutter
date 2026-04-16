@@ -11,6 +11,7 @@ import '../providers/database_provider.dart';
 import '../utils/keyboard_done_bar.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../widgets/memo_input_area.dart' show EraserGlyph;
+import '../widgets/tag_dial_view.dart';
 import '../widgets/trapezoid_tab_shape.dart';
 
 // ========================================
@@ -28,6 +29,8 @@ class QuickSortScreen extends ConsumerStatefulWidget {
 
 class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   // フェーズ管理
+  // DEV: trueで起動時に全メモを対象にカルーセルへ直行（開発中の動作確認用）
+  static const bool _devJumpToCarousel = true;
   _Phase _phase = _Phase.intro;
 
   // 処理対象メモ
@@ -53,11 +56,32 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   // カード最大化状態
   bool _isCardExpanded = false;
 
+  // タグルーレット開閉状態
+  bool _rouletteOpen = false;
+
   // 弧ボタンからカードにフォーカス要求するためのコントローラー
   final _CardController _cardController = _CardController();
 
   int get _totalSets =>
       (_allFilteredMemos.length + _setSize - 1) ~/ _setSize;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_devJumpToCarousel) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final db = ref.read(databaseProvider);
+        final memos = await db.select(db.memos).get();
+        if (!mounted || memos.isEmpty) return;
+        setState(() {
+          _allFilteredMemos = memos;
+          _currentSetIndex = 0;
+          _loadCurrentSet();
+          _phase = _Phase.carousel;
+        });
+      });
+    }
+  }
 
   /// 現在のセットに含まれるメモ数（ロード画面用）
   int get _currentSetMemoCount {
@@ -272,10 +296,30 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
               final collapsedCardH =
                   MediaQuery.of(context).size.height * 0.29;
               // 最大化時はカードが利用可能空間いっぱいまで広がる（日付はExpanded外で計算済み）
-              final cardH = _isCardExpanded ? maxH : collapsedCardH;
-              return Column(
+              // ルーレット開時はカードを若干縮めて、下に出るルーレットのスペースを確保
+              // ルーレットtrayの高さ278、bottom:-40 → tray上端=maxH-238
+              // カード下端をtray上端の30pt上に置く
+              final rouletteCardH = maxH - 238;
+              final cardH = _isCardExpanded
+                  ? maxH
+                  : _rouletteOpen
+                      ? rouletteCardH.clamp(100.0, collapsedCardH)
+                      : collapsedCardH;
+              // ルーレット用の寸法
+              const double _trayW = 300.0 + 19.0 + 60.0; // tray + tab + overhang
+              final slideOffset = _rouletteOpen ? 0.0 : _trayW;
+
+              return Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  const Spacer(flex: 2),
+                  // メインColumn（カード+日付+スペース）
+                  Column(children: [
+                  // カード位置: ルーレット開時は詰める（滑らかに）
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    height: _rouletteOpen ? 10 : 70,
+                  ),
 
                   // メモカード（スワイプ＋スライドアニメーション）+ ロックボタン
                   GestureDetector(
@@ -322,6 +366,8 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                         onTagged: () => _taggedMemoIds.add(memo.id),
                         onTitled: () => _titledMemoIds.add(memo.id),
                         onEdited: () => _editedMemoIds.add(memo.id),
+                        onTagFooterTap: () =>
+                            setState(() => _rouletteOpen = !_rouletteOpen),
                         tabColor: _labTabColor,
                         tagFooterColor: _labTagFooterColor,
                       ),
@@ -360,7 +406,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                     duration: const Duration(milliseconds: 250),
                     curve: Curves.easeInOut,
                     alignment: Alignment.topCenter,
-                    child: _isCardExpanded
+                    child: (_isCardExpanded || _rouletteOpen)
                         ? const SizedBox(width: double.infinity, height: 0)
                         : Align(
                             alignment: Alignment.centerLeft,
@@ -396,7 +442,20 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 250),
                     curve: Curves.easeInOut,
-                    height: _isCardExpanded ? 0 : 90,
+                    height: (_isCardExpanded || _rouletteOpen) ? 0 : 90,
+                  ),
+                  ],
+                  ),
+                  // ルーレット: 右端に固定、スライドで出し入れ（Stack overlay）
+                  Positioned(
+                    right: 0,
+                    bottom: -40,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOutCubic,
+                      transform: Matrix4.translationValues(slideOffset, 0, 0),
+                      child: _buildTagRouletteOverlay(memo),
+                    ),
                   ),
                 ],
               );
@@ -417,11 +476,11 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                 arcH * ((1 - t) * (1 - t) + t * t) + arcOff - btnHalf;
 
             return SizedBox(
-              height: arcH + arcOff - 30, // 弧全体（下端クリップ許容）
+              height: arcH + arcOff, // 弧+ボタン全体のタップ領域を確保（下のスペーサーで相殺）
               width: sw,
               child: Stack(
-                clipBehavior: Clip.none,
-                children: [
+                    clipBehavior: Clip.none,
+                    children: [
                   // 弧の仕切り線
                   Positioned(
                     top: arcOff,
@@ -479,8 +538,8 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
             );
           }),
 
-          // 弧と操作パネルの間（固定。旧値48で弧位置を元に戻す）
-          const SizedBox(height: 40),
+          // 弧と操作パネルの間（縮めて弧領域の拡大を相殺）
+          const SizedBox(height: 10),
 
           // 下部操作パネル（本家準拠: ZStack方式）
           Padding(
@@ -633,6 +692,320 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
         ],
       ),
     );
+  }
+
+  // ========================================
+  // タグルーレット（爆速モード用）
+  // ========================================
+  Widget _buildTagRouletteOverlay(Memo memo) {
+    final allTagsAsync = ref.watch(allTagsProvider);
+    return allTagsAsync.when(
+      data: (allTags) => _buildRouletteContent(memo, allTags),
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildRouletteContent(Memo memo, List<Tag> allTags) {
+    // メモに現在付いているタグ
+    final attachedAsync = ref.watch(tagsForMemoProvider(memo.id));
+    final attached = attachedAsync.value ?? const <Tag>[];
+    final currentParent =
+        attached.where((t) => t.parentTagId == null).firstOrNull;
+    final currentChild =
+        attached.where((t) => t.parentTagId != null).firstOrNull;
+
+    final parentTags = allTags.where((t) => t.parentTagId == null).toList();
+    final parentOptions = [
+      const TagDialOption(id: null, name: 'タグなし', color: Colors.white),
+      ...parentTags.map((t) => TagDialOption(
+            id: t.id,
+            name: t.name,
+            color: TagColors.getColor(t.colorIndex),
+          )),
+    ];
+    final childTags = currentParent != null
+        ? allTags.where((t) => t.parentTagId == currentParent.id).toList()
+        : <Tag>[];
+    final childOptions = [
+      const TagDialOption(id: null, name: '子タグなし', color: Colors.white),
+      ...childTags.map((t) => TagDialOption(
+            id: t.id,
+            name: t.name,
+            color: TagColors.getColor(t.colorIndex),
+          )),
+    ];
+
+    // Todo版と同じ寸法
+    const double trayBodyWidth = 300.0;
+    const double tabW = 19.0;
+    const double trayTotalWidth = trayBodyWidth + tabW;
+    const double dialOverhang = 60.0;
+    const Color trayColor = Color.fromRGBO(142, 142, 147, 1);
+
+    return SizedBox(
+      height: 22 + 211 + 45,
+      width: trayTotalWidth + dialOverhang,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // トレー背景（タップで収納）
+          Positioned(
+            right: 0, top: 0, bottom: 0,
+            child: GestureDetector(
+              onTap: () => setState(() => _rouletteOpen = false),
+              behavior: HitTestBehavior.opaque,
+              child: CustomPaint(
+                painter: _TrayPainterQS(
+                  color: trayColor,
+                  tabWidth: tabW,
+                  tabHeight: 22,
+                  tabRadius: 6,
+                  bodyRadius: 10,
+                  innerRadius: 10,
+                ),
+                child: SizedBox(
+                  width: trayTotalWidth,
+                  child: Column(
+                    children: [
+                      // ラベル帯（22pt）
+                      SizedBox(
+                        height: 22,
+                        child: Stack(
+                          children: [
+                            // 左: しまう三角マーク（タップで閉）
+                            Positioned(
+                              left: 0, top: 0, bottom: 0, width: tabW,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () =>
+                                    setState(() => _rouletteOpen = false),
+                                child: Center(
+                                  child: Text(
+                                    '\u25B6',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.white
+                                          .withValues(alpha: 0.8),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // 親タグラベル
+                            Positioned(
+                              right: 221, top: 0, height: 22,
+                              child: Center(
+                                child: Text(
+                                  '親タグ',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white
+                                        .withValues(alpha: 0.75),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // 子タグラベル
+                            Positioned(
+                              right: 104, top: 0, height: 22,
+                              child: Center(
+                                child: Text(
+                                  '子タグ',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white
+                                        .withValues(alpha: 0.75),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // 収納シェブロン（ルーレット中央右端）
+                      SizedBox(
+                        height: 211,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () =>
+                                setState(() => _rouletteOpen = false),
+                            child: Transform.translate(
+                              offset: const Offset(-8, 0),
+                              child: SizedBox(
+                                width: 36,
+                                child: Center(
+                                  child: Text(
+                                    '\u203A',
+                                    style: TextStyle(
+                                      fontSize: 60,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white
+                                          .withValues(alpha: 0.5),
+                                      height: 1,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      // 下部ボタン（親/子タグ追加 + 履歴）
+                      SizedBox(
+                        height: 45,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Positioned(
+                              right: 191, top: 5,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () {}, // TODO: 親タグ追加
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.add_circle,
+                                        size: 14,
+                                        color: Colors.white
+                                            .withValues(alpha: 0.9)),
+                                    const SizedBox(width: 3),
+                                    Text('親タグ追加',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.white
+                                              .withValues(alpha: 0.9),
+                                        )),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              right: 78, top: 5,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () {}, // TODO: 子タグ追加
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.add_circle_outline,
+                                        size: 13,
+                                        color: Colors.white
+                                            .withValues(alpha: 0.8)),
+                                    const SizedBox(width: 3),
+                                    Text('子タグ追加',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.white
+                                              .withValues(alpha: 0.8),
+                                        )),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              right: 8, top: 14,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () {}, // TODO: 履歴
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.chevron_right,
+                                        size: 12,
+                                        color: Colors.white
+                                            .withValues(alpha: 0.8)),
+                                    const SizedBox(width: 3),
+                                    Text('履歴',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.white
+                                              .withValues(alpha: 0.8),
+                                        )),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // ダイヤル（トレーから左へはみ出す）
+          Positioned(
+            right: 0, top: 22, height: 211,
+            width: trayBodyWidth + dialOverhang,
+            child: Align(
+              alignment: Alignment.topRight,
+              child: Transform.translate(
+                offset: const Offset(-dialOverhang, 0),
+                child: TagDialView(
+                  height: 211,
+                  parentOptions: parentOptions,
+                  childOptions: childOptions,
+                  selectedParentId: currentParent?.id,
+                  selectedChildId: currentChild?.id,
+                  isOpen: true,
+                  onParentSelected: (id) =>
+                      _onRouletteTagSelected(memo, id, false),
+                  onChildSelected: (id) =>
+                      _onRouletteTagSelected(memo, id, true),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _onRouletteTagSelected(
+      Memo memo, String? id, bool isChild) async {
+    final db = ref.read(databaseProvider);
+    final attached = await db.getTagsForMemo(memo.id);
+
+    if (id == null) {
+      // タグなし/子タグなし選択 → 外す
+      if (!isChild) {
+        for (final t in attached) {
+          await db.removeTagFromMemo(memo.id, t.id);
+        }
+      } else {
+        for (final t in attached.where((t) => t.parentTagId != null)) {
+          await db.removeTagFromMemo(memo.id, t.id);
+        }
+      }
+    } else {
+      if (!isChild) {
+        // 親タグ選択 → 既存の親（と子）を外してから付与
+        for (final t in attached) {
+          await db.removeTagFromMemo(memo.id, t.id);
+        }
+        await db.addTagToMemo(memo.id, id);
+      } else {
+        // 子タグ選択 → 既存の子を外してから付与
+        for (final t in attached.where((t) => t.parentTagId != null)) {
+          await db.removeTagFromMemo(memo.id, t.id);
+        }
+        await db.addTagToMemo(memo.id, id);
+      }
+      _taggedMemoIds.add(memo.id);
+    }
+    // プロバイダ再取得＋カード内部のタグ再読込
+    ref.invalidate(tagsForMemoProvider(memo.id));
+    _cardController.reloadTags?.call();
+    if (mounted) setState(() {});
   }
 
   // 終了確認ダイアログ（×ボタン）→ 本家 QuickSortView.exitConfirmDialog 準拠
@@ -822,7 +1195,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
       case _EditMode.content:
         _cardController.focusContent?.call();
       case _EditMode.tag:
-        _cardController.openTagPicker?.call();
+        setState(() => _rouletteOpen = !_rouletteOpen);
       case _EditMode.none:
         _cardController.unfocus?.call();
     }
@@ -1804,6 +2177,7 @@ class _QuickSortCard extends ConsumerStatefulWidget {
   final VoidCallback onTagged;
   final VoidCallback onTitled;
   final VoidCallback onEdited;
+  final VoidCallback? onTagFooterTap;
   final Color tabColor;
   final Color tagFooterColor;
 
@@ -1814,6 +2188,7 @@ class _QuickSortCard extends ConsumerStatefulWidget {
     this.isExpanded = false,
     this.onToggleExpanded,
     required this.onTagged,
+    this.onTagFooterTap,
     required this.onTitled,
     required this.onEdited,
     required this.tabColor,
@@ -1848,6 +2223,7 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
     c.focusTitle = () => _titleFocus.requestFocus();
     c.focusContent = () => _contentFocus.requestFocus();
     c.openTagPicker = () => _showTagPicker(context);
+    c.reloadTags = _loadTags;
     c.unfocus = () {
       _titleFocus.unfocus();
       _contentFocus.unfocus();
@@ -2169,13 +2545,15 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // 本文（外側Scrollable方式で scrollPadding を効かせる）
-                      // カード内TextFieldはキーボード上の領域なので固定値でOK
+                      // 最大化時のみキーボード追従、縮小時は固定値で上跳ねを抑制
                       Expanded(
                         child: Builder(builder: (innerCtx) {
                           final kb =
                               MediaQuery.of(innerCtx).viewInsets.bottom;
-                          final scrollBottom = kb > 0 ? 180 : 100;
-                          final cursorBottomBuffer = 160;
+                          final scrollBottom =
+                              widget.isExpanded && kb > 0 ? 180 : 100;
+                          final cursorBottomBuffer =
+                              widget.isExpanded && kb > 0 ? 160 : 20;
                           return LayoutBuilder(
                               builder: (context, constraints) {
                             return GestureDetector(
@@ -2231,7 +2609,7 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
 
                       // タグフッター（本文との仕切り線付き）
                       GestureDetector(
-                        onTap: () => _showTagPicker(context),
+                        onTap: widget.onTagFooterTap ?? () => _showTagPicker(context),
                         child: Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(
@@ -3222,6 +3600,7 @@ class _CardController {
   VoidCallback? openTagPicker;
   VoidCallback? unfocus;
   VoidCallback? clearContent;
+  VoidCallback? reloadTags;
   bool Function()? isContentFocused;
   bool Function()? hasContent;
 }
@@ -3756,6 +4135,74 @@ class _CardWithTabPainter extends CustomPainter {
       old.tabColor != tabColor ||
       old.bodyColor != bodyColor ||
       old.borderColor != borderColor;
+}
+
+// 爆速ルーレット用トレー（左上タブ付き、Todo版と同じ形状）
+class _TrayPainterQS extends CustomPainter {
+  final Color color;
+  final double tabWidth;
+  final double tabHeight;
+  final double tabRadius;
+  final double bodyRadius;
+  final double innerRadius;
+
+  _TrayPainterQS({
+    required this.color,
+    required this.tabWidth,
+    required this.tabHeight,
+    required this.tabRadius,
+    required this.bodyRadius,
+    required this.innerRadius,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bodyTop = tabHeight;
+    final bodyLeftX = tabWidth;
+    final ir = innerRadius.clamp(0.0, bodyTop);
+
+    final path = Path();
+    path.moveTo(0, tabRadius);
+    path.arcTo(
+      Rect.fromLTWH(0, 0, tabRadius * 2, tabRadius * 2),
+      pi, pi / 2, false,
+    );
+    path.lineTo(size.width, 0);
+    path.lineTo(size.width, size.height);
+    path.lineTo(bodyLeftX + bodyRadius, size.height);
+    path.arcTo(
+      Rect.fromLTWH(
+          bodyLeftX, size.height - bodyRadius * 2, bodyRadius * 2, bodyRadius * 2),
+      pi / 2, pi / 2, false,
+    );
+    path.lineTo(bodyLeftX, bodyTop + ir);
+    path.arcTo(
+      Rect.fromLTWH(bodyLeftX - ir * 2, bodyTop, ir * 2, ir * 2),
+      0, -pi / 2, false,
+    );
+    path.lineTo(tabRadius, bodyTop);
+    path.arcTo(
+      Rect.fromLTWH(0, bodyTop - tabRadius * 2, tabRadius * 2, tabRadius * 2),
+      pi / 2, pi / 2, false,
+    );
+    path.close();
+
+    // 影
+    canvas.save();
+    canvas.translate(-2, 0);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+    canvas.restore();
+
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrayPainterQS old) => old.color != color;
 }
 
 // 爆速モードの削除確認ダイアログ（本家準拠）
