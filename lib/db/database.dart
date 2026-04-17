@@ -29,7 +29,18 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            // メモ背景色カラム追加
+            await m.addColumn(memos, memos.bgColorIndex);
+          }
+        },
+      );
 
   // ========================================
   // メモ CRUD
@@ -56,7 +67,12 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// メモを新規作成
-  Future<Memo> createMemo({String title = '', String content = '', bool isMarkdown = false}) async {
+  Future<Memo> createMemo({
+    String title = '',
+    String content = '',
+    bool isMarkdown = false,
+    int bgColorIndex = 0,
+  }) async {
     final id = _uuid.v4();
     final now = DateTime.now();
     final companion = MemosCompanion.insert(
@@ -64,6 +80,7 @@ class AppDatabase extends _$AppDatabase {
       title: Value(title),
       content: Value(content),
       isMarkdown: Value(isMarkdown),
+      bgColorIndex: Value(bgColorIndex),
       createdAt: Value(now),
       updatedAt: Value(now),
     );
@@ -87,6 +104,7 @@ class AppDatabase extends _$AppDatabase {
     bool? isPinned,
     bool? isLocked,
     int? manualSortOrder,
+    int? bgColorIndex,
   }) {
     return (update(memos)..where((t) => t.id.equals(id))).write(
       MemosCompanion(
@@ -99,6 +117,9 @@ class AppDatabase extends _$AppDatabase {
         manualSortOrder: manualSortOrder != null
             ? Value(manualSortOrder)
             : const Value.absent(),
+        bgColorIndex: bgColorIndex != null
+            ? Value(bgColorIndex)
+            : const Value.absent(),
         updatedAt: Value(DateTime.now()),
       ),
     );
@@ -110,6 +131,18 @@ class AppDatabase extends _$AppDatabase {
       await (delete(memoTags)..where((t) => t.memoId.equals(id))).go();
       await (delete(memos)..where((t) => t.id.equals(id))).go();
     });
+  }
+
+  /// タイトル・本文が空のメモをまとめて削除（起動時セーフティネット）
+  /// 返り値: 削除件数
+  Future<int> purgeEmptyMemos() async {
+    final emptyIds = await (select(memos)
+          ..where((t) => t.title.equals('') & t.content.equals('')))
+        .map((m) => m.id)
+        .get();
+    if (emptyIds.isEmpty) return 0;
+    await deleteMemos(emptyIds);
+    return emptyIds.length;
   }
 
   /// 複数メモをまとめて削除（memo_tags もカスケード削除）
@@ -353,6 +386,7 @@ class AppDatabase extends _$AppDatabase {
             viewCount: row.read<int>('view_count'),
             lastViewedAt: row.readNullable<DateTime>('last_viewed_at'),
             isLocked: row.read<bool>('is_locked'),
+            bgColorIndex: row.read<int>('bg_color_index'),
           );
         }).toList());
   }
@@ -395,6 +429,16 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// タグに紐づくメモを取得（リアルタイム）
+  /// タグに紐づくメモの件数を取得（子タグは含まない）
+  Future<int> countMemosForTag(String tagId) async {
+    final exp = memoTags.memoId.count();
+    final row = await (selectOnly(memoTags)
+          ..addColumns([exp])
+          ..where(memoTags.tagId.equals(tagId)))
+        .getSingle();
+    return row.read(exp) ?? 0;
+  }
+
   Stream<List<Memo>> watchMemosForTag(String tagId) {
     final query = select(memos).join([
       innerJoin(memoTags, memoTags.memoId.equalsExp(memos.id)),

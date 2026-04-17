@@ -16,6 +16,8 @@ class Memos extends Table {
   IntColumn get viewCount => integer().withDefault(const Constant(0))();
   DateTimeColumn get lastViewedAt => dateTime().nullable()();
   BoolColumn get isLocked => boolean().withDefault(const Constant(false))();
+  // メモ背景色インデックス（0=なし/白、1-72=タグカラーパレットの色）
+  IntColumn get bgColorIndex => integer().withDefault(const Constant(0))();
 
   @override
   Set<Column> get primaryKey => {id};

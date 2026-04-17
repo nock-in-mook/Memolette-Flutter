@@ -143,13 +143,6 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
               _Phase.result => _buildResultPhase(),
             },
 
-            // 最大化+キーボード表示中: フロート縮小ボタン（完了ボタンの左）
-            if (showFloats)
-              Positioned(
-                right: 6 + 72 + 8, // 完了ボタン幅(~72) + 8px間隔
-                bottom: MediaQuery.of(context).viewInsets.bottom + 4,
-                child: _buildFloatingMinimizeButton(),
-              ),
             // 最大化+キーボード表示中: フロート消しゴムボタン（左下）
             if (showFloats && isContentFocused)
               Positioned(

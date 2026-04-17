@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../constants/design_constants.dart';
+import '../constants/memo_bg_colors.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../screens/home_screen.dart' show GridSizeOption;
@@ -82,14 +83,22 @@ class MemoCard extends ConsumerWidget {
   Widget _buildTitleOnly() {
     final hasTitle = memo.title.isNotEmpty;
     final displayTitle = hasTitle ? memo.title : '無題';
+    // 背景はメモ色（未設定なら白）。ハイライトはオレンジ枠で表現
+    final bgColor = memo.bgColorIndex == 0
+        ? Colors.white
+        : MemoBgColors.getColor(memo.bgColorIndex);
     return GestureDetector(
       onTap: onTap,
       onDoubleTap: onDoubleTap,
       child: Container(
         clipBehavior: Clip.hardEdge,
         decoration: BoxDecoration(
-          color: isHighlighted ? const Color(0xFFFFF3E0) : Colors.white,
+          color: bgColor,
           borderRadius: BorderRadius.circular(4),
+          border: isHighlighted
+              ? Border.all(
+                  color: Colors.black.withValues(alpha: 0.35), width: 1.5)
+              : null,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.06),
@@ -163,11 +172,21 @@ class MemoCard extends ConsumerWidget {
           .firstOrNull;
     }
 
-    // カード本体（白背景・角丸・影）。中身（タイトル・本文）+ 右上 Pin/Lock
-    final cardBody = Container(
+    // カード本体（メモ背景色・角丸・影、ハイライトは半透明黒枠）
+    final cardBgColor = memo.bgColorIndex == 0
+        ? Colors.white
+        : MemoBgColors.getColor(memo.bgColorIndex);
+    // ValueKey でハイライト状態変化時に Widget を強制差し替え（アニメ抑制）
+    final cardBody = KeyedSubtree(
+      key: ValueKey('memocard_body_${memo.id}_${isHighlighted ? 1 : 0}'),
+      child: Container(
       clipBehavior: Clip.hardEdge,
       decoration: BoxDecoration(
-        color: isHighlighted ? const Color(0xFFFFF3E0) : Colors.white,
+        color: cardBgColor,
+        border: isHighlighted
+            ? Border.all(
+                color: Colors.black.withValues(alpha: 0.35), width: 1.5)
+            : null,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -260,6 +279,7 @@ class MemoCard extends ConsumerWidget {
             ),
         ],
       ),
+    ),
     );
 
     return GestureDetector(

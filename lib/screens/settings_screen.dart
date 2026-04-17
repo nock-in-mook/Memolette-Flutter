@@ -5,6 +5,7 @@ import '../providers/database_provider.dart';
 import 'font_lab_screen.dart';
 import 'font_weight_lab_screen.dart';
 import 'icon_lab_screen.dart';
+import 'maximize_icon_lab_screen.dart';
 import 'settings_icon_lab_screen.dart';
 
 /// 設定画面
@@ -49,6 +50,15 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const SettingsIconLabScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.zoom_out_map),
+            title: const Text('最大化アイコンラボ'),
+            subtitle: const Text('機能バー右端の最大化ボタン候補を比較'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MaximizeIconLabScreen()),
             ),
           ),
           ListTile(

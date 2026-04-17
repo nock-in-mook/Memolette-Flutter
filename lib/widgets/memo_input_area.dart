@@ -7,6 +7,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../constants/design_constants.dart';
+import '../constants/memo_bg_colors.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/text_menu_dismisser.dart';
@@ -34,6 +35,11 @@ class MemoInputArea extends ConsumerStatefulWidget {
   final VoidCallback? onTagHistoryChanged;
   /// フォーカス状態が変わったときの通知（親のsetStateを呼ぶ用）
   final VoidCallback? onFocusChanged;
+  /// ダイアログ開閉状態が変わったときの通知（true=開いた、false=閉じた）
+  /// 編集中のダイアログ表示でキーボードが消えてフォルダビューが一瞬出るのを防ぐ用
+  final ValueChanged<bool>? onDialogOpenChanged;
+  /// 本文/タイトル変更時の通知（機能バー・フロート消しゴムボタンの有効化再評価用）
+  final VoidCallback? onContentChanged;
 
   const MemoInputArea({
     super.key,
@@ -47,6 +53,8 @@ class MemoInputArea extends ConsumerStatefulWidget {
     this.onToggleExpanded,
     this.onTagHistoryChanged,
     this.onFocusChanged,
+    this.onDialogOpenChanged,
+    this.onContentChanged,
   });
 
   @override
@@ -58,10 +66,16 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   bool get hasContent => _contentController.text.isNotEmpty;
   /// 外部から本文フォーカス状態を確認するゲッター
   bool get isContentFocused => _contentFocusNode.hasFocus;
+  /// タイトル欄がフォーカス中か
+  bool get isTitleFocused => _titleFocusNode.hasFocus;
   /// 外部から入力欄全体のフォーカス状態を確認するゲッター（タイトル or 本文）
   bool get isInputFocused => _isInputFocused;
-  /// 外部からメモを閉じる（入力欄クリア）
-  void closeMemo() => _clearInput();
+  /// 本文欄にフォーカスを強制要求（最大化タップでフォーカスが外れたときの復元用）
+  void refocusContent() => _contentFocusNode.requestFocus();
+  /// タイトル欄にフォーカスを強制要求
+  void refocusTitle() => _titleFocusNode.requestFocus();
+  /// 外部からメモを閉じる（入力欄クリア、MDモードは保持）
+  void closeMemo() => _clearInput(keepMarkdown: _isMarkdown);
   /// 外部からタグ表示を再読み込み（保存ボタン等でタグ付与後に呼ぶ）
   Future<void> reloadTags() async {
     if (widget.editingMemoId == null) return;
@@ -105,6 +119,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   bool _isViewMode = false;
   // マークダウンモード: ON時は記号ツールバー表示 + プレビュー切替可能
   bool _isMarkdown = false;
+  /// メモ背景色インデックス（0=なし/白、1-71=タグカラーパレット）
+  int _bgColorIndex = 0;
   // マークダウンプレビュー表示中か（エディタ↔プレビュー切替）
   bool _showMarkdownPreview = false;
   // メモ未作成時にルーレットで先に選んだタグの保持先（事前選択状態）
@@ -282,14 +298,16 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       if (_isInputFocused && widget.editingMemoId == null && !_hasMemo) {
         _preCreateEmptyMemo();
       }
-      // フォーカスが外れたとき、空メモなら削除（最大化中はスキップ）
-      if (!_isInputFocused && widget.editingMemoId != null && !widget.isExpanded) {
+      // フォーカスが外れたとき、空メモなら削除
+      // 最大化中でも削除対象（空メモの残留を防ぐ）
+      if (!_isInputFocused && widget.editingMemoId != null) {
         final t = _titleController.text;
         final c = _contentController.text;
-        if (t.isEmpty && c.isEmpty) {
+        // 色が付いているメモは空扱いしない（色だけ入れたメモも保持）
+        if (t.isEmpty && c.isEmpty && _bgColorIndex == 0) {
           final db = ref.read(databaseProvider);
           db.deleteMemo(widget.editingMemoId!);
-          _clearInput();
+          _clearInput(keepMarkdown: _isMarkdown);
           widget.onClosed();
           return;
         }
@@ -315,7 +333,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           _loadMemo(widget.editingMemoId!);
         }
       } else {
-        _clearInput();
+        // MDモードは保持（本文全削除→親がeditingMemoIdをnullにしてきた経路で
+        // MDスイッチが勝手にオフになるのを防ぐ）
+        _clearInput(keepMarkdown: _isMarkdown);
       }
     }
     // 新規作成ボタンからのフォーカス要求
@@ -367,11 +387,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       _hasMemo = true;
       _isViewMode = true;
       _isMarkdown = memo.isMarkdown;
+      _bgColorIndex = memo.bgColorIndex;
       _showMarkdownPreview = false;
     });
   }
 
-  void _clearInput() {
+  void _clearInput({bool keepMarkdown = false}) {
     _suppressUndo = true;
     _titleController.clear();
     _contentController.clear();
@@ -380,9 +401,13 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _pendingChildTag = null;
     _suppressUndo = false;
     _resetUndoHistory();
-    _isMarkdown = false;
-    _showMarkdownPreview = false;
-    _contentController.enabled = false;
+    if (!keepMarkdown) {
+      _isMarkdown = false;
+      _showMarkdownPreview = false;
+      _contentController.enabled = false;
+    }
+    // 背景色は常にリセット（次のメモに持ち越さない）
+    _bgColorIndex = 0;
     _updateMdToolbarOverlay();
     // スクロール位置を先頭にリセット
     if (_contentScrollController.hasClients) {
@@ -412,6 +437,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   /// 入力内容を即座に保存
   void _onChanged() {
     _pushUndoIfChanged();
+    widget.onContentChanged?.call();
     if (widget.editingMemoId == null) {
       // 通常はフォーカス時に先行作成済みだが、フォールバックとして
       // 次フレームで作成（rebuildとの干渉を避けるため遅延）
@@ -433,7 +459,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
         if (!mounted || widget.editingMemoId == null) return;
         if (_titleController.text.isEmpty && _contentController.text.isEmpty) {
           db.deleteMemo(widget.editingMemoId!);
-          _clearInput();
+          _clearInput(keepMarkdown: _isMarkdown);
           widget.onClosed();
         }
       });
@@ -457,7 +483,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   /// カスタムキーボードのテキスト消失を防ぐ
   Future<void> _preCreateEmptyMemo() async {
     final db = ref.read(databaseProvider);
-    final memo = await db.createMemo(isMarkdown: _isMarkdown);
+    final memo = await db.createMemo(
+      isMarkdown: _isMarkdown,
+      bgColorIndex: _bgColorIndex,
+    );
     // ルーレットで先に選んだタグを付与
     final parentId = _pendingParentTag?.id;
     final childId = _pendingChildTag?.id;
@@ -518,9 +547,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   }
 
   // メモを閉じる: 入力欄をクリア + onClosed コールバック
+  // MDモードはトグル操作以外で解除しない
   void _closeMemo() {
     FocusScope.of(context).unfocus();
-    _clearInput();
+    _clearInput(keepMarkdown: _isMarkdown);
     widget.onClosed();
   }
 
@@ -556,28 +586,33 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   /// 公開: home_screen のフロート消しゴムから呼べるようにする
   Future<void> clearBody() async {
     if (_contentController.text.isEmpty) return;
-    final ok = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('本文をクリアします。よろしいですか？'),
-        content: const Text('タイトルとタグはそのまま残ります。'),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('キャンセル'),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('クリア'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    _contentController.clear();
-    _onChanged();
-    setState(() {});
+    widget.onDialogOpenChanged?.call(true);
+    try {
+      final ok = await showCupertinoDialog<bool>(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('本文をクリアします。よろしいですか？'),
+          content: const Text('タイトルとタグはそのまま残ります。'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('キャンセル'),
+            ),
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('クリア'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+      _contentController.clear();
+      _onChanged();
+      setState(() {});
+    } finally {
+      if (mounted) widget.onDialogOpenChanged?.call(false);
+    }
   }
 
   // 5万字到達トースト (連射防止: 直近の表示から3秒以内は無視)
@@ -611,6 +646,14 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
   @override
   void dispose() {
+    // 画面遷移やバックグラウンド化などで dispose される際、
+    // タイトル・本文が空のメモは DB 上の痕跡を残さず削除する
+    if (widget.editingMemoId != null &&
+        _titleController.text.isEmpty &&
+        _contentController.text.isEmpty) {
+      final db = ref.read(databaseProvider);
+      db.deleteMemo(widget.editingMemoId!); // fire-and-forget
+    }
     _mdToolbarOverlay?.remove();
     _mdToolbarOverlay = null;
     _titleController.dispose();
@@ -638,7 +681,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             curve: Curves.easeInOut,
             margin: const EdgeInsets.only(right: 10),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: _bgColorIndex == 0
+                  ? Colors.white
+                  : MemoBgColors.getColor(_bgColorIndex),
               borderRadius: BorderRadius.circular(CornerRadius.card),
               border: Border.all(
                 color: _parentTag != null
@@ -686,21 +731,46 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               error: (_, _) => const SizedBox(),
             ),
           ),
-          // 消しゴムボタン (本文左下、常に表示)
-          Positioned(
-            left: 6,
-            bottom: 40,
-            child: _buildEraserButton(),
-          ),
-          // 最大化/縮小ボタン (入力欄の右下角ぴったり、常に表示)
-          if (!_rouletteOpen)
+          // プレビューボタン（MD ON時のみ、入力エリア下端中央）
+          if (_isMarkdown)
             Positioned(
-              right: 14, // 入力欄の margin(10) + 4px 内側
-              bottom: 40,
-              child: _buildExpandButton(),
+              left: 0,
+              right: 10, // AnimatedContainer の右margin と揃える
+              bottom: 50, // フッター41 + 仕切り線1 + 余白8
+              child: Center(child: _buildPreviewButton()),
             ),
           // ルーレット台形タブは非表示（タグ欄タップで開く）
         ],
+      ),
+    );
+  }
+
+  Widget _buildPreviewButton() {
+    final isOn = _showMarkdownPreview;
+    final color = isOn ? Colors.orange : Colors.grey.shade500;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (!_showMarkdownPreview) {
+          FocusScope.of(context).unfocus();
+        }
+        setState(() => _showMarkdownPreview = !_showMarkdownPreview);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color, width: 1),
+          color: Colors.white,
+        ),
+        child: Text(
+          'プレビュー',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
       ),
     );
   }
@@ -727,41 +797,6 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           ],
         ),
         child: const EraserGlyph(),
-      ),
-    );
-  }
-
-  Widget _buildExpandButton() {
-    return GestureDetector(
-      onTap: () {
-        // 変換中のIMEをコミットしてからトグル（下線残りバグ防止）
-        commitIME();
-        widget.onToggleExpanded?.call();
-      },
-      child: Container(
-        width: 21,
-        height: 21,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.blue.withValues(alpha: 0.6),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.2),
-              blurRadius: 2,
-              offset: const Offset(-1, 1),
-            ),
-          ],
-        ),
-        child: Transform.rotate(
-          angle: 1.5708, // 90度回転
-          child: Icon(
-            widget.isExpanded
-                ? Icons.close_fullscreen
-                : Icons.open_in_full,
-            size: 11,
-            color: Colors.white,
-          ),
-        ),
       ),
     );
   }
@@ -1697,188 +1732,199 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
   Widget _buildToolbar() {
     return Container(
-      height: 34,
+      constraints: const BoxConstraints(minHeight: 41),
       padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
       child: Row(
         children: [
+          Builder(builder: (_) {
+            final hasReal = _contentController.text.isNotEmpty ||
+                _titleController.text.isNotEmpty;
+            return GestureDetector(
+              onTap: hasReal ? _confirmDeleteMemo : null,
+              child: Icon(CupertinoIcons.delete_simple,
+                  size: 20,
+                  color: hasReal
+                      ? Colors.red.withValues(alpha: 0.5)
+                      : Colors.grey.shade300),
+            );
+          }),
+          const SizedBox(width: 14),
+          // MD (縦並び: 上ラベル + 下スイッチ)
+          // Column全体をタップ領域にして、テキスト部分タップでもトグル動作
           GestureDetector(
-            onTap: _hasMemo ? _deleteMemo : null,
-            child: Icon(CupertinoIcons.delete_simple,
-                size: 18,
-                color: _hasMemo
-                    ? Colors.red.withValues(alpha: 0.5)
-                    : Colors.grey.shade300),
-          ),
-          const SizedBox(width: 12),
-          Text('MD',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'monospace',
-                color: _isMarkdown ? const Color(0xFF007AFF) : Colors.grey[500],
-              )),
-          const SizedBox(width: 4),
-          Transform.scale(
-            scale: 0.6,
-            child: SizedBox(
-              width: 34,
-              height: 20,
-              child: Switch(
-                value: _isMarkdown,
-                onChanged: (v) => _toggleMarkdown(v),
-                activeColor: const Color(0xFF007AFF),
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ),
-          ),
-          // プレビューボタン（MD ON時のみ表示）
-          if (_isMarkdown) ...[
-            const SizedBox(width: 8),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                if (!_showMarkdownPreview) {
-                  // プレビュー表示前にキーボードを閉じる
-                  FocusScope.of(context).unfocus();
-                }
-                setState(() => _showMarkdownPreview = !_showMarkdownPreview);
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(5),
-                  color: _showMarkdownPreview
-                      ? Colors.orange
-                      : Colors.transparent,
-                ),
-                child: Text(
-                  'プレビュー',
+            onTap: () => _toggleMarkdown(!_isMarkdown),
+            behavior: HitTestBehavior.opaque,
+            child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('MD',
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 10,
+                    height: 1.0,
                     fontWeight: FontWeight.bold,
-                    color: _showMarkdownPreview
-                        ? Colors.white
-                        : Colors.grey[500],
+                    fontFamily: 'monospace',
+                    color: _isMarkdown
+                        ? const Color(0xFF007AFF)
+                        : Colors.grey[600],
+                  )),
+              const SizedBox(height: 2),
+              Transform.scale(
+                scale: 0.55,
+                child: SizedBox(
+                  width: 34,
+                  height: 20,
+                  child: Switch.adaptive(
+                    value: _isMarkdown,
+                    onChanged: (v) => _toggleMarkdown(v),
+                    activeColor: const Color(0xFF007AFF),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
               ),
-            ),
-          ],
-          const Spacer(),
-          // Undo (本家: arrow.uturn.backward, blue when enabled)
+            ],
+          ),
+          ),
+          const SizedBox(width: 14),
+          // 多機能メニュー（エクスポート/HTML化など、タップ動作は後で実装）
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: _canUndo ? _undo : null,
-            child: Icon(
-              CupertinoIcons.arrow_uturn_left,
-              size: 16,
-              color: _canUndo
-                  ? const Color(0xFF007AFF)
-                  : Colors.grey.shade400,
-            ),
+            onTap: () {
+              // TODO: 多機能メニュー展開
+            },
+            child: Icon(CupertinoIcons.ellipsis_circle,
+                size: 20, color: Colors.grey[600]),
           ),
-          const SizedBox(width: 12),
-          // Redo (本家: arrow.uturn.forward)
+          const SizedBox(width: 14),
+          // 背景色変更
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: _canRedo ? _redo : null,
-            child: Icon(
-              CupertinoIcons.arrow_uturn_right,
-              size: 16,
-              color: _canRedo
-                  ? const Color(0xFF007AFF)
-                  : Colors.grey.shade400,
-            ),
+            onTap: _showBgColorPicker,
+            child: Icon(Icons.palette_outlined,
+                size: 20, color: Colors.grey[600]),
           ),
-          const SizedBox(width: 12),
-          // コピー (本家: doc.on.doc + テキスト)
-          // 実質的な文字がある場合のみ有効（ゼロ幅スペースは無視）
+          const SizedBox(width: 14),
+          // コピー (アイコンのみ、パレットと同色)
           Builder(builder: (_) {
             final hasRealContent = _contentController.text.isNotEmpty;
             return GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: hasRealContent ? _copyContent : null,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    CupertinoIcons.doc_on_doc,
-                    size: 14,
-                    color: hasRealContent
-                        ? const Color(0xFF007AFF)
-                        : Colors.grey.shade400,
-                  ),
-                  const SizedBox(width: 3),
-                  Text(
-                    'コピー',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: hasRealContent
-                          ? const Color(0xFF007AFF)
-                          : Colors.grey.shade400,
-                    ),
-                  ),
-                ],
+              child: Icon(
+                CupertinoIcons.doc_on_doc,
+                size: 20,
+                color: hasRealContent
+                    ? Colors.grey[600]
+                    : Colors.grey.shade400,
               ),
             );
           }),
-          const SizedBox(width: 12),
+          const Spacer(),
+          // Undo (Material版: weight 指定で太く)
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _canUndo ? _undo : null,
+            child: Icon(
+              Icons.undo,
+              size: 22,
+              weight: 700,
+              color: _canUndo
+                  ? const Color(0xFF007AFF)
+                  : Colors.grey.shade400,
+            ),
+          ),
+          const SizedBox(width: 24),
+          // Redo (Material版: weight 指定で太く)
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _canRedo ? _redo : null,
+            child: Icon(
+              Icons.redo,
+              size: 22,
+              weight: 700,
+              color: _canRedo
+                  ? const Color(0xFF007AFF)
+                  : Colors.grey.shade400,
+            ),
+          ),
+          const Spacer(),
           // フォーカス中: 確定 (キーボード閉じるだけ) — 実質文字がある場合のみ有効
           // 非フォーカス + メモ/タイトルあり: 閉じる (クリア)
-          if (_isInputFocused)
-            Builder(builder: (_) {
-              final hasReal = _contentController.text.isNotEmpty ||
-                  _titleController.text.isNotEmpty;
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: hasReal ? _confirm : null,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      CupertinoIcons.checkmark_circle,
-                      size: 16,
-                      color: hasReal
-                          ? const Color(0xFF007AFF)
-                          : Colors.grey.shade400,
-                    ),
-                    const SizedBox(width: 3),
-                    Text(
-                      '確定',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: hasReal
-                            ? const Color(0xFF007AFF)
-                            : Colors.grey.shade400,
+          // 確定 or 閉じる (他のアイコン位置を安定させるため「閉じる」幅で固定)
+          SizedBox(
+            width: 72,
+            child: _isInputFocused
+                ? Builder(builder: (_) {
+                    final hasReal = _contentController.text.isNotEmpty ||
+                        _titleController.text.isNotEmpty;
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: hasReal ? _confirm : null,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            CupertinoIcons.checkmark_circle,
+                            size: 18,
+                            color: hasReal
+                                ? const Color(0xFF007AFF)
+                                : Colors.grey.shade400,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '確定',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: hasReal
+                                  ? const Color(0xFF007AFF)
+                                  : Colors.grey.shade400,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
-              );
-            })
-          else if (_hasMemo || _titleController.text.isNotEmpty)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _closeMemo,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Icon(
-                    CupertinoIcons.xmark_circle,
-                    size: 16,
-                    color: Color(0xFF007AFF),
-                  ),
-                  SizedBox(width: 3),
-                  Text(
-                    '閉じる',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF007AFF),
-                    ),
-                  ),
-                ],
-              ),
+                    );
+                  })
+                : (_hasMemo || _titleController.text.isNotEmpty)
+                    ? GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _closeMemo,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(
+                              CupertinoIcons.xmark_circle,
+                              size: 18,
+                              color: Color(0xFF007AFF),
+                            ),
+                            SizedBox(width: 3),
+                            Text(
+                              '閉じる',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF007AFF),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+          ),
+          // 最大化/縮小トグル（右端）
+          const SizedBox(width: 14),
+          GestureDetector(
+            onTap: () {
+              commitIME();
+              widget.onToggleExpanded?.call();
+            },
+            behavior: HitTestBehavior.opaque,
+            child: Icon(
+              widget.isExpanded ? Icons.zoom_in_map : Icons.zoom_out_map,
+              size: 24,
+              color: Colors.black87,
             ),
+          ),
         ],
       ),
     );
@@ -1888,13 +1934,237 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     if (widget.editingMemoId == null) return;
     final db = ref.read(databaseProvider);
     db.deleteMemo(widget.editingMemoId!);
-    _clearInput();
+    // MDモードはトグル操作以外で解除しない
+    _clearInput(keepMarkdown: _isMarkdown);
     widget.onClosed();
+  }
+
+  /// 背景色選択ダイアログ
+  /// 既存メモならDB更新、未作成なら _bgColorIndex に保持して次のメモ作成時に適用
+  Future<void> _showBgColorPicker() async {
+    final memoId = widget.editingMemoId;
+    final wasEditing = _isInputFocused;
+    if (wasEditing) widget.onDialogOpenChanged?.call(true);
+    try {
+      final selected = await showDialog<int>(
+        context: context,
+        builder: (ctx) => _BgColorPickerDialog(current: _bgColorIndex),
+      );
+      if (selected == null || !mounted) return;
+      setState(() => _bgColorIndex = selected);
+      if (memoId != null) {
+        await ref
+            .read(databaseProvider)
+            .updateMemo(id: memoId, bgColorIndex: selected);
+      }
+    } finally {
+      if (mounted && wasEditing) widget.onDialogOpenChanged?.call(false);
+    }
+  }
+
+  /// 削除確認ダイアログ → 削除（本家準拠）
+  /// 編集中のみフォルダビュー非表示フラグを立てる（閲覧時はフォルダを維持）
+  Future<void> _confirmDeleteMemo() async {
+    final wasEditing = _isInputFocused;
+    if (wasEditing) widget.onDialogOpenChanged?.call(true);
+    try {
+      final confirmed = await showCupertinoDialog<bool>(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('このメモを削除します。よろしいですか?'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('キャンセル'),
+            ),
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('削除'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      _deleteMemo();
+    } finally {
+      if (mounted && wasEditing) widget.onDialogOpenChanged?.call(false);
+    }
   }
 }
 
 // 消しゴムグリフ: CustomPainterで斜めの長方形を描く
 // (Material Icons に eraser がないため自前)
+/// 背景色選択ダイアログ
+/// 8×4 パレット（31色 + 色なし）/ 色名 / サンプルパネル / 決定・キャンセル
+class _BgColorPickerDialog extends StatefulWidget {
+  final int current;
+  const _BgColorPickerDialog({required this.current});
+
+  @override
+  State<_BgColorPickerDialog> createState() => _BgColorPickerDialogState();
+}
+
+class _BgColorPickerDialogState extends State<_BgColorPickerDialog> {
+  late int _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.current;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sampleBg =
+        _selected == 0 ? Colors.white : MemoBgColors.getColor(_selected);
+    final name = MemoBgColors.getName(_selected);
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // タイトル（中央寄せ）
+            const Center(
+              child: Text('背景色',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(height: 16),
+            // パレット左上に色名
+            Row(
+              children: [
+                Text(
+                  name,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+                const Spacer(),
+              ],
+            ),
+            const SizedBox(height: 4),
+            // パレット (8列 × 4行 = 32マス、末尾が「色なし」)
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: 32,
+              gridDelegate:
+                  const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 8,
+                mainAxisSpacing: 6,
+                crossAxisSpacing: 6,
+                mainAxisExtent: 30,
+              ),
+              itemBuilder: (_, i) {
+                // 最後のマスは「色なし」（index 0）
+                final isNone = i == MemoBgColors.count;
+                final index = isNone ? 0 : i + 1;
+                final isSelected = index == _selected;
+                return GestureDetector(
+                  onTap: () => setState(() => _selected = index),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isNone
+                          ? Colors.white
+                          : MemoBgColors.getColor(index),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: isSelected
+                            ? Colors.black
+                            : (isNone
+                                ? Colors.grey.shade300
+                                : Colors.transparent),
+                        width: isSelected ? 2 : 1,
+                      ),
+                    ),
+                    child: isNone
+                        ? Icon(Icons.block,
+                            size: 14, color: Colors.grey[500])
+                        : null,
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
+            // サンプルパネル（シンプルに「サンプル」だけ）
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 22),
+              decoration: BoxDecoration(
+                color: sampleBg,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: Colors.grey.shade300, width: 0.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 2,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: const Center(
+                child: Text(
+                  'サンプル',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            // 決定・キャンセル（横長均等）
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      foregroundColor: Colors.grey.shade700,
+                      backgroundColor: Colors.grey.shade100,
+                    ),
+                    child: const Text('キャンセル'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context, _selected),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      foregroundColor: Colors.white,
+                      backgroundColor: const Color(0xFF007AFF),
+                    ),
+                    child: const Text('決定',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class EraserGlyph extends StatelessWidget {
   const EraserGlyph();
 
