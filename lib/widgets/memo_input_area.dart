@@ -282,8 +282,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       if (_isInputFocused && widget.editingMemoId == null && !_hasMemo) {
         _preCreateEmptyMemo();
       }
-      // フォーカスが外れたとき、空メモなら削除
-      if (!_isInputFocused && widget.editingMemoId != null) {
+      // フォーカスが外れたとき、空メモなら削除（最大化中はスキップ）
+      if (!_isInputFocused && widget.editingMemoId != null && !widget.isExpanded) {
         final t = _titleController.text;
         final c = _contentController.text;
         if (t.isEmpty && c.isEmpty) {
@@ -699,19 +699,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               bottom: 40,
               child: _buildExpandButton(),
             ),
-          // 台形タブ閉じ時のタップ受付（ルーレット内に開き時の受付がある）
-          if (!_rouletteOpen)
-            Positioned(
-              right: 0,
-              top: 0,
-              width: 24,
-              height: 40,
-              child: GestureDetector(
-                onTap: _openRoulette,
-                behavior: HitTestBehavior.opaque,
-                child: const SizedBox.expand(),
-              ),
-            ),
+          // ルーレット台形タブは非表示（タグ欄タップで開く）
         ],
       ),
     );
@@ -812,8 +800,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     final double dialOverhang = _rouletteOpen ? 60.0 : 55.0;
     // チラ見せ量（閉じ時にボディ左辺が覗く）
     const double peekAmount = 5.0;
-    // 閉じ時: タブだけ見える位置までスライド
-    final slideOffset = _rouletteOpen ? 0.0 : (trayTotalWidth - tabW);
+    // 閉じ時: トレー全体を完全に隠す（タグ欄タップで開く）
+    final slideOffset = _rouletteOpen ? 0.0 : trayTotalWidth + 60;
 
     return SizedBox(
       width: trayTotalWidth + 60, // 最大はみ出し分を確保
@@ -1365,17 +1353,17 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           ),
           // タグ表示エリア
           if (_parentTag == null)
-            // タグ未選択: アイコンのみ
+            // タグ未選択: アイコンのみ（大きく太く目立たせる）
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _openRoulette,
               child: Container(
                 height: 40,
-                padding: const EdgeInsets.only(right: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 alignment: Alignment.center,
                 color: Colors.transparent,
-                child: const Icon(Icons.sell_outlined, size: 16,
-                    color: Color.fromRGBO(142, 142, 147, 0.45)),
+                child: const Icon(Icons.sell, size: 20,
+                    color: Color.fromRGBO(142, 142, 147, 0.6)),
               ),
             )
           else
@@ -1411,9 +1399,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                           if (mounted) setState(() {});
                         },
                         child: Padding(
-                          padding: const EdgeInsets.only(right: 16),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: Icon(Icons.cancel,
-                              size: 12,
+                              size: 16,
                               color: Colors.grey.withValues(alpha: 0.5)),
                         ),
                       ),

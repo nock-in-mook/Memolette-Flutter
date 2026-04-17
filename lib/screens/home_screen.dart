@@ -771,10 +771,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               child: _buildFunctionBar(),
             ),
             // 4. 親タグタブ（アニメーション付き）
+            // 編集コンパクトモード時も非表示（入力中は超シンプルに）
             AnimatedContainer(
               duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
               curve: Curves.easeInOut,
-              height: _isInputExpanded ? 0 : null,
+              height: (_isInputExpanded || _isEditingCompact) ? 0 : null,
               clipBehavior: Clip.hardEdge,
               decoration: const BoxDecoration(),
               child: _buildTabSection(parentTagsAsync),
@@ -857,9 +858,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                 key: ValueKey(_selectedTabKey),
                                 child: Column(
                                   children: [
-                                    if (_isEditingCompact)
-                                      _buildSaveToFolderButton(parentTags)
-                                    else ...[
+                                    if (!_isEditingCompact) ...[
                                       _buildCountBar(parentTags),
                                       Expanded(
                                         child: parentTagsAsync.when(
@@ -1082,9 +1081,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  /// 最大化中の上部バー（戻る矢印 + 確定ボタン）
+  /// 最大化中の上部バー（戻る矢印のみ）
   Widget _buildExpandedTopBar() {
-    final isEditing = MediaQuery.of(context).viewInsets.bottom > 0;
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 2, 14, 4),
       child: Row(
@@ -1099,24 +1097,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               child: Center(
                 child: Icon(CupertinoIcons.back,
                     size: 22, color: Color(0xFF007AFF)),
-              ),
-            ),
-          ),
-          const Spacer(),
-          // 確定ボタン（入力中のみアクティブ、押すとキーボード閉じる）
-          GestureDetector(
-            onTap: isEditing
-                ? () => FocusScope.of(context).unfocus()
-                : null,
-            behavior: HitTestBehavior.opaque,
-            child: Text(
-              '確定',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: isEditing
-                    ? const Color(0xFF007AFF)
-                    : Colors.grey.shade400,
               ),
             ),
           ),
