@@ -710,11 +710,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             ),
             ),
           ),
-          // ルーレット（タグ欄の右端から出る。top: 0、bottom: フッター上端）
+          // ルーレット（タグ欄の右端から出る。上端はタイトル欄下の仕切り線）
+          // 下端は外側 AnimatedContainer の clip (y=316) で自然に収まる
           Positioned(
             right: 0,
-            top: 0,
-            bottom: widget.isExpanded ? null : 35, // フッター34 + 仕切り線1
+            top: 40, // タイトル欄高さ 40
+            bottom: widget.isExpanded ? null : 0,
             height: widget.isExpanded ? (316 - 35) : null,
             child: allTagsAsync.when(
               data: (allTags) => _buildRoulette(allTags),
@@ -820,7 +821,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
     // Swift版準拠: トレーは常に300pt幅、offset方式でスライド開閉
     const double trayBodyWidth = 300.0;
-    const double tabW = 19.0;
+    const double tabW = 40.0; // 「タグ」テキストが収まる幅
     const double trayTotalWidth = trayBodyWidth + tabW;
     // ルーレットはみ出し量: 開き時27pt, 閉じ時42pt（Swift版準拠）
     final double dialOverhang = _rouletteOpen ? 60.0 : 55.0;
@@ -873,30 +874,48 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                           height: _rouletteOpen ? 22 : 40,
                           child: Stack(
                             children: [
-                              // 三角マーク（展開時: 22pt中央、閉じ時: 40pt中央）
-                              Positioned(
-                                left: 4,
-                                top: 0,
-                                bottom: _rouletteOpen ? 0 : 0,
-                                child: Center(
-                                  child: Text(
-                                    _rouletteOpen ? '\u25B6' : '\u25C0',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.white.withValues(alpha: 0.8),
+                              // タブ上のラベル（閉じ時=◀ / 開き時=「タグ」）
+                              if (!_rouletteOpen)
+                                Positioned(
+                                  left: 4,
+                                  top: 0,
+                                  bottom: 0,
+                                  child: Center(
+                                    child: Text(
+                                      '\u25C0',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.white.withValues(alpha: 0.8),
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              else
+                                Positioned(
+                                  left: 0,
+                                  top: 0,
+                                  width: tabW,
+                                  height: 22,
+                                  child: Center(
+                                    child: Text(
+                                      'Tag',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white.withValues(alpha: 0.85),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
                               // 親タグ・子タグラベル（上22ptの範囲に中央寄せ）
                               if (_rouletteOpen) ...[
                                 Positioned(
-                                  right: 221,
+                                  right: 231,
                                   top: 0,
                                   height: 22,
                                   child: Center(
                                     child: Text(
-                                      '\u89AAタグ',
+                                      '親',
                                       style: TextStyle(
                                         fontSize: 10,
                                         fontWeight: FontWeight.w500,
@@ -906,12 +925,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                                   ),
                                 ),
                                 Positioned(
-                                  right: 104,
+                                  right: 114,
                                   top: 0,
                                   height: 22,
                                   child: Center(
                                     child: Text(
-                                      '\u5B50タグ',
+                                      '子',
                                       style: TextStyle(
                                         fontSize: 10,
                                         fontWeight: FontWeight.w500,
