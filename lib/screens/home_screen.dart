@@ -713,18 +713,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           children: [
             // 1. 検索バー / 入力欄最大化中はミニバー
             // フォルダ最大化中も検索バーは残す（+ボタンは入力欄最大化を開く動作に切替）
-            AnimatedContainer(
-              duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
-              curve: Curves.easeInOut,
-              height: null,
-              clipBehavior: Clip.hardEdge,
-              decoration: const BoxDecoration(),
-              child: _isInputExpanded
-                  ? _buildExpandedTopBar()
-                  : _buildSearchBar(),
+            // 選択モード / 並び替えモード中は検索・+・設定も無効化
+            IgnorePointer(
+              ignoring: _isSelectMode || _isReorderMode,
+              child: AnimatedContainer(
+                duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
+                curve: Curves.easeInOut,
+                height: null,
+                clipBehavior: Clip.hardEdge,
+                decoration: const BoxDecoration(),
+                child: _isInputExpanded
+                    ? _buildExpandedTopBar()
+                    : _buildSearchBar(),
+              ),
             ),
             // 2. メモ入力エリア（高さをアニメーション）
-            AnimatedContainer(
+            // 選択モード / 並び替えモード中は入力欄ごと操作不可
+            IgnorePointer(
+              ignoring: _isSelectMode || _isReorderMode,
+              child: AnimatedContainer(
               duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
               curve: Curves.easeInOut,
               height: _isMemoListExpanded
@@ -776,6 +783,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     setState(() => _isDialogOverEditing = open),
                 onContentChanged: () => setState(() {}),
               ),
+            ),
             ),
             // 最大化/縮小は入力欄フッター右端のトグルに統一（ここは空）
             // 3. 機能バー or 編集中バー（アニメーション付きで表示/非表示）
@@ -2513,6 +2521,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // 新規作成: DB登録は入力時に MemoInputArea が行う。
   // ここでは入力欄をクリアして本文にフォーカスを与えるだけ
   Future<void> _createNewMemo() async {
+    // 選択モード / 並び替えモード中は新規作成を無効化
+    if (_isSelectMode || _isReorderMode) return;
     if (await _checkMemoLimit()) return;
     _clearSearchIfActive();
     if (_isMemoListExpanded) {
@@ -2557,6 +2567,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// ダブルタップでメモを開く → 即最大化
   /// 閉じたときは元の画面（通常メモ一覧）に戻る
   void _openMemoExpanded(Memo memo) {
+    // 選択モード / 並び替えモード中はダブルタップも無効
+    if (_isSelectMode || _isReorderMode) return;
     ref.read(databaseProvider).incrementViewCount(memo.id);
     if (!_isSearchActive) _clearSearchIfActive();
     // フォルダ最大化中に開かれた場合のみ戻り先をフォルダ最大化に
@@ -2575,6 +2587,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   void _openMemo(Memo memo) {
+    // 選択モード中: メモタップは選択トグル
+    if (_isSelectMode) {
+      if (_selectMode == _SelectMode.moveToTop) {
+        // 上部へ移動モード: ロック関係なしに単純にトグル
+        setState(() {
+          if (_selectedMemoIds.contains(memo.id)) {
+            _selectedMemoIds.remove(memo.id);
+          } else {
+            _selectedMemoIds.add(memo.id);
+          }
+        });
+      } else {
+        _toggleMemoSelection(memo);
+      }
+      return;
+    }
+    // 並び替えモード中: タップは無効
+    if (_isReorderMode) return;
+
     // 閲覧回数を増やす (よく見る/最近見たに反映)
     ref.read(databaseProvider).incrementViewCount(memo.id);
     // 検索中は検索結果を維持、それ以外は検索クリア
