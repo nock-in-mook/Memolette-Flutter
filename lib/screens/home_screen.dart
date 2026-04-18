@@ -3221,7 +3221,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         }
         break;
       case 'delete':
-        await db.deleteMemo(memo.id);
+        if (!mounted) return;
+        final confirmed = await focusSafe(
+          context,
+          () => showCupertinoDialog<bool>(
+            context: context,
+            builder: (ctx) => CupertinoAlertDialog(
+              title: const Text('このメモを削除します。よろしいですか？'),
+              actions: [
+                CupertinoDialogAction(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('キャンセル'),
+                ),
+                CupertinoDialogAction(
+                  isDestructiveAction: true,
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('削除'),
+                ),
+              ],
+            ),
+          ),
+        );
+        if (confirmed == true) {
+          await db.deleteMemo(memo.id);
+        }
         break;
     }
   }
