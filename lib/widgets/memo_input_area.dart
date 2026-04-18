@@ -1977,17 +1977,23 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                     : const SizedBox.shrink(),
           ),
           // 最大化/縮小トグル（右端）
-          const SizedBox(width: 14),
+          // アイコン周囲も含めて広めのタップ判定
           GestureDetector(
             onTap: () {
               commitIME();
               widget.onToggleExpanded?.call();
             },
             behavior: HitTestBehavior.opaque,
-            child: Icon(
-              widget.isExpanded ? Icons.zoom_in_map : Icons.zoom_out_map,
-              size: 24,
-              color: Colors.black87,
+            child: SizedBox(
+              width: 48,
+              height: 40,
+              child: Center(
+                child: Icon(
+                  widget.isExpanded ? Icons.zoom_in_map : Icons.zoom_out_map,
+                  size: 24,
+                  color: Colors.black87,
+                ),
+              ),
             ),
           ),
         ],

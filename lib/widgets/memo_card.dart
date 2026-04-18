@@ -17,6 +17,9 @@ class MemoCard extends ConsumerWidget {
   final String? parentTagId;
   final GridSizeOption gridSize;
   final bool isHighlighted;
+  // 一時的な強調表示の強度 (0.0 = 表示なし / 1.0 = フル)
+  // ロック/トップ移動などの操作後にジワッと点滅させる
+  final double flashLevel;
 
   const MemoCard({
     super.key,
@@ -26,6 +29,7 @@ class MemoCard extends ConsumerWidget {
     this.parentTagId,
     this.gridSize = GridSizeOption.grid2x3,
     this.isHighlighted = false,
+    this.flashLevel = 0,
   });
 
   // 本家準拠: グリッドサイズに応じたフォントサイズ・行数・パディング
@@ -92,13 +96,26 @@ class MemoCard extends ConsumerWidget {
       onDoubleTap: onDoubleTap,
       child: Container(
         clipBehavior: Clip.hardEdge,
+        // 縁取りは foregroundDecoration として中身に重ねる
+        // （border 分だけコンテンツが押されてレイアウトが変わるのを防ぐ）
+        foregroundDecoration: flashLevel > 0
+            ? BoxDecoration(
+                border: Border.all(
+                    color: Colors.orange.withValues(alpha: flashLevel * 0.7),
+                    width: 1.5),
+                borderRadius: BorderRadius.circular(4),
+              )
+            : isHighlighted
+                ? BoxDecoration(
+                    border: Border.all(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        width: 1.5),
+                    borderRadius: BorderRadius.circular(4),
+                  )
+                : null,
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(4),
-          border: isHighlighted
-              ? Border.all(
-                  color: Colors.black.withValues(alpha: 0.35), width: 1.5)
-              : null,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.06),
@@ -118,7 +135,7 @@ class MemoCard extends ConsumerWidget {
                   fontWeight:
                       hasTitle ? FontWeight.w700 : FontWeight.w400,
                   color: hasTitle
-                      ? Colors.black
+                      ? const Color(0xFF2D1F50) // 黒寄り紫
                       : Colors.grey.withValues(alpha: 0.5),
                   height: 1.0,
                   fontFamily: 'PingFang JP',
@@ -178,15 +195,27 @@ class MemoCard extends ConsumerWidget {
         : MemoBgColors.getColor(memo.bgColorIndex);
     // ValueKey でハイライト状態変化時に Widget を強制差し替え（アニメ抑制）
     final cardBody = KeyedSubtree(
-      key: ValueKey('memocard_body_${memo.id}_${isHighlighted ? 1 : 0}'),
+      key: ValueKey('memocard_body_${memo.id}_${isHighlighted ? 1 : 0}_${(flashLevel * 10).round()}'),
       child: Container(
       clipBehavior: Clip.hardEdge,
+      // 縁取りは foregroundDecoration で中身に重ねてレイアウトを変えない
+      foregroundDecoration: flashLevel > 0
+          ? BoxDecoration(
+              border: Border.all(
+                  color: Colors.orange.withValues(alpha: flashLevel * 0.7),
+                  width: 1.5),
+              borderRadius: BorderRadius.circular(12),
+            )
+          : isHighlighted
+              ? BoxDecoration(
+                  border: Border.all(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      width: 1.5),
+                  borderRadius: BorderRadius.circular(12),
+                )
+              : null,
       decoration: BoxDecoration(
         color: cardBgColor,
-        border: isHighlighted
-            ? Border.all(
-                color: Colors.black.withValues(alpha: 0.35), width: 1.5)
-            : null,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -211,7 +240,7 @@ class MemoCard extends ConsumerWidget {
                     fontWeight:
                         hasTitle ? FontWeight.w700 : FontWeight.w400,
                     color: hasTitle
-                        ? Colors.black
+                        ? const Color(0xFF2D1F50) // 黒寄り紫
                         : Colors.grey.withValues(alpha: 0.5),
                     height: 1.3,
                   ),

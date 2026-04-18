@@ -209,7 +209,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (_selectedMemoIds.isEmpty) return;
     final ids = _selectedMemoIds.toList();
     final count = ids.length;
-    final firstId = ids.first;
     final db = ref.read(databaseProvider);
     await db.moveMemosToTop(ids);
     if (!mounted) return;
@@ -224,13 +223,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           curve: Curves.easeOut,
         );
       }
-      setState(() => _highlightedMemoId = firstId);
-      Future.delayed(const Duration(milliseconds: 1500), () {
-        if (!mounted) return;
-        if (_highlightedMemoId == firstId) {
-          setState(() => _highlightedMemoId = null);
-        }
-      });
+      _flashMemos(ids);
       showToast(context, '$count件をトップに移動しました');
     });
   }
@@ -344,6 +337,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _isSearchFocused = false;
   // 最後にタップしたメモのID（薄水色ハイライト用）
   String? _highlightedMemoId;
+  // 操作直後のフラッシュ対象（複数同時可）
+  final Set<String> _flashingMemoIds = <String>{};
+  // フラッシュの強度 (0.0 = 透明 / 1.0 = フル)。アニメーションでジワッと変化させる
+  double _flashLevel = 0;
 
   // 他の操作 (タブ切替/メモを開く/新規作成/etc) のときに自動でクリア
   void _clearSearchIfActive() {
@@ -2183,6 +2180,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         onToggleSelect: _toggleMemoSelection,
         editingMemoId: _editingMemoId,
         highlightedMemoId: _highlightedMemoId,
+        flashingMemoIds: _flashingMemoIds,
+        flashLevel: _flashLevel,
         cardHeightReference:
             _isMemoListExpanded ? _normalFolderHeight : null,
         onAvailableHeight: _onFolderAvailableHeight,
@@ -2203,6 +2202,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         onToggleSelect: _toggleMemoSelection,
         editingMemoId: _editingMemoId,
         highlightedMemoId: _highlightedMemoId,
+        flashingMemoIds: _flashingMemoIds,
+        flashLevel: _flashLevel,
         cardHeightReference: _isMemoListExpanded ? _normalFolderHeight : null,
         onAvailableHeight: _onFolderAvailableHeight,
         scrollController: _memosScrollController,
@@ -3092,6 +3093,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
   }
 
+  /// 指定メモ（複数可）をオレンジ枠で 2 回ジワッと光らせる
+  Future<void> _flashMemo(String memoId) => _flashMemos([memoId]);
+
+  Future<void> _flashMemos(Iterable<String> memoIds) async {
+    if (!mounted) return;
+    final ids = memoIds.toSet();
+    if (ids.isEmpty) return;
+    setState(() => _flashingMemoIds.addAll(ids));
+    const steps = 8;
+    const stepMs = 24; // 18 → 24 (約1.3倍)
+    for (int rep = 0; rep < 2; rep++) {
+      // フェードイン
+      for (int s = 1; s <= steps; s++) {
+        if (!mounted) return;
+        setState(() => _flashLevel = s / steps);
+        await Future.delayed(const Duration(milliseconds: stepMs));
+      }
+      // フェードアウト
+      for (int s = steps - 1; s >= 0; s--) {
+        if (!mounted) return;
+        setState(() => _flashLevel = s / steps);
+        await Future.delayed(const Duration(milliseconds: stepMs));
+      }
+      if (rep == 0) await Future.delayed(const Duration(milliseconds: 80));
+    }
+    if (mounted) {
+      setState(() {
+        _flashingMemoIds.removeAll(ids);
+        _flashLevel = 0;
+      });
+    }
+  }
+
   /// 削除対象タブの左隣タブキーを返す。左になければ右隣。どちらもなければ kAllTabKey。
   String _neighborTabKey(String deletingKey) {
     final order = _tabOrder;
@@ -3268,9 +3302,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     switch (action) {
       case 'moveTop':
         await db.moveMemoToTop(memo.id);
+        if (!mounted) return;
+        // フォルダ先頭にスクロール + 対象メモを一時ハイライト
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          if (_memosScrollController.hasClients) {
+            _memosScrollController.animateTo(
+              0,
+              duration: const Duration(milliseconds: 280),
+              curve: Curves.easeOut,
+            );
+          }
+          _flashMemo(memo.id);
+        });
         break;
       case 'pin':
         await db.updateMemo(id: memo.id, isPinned: !memo.isPinned);
+        if (mounted) _flashMemo(memo.id);
         break;
       case 'copy':
         await Clipboard.setData(ClipboardData(text: memo.content));
@@ -3279,6 +3327,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         final wasLocked = memo.isLocked;
         await db.updateMemo(id: memo.id, isLocked: !memo.isLocked);
         if (mounted) {
+          _flashMemo(memo.id);
           showToast(context,
               wasLocked ? 'ロックを解除しました' : 'メモをロックしました');
         }
@@ -4494,6 +4543,8 @@ class _MemoGridView extends StatelessWidget {
 
   final String? editingMemoId;
   final String? highlightedMemoId;
+  final Set<String> flashingMemoIds;
+  final double flashLevel;
 
   /// フォルダ最大化時のカード高さ計算用に使う基準高さ。
   /// 指定があると `mainAxisExtent` の計算には constraints.maxHeight ではなくこちらを使う。
@@ -4522,6 +4573,8 @@ class _MemoGridView extends StatelessWidget {
     this.onToggleSelect,
     this.editingMemoId,
     this.highlightedMemoId,
+    this.flashingMemoIds = const <String>{},
+    this.flashLevel = 0,
     this.cardHeightReference,
     this.onAvailableHeight,
     this.scrollController,
@@ -4567,6 +4620,7 @@ class _MemoGridView extends StatelessWidget {
                     parentTagId: parentTagId,
                     gridSize: gridSize,
                     isHighlighted: memo.id == editingMemoId || memo.id == highlightedMemoId,
+      flashLevel: flashingMemoIds.contains(memo.id) ? flashLevel : 0,
                   ),
                 ),
               ),
@@ -4584,6 +4638,7 @@ class _MemoGridView extends StatelessWidget {
       parentTagId: parentTagId,
       gridSize: gridSize,
       isHighlighted: memo.id == editingMemoId || memo.id == highlightedMemoId,
+      flashLevel: flashingMemoIds.contains(memo.id) ? flashLevel : 0,
     );
     final wrapped = wrapBuilder != null ? wrapBuilder!(memo, card) : card;
     return KeyedSubtree(key: ValueKey('cell_${memo.id}'), child: wrapped);
