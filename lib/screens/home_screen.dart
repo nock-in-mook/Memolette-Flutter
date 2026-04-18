@@ -13,6 +13,7 @@ import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/keyboard_done_bar.dart';
+import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../widgets/memo_card.dart';
 import '../widgets/memo_input_area.dart';
@@ -172,21 +173,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Future<void> _confirmDeleteSelected() async {
     final count = _selectedMemoIds.length;
     if (count == 0) return;
-    final confirmed = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: Text('$count件のメモを削除します。よろしいですか？'),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('キャンセル'),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('削除'),
-          ),
-        ],
+    final confirmed = await focusSafe(
+      context,
+      () => showCupertinoDialog<bool>(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: Text('$count件のメモを削除します。よろしいですか？'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('キャンセル'),
+            ),
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('削除'),
+            ),
+          ],
+        ),
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -2506,21 +2510,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     // 「よく見る」タブ専用メニュー
     if (_isFrequentTab) {
-      final selected = await showGeneralDialog<FrequentGridOption>(
-        context: btnContext,
-        barrierDismissible: true,
-        barrierLabel: 'gridSizeMenu',
-        barrierColor: Colors.transparent,
-        transitionDuration: const Duration(milliseconds: 150),
-        pageBuilder: (ctx, _, _) {
-          return _FrequentGridSizeMenuOverlay(
-            current: _frequentGridSize,
-            buttonRect: btnRect,
-          );
-        },
-        transitionBuilder: (_, anim, _, child) {
-          return FadeTransition(opacity: anim, child: child);
-        },
+      final selected = await focusSafe(
+        btnContext,
+        () => showGeneralDialog<FrequentGridOption>(
+          context: btnContext,
+          barrierDismissible: true,
+          barrierLabel: 'gridSizeMenu',
+          barrierColor: Colors.transparent,
+          transitionDuration: const Duration(milliseconds: 150),
+          pageBuilder: (ctx, _, _) {
+            return _FrequentGridSizeMenuOverlay(
+              current: _frequentGridSize,
+              buttonRect: btnRect,
+            );
+          },
+          transitionBuilder: (_, anim, _, child) {
+            return FadeTransition(opacity: anim, child: child);
+          },
+        ),
       );
       if (selected != null) {
         setState(() => _frequentGridSize = selected);
@@ -2528,27 +2535,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       return;
     }
 
-    final selected = await showGeneralDialog<GridSizeOption>(
-      context: btnContext,
-      barrierDismissible: true,
-      barrierLabel: 'gridSizeMenu',
-      barrierColor: Colors.transparent,
-      transitionDuration: const Duration(milliseconds: 150),
-      pageBuilder: (ctx, _, _) {
-        return _GridSizeMenuOverlay(
-          current: _gridSize,
-          buttonRect: btnRect,
-          labelOverrides: _isMemoListExpanded
-              ? {
-                  for (final o in GridSizeOption.values)
-                    o: _gridLabelFor(o),
-                }
-              : null,
-        );
-      },
-      transitionBuilder: (_, anim, _, child) {
-        return FadeTransition(opacity: anim, child: child);
-      },
+    final selected = await focusSafe(
+      btnContext,
+      () => showGeneralDialog<GridSizeOption>(
+        context: btnContext,
+        barrierDismissible: true,
+        barrierLabel: 'gridSizeMenu',
+        barrierColor: Colors.transparent,
+        transitionDuration: const Duration(milliseconds: 150),
+        pageBuilder: (ctx, _, _) {
+          return _GridSizeMenuOverlay(
+            current: _gridSize,
+            buttonRect: btnRect,
+            labelOverrides: _isMemoListExpanded
+                ? {
+                    for (final o in GridSizeOption.values)
+                      o: _gridLabelFor(o),
+                  }
+                : null,
+          );
+        },
+        transitionBuilder: (_, anim, _, child) {
+          return FadeTransition(opacity: anim, child: child);
+        },
+      ),
     );
 
     if (selected != null) {
@@ -2569,21 +2579,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final count = await db.countMemos();
     if (count >= _maxMemoCount) {
       if (!mounted) return true;
-      await showCupertinoDialog<void>(
-        context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('メモ数の上限に達しました'),
-          content: Text(
-            '現在 $count 件のメモがあります。これ以上は作成できません（上限: $_maxMemoCount 件）。\n'
-            '不要なメモを削除してください。',
-          ),
-          actions: [
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('OK'),
+      await focusSafe(
+        context,
+        () => showCupertinoDialog<void>(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('メモ数の上限に達しました'),
+            content: Text(
+              '現在 $count 件のメモがあります。これ以上は作成できません（上限: $_maxMemoCount 件）。\n'
+              '不要なメモを削除してください。',
             ),
-          ],
+            actions: [
+              CupertinoDialogAction(
+                isDefaultAction: true,
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
         ),
       );
       return true;
@@ -2715,27 +2728,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       _SpecialKind.frequent => 'よく見る',
     };
 
-    final action = await showGeneralDialog<String>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'specialTabMenu',
-      barrierColor: Colors.transparent,
-      transitionDuration: const Duration(milliseconds: 150),
-      pageBuilder: (ctx, _, _) {
-        return _SpecialTabContextMenuOverlay(
-          label: label,
-          buttonRect: r,
-        );
-      },
-      transitionBuilder: (_, anim, _, child) =>
-          FadeTransition(opacity: anim, child: child),
+    final action = await focusSafe(
+      context,
+      () => showGeneralDialog<String>(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: 'specialTabMenu',
+        barrierColor: Colors.transparent,
+        transitionDuration: const Duration(milliseconds: 150),
+        pageBuilder: (ctx, _, _) {
+          return _SpecialTabContextMenuOverlay(
+            label: label,
+            buttonRect: r,
+          );
+        },
+        transitionBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      ),
     );
 
     if (!mounted) return;
-    FocusScope.of(context).unfocus();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) FocusScope.of(context).unfocus();
-    });
     switch (action) {
       case 'reorder':
         // 並び替え前のスクロール位置とタブ順を保存
@@ -2812,29 +2824,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final rect = sourceRect ??
         Rect.fromLTWH(overlay.size.width / 2 - 60, 200, 120, 40);
 
-    final action = await showGeneralDialog<String>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'tagMenu',
-      barrierColor: Colors.transparent,
-      transitionDuration: const Duration(milliseconds: 150),
-      pageBuilder: (ctx, _, _) {
-        return _TabContextMenuOverlay(
-          tag: tag,
-          buttonRect: rect,
-        );
-      },
-      transitionBuilder: (_, anim, _, child) =>
-          FadeTransition(opacity: anim, child: child),
+    final action = await focusSafe(
+      context,
+      () => showGeneralDialog<String>(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: 'tagMenu',
+        barrierColor: Colors.transparent,
+        transitionDuration: const Duration(milliseconds: 150),
+        pageBuilder: (ctx, _, _) {
+          return _TabContextMenuOverlay(
+            tag: tag,
+            buttonRect: rect,
+          );
+        },
+        transitionBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      ),
     );
 
     if (!mounted) return;
-    // ダイアログが直前のフォーカス（テキスト入力欄）を復元しないように
-    FocusScope.of(context).unfocus();
-    // 次フレームでも念押しでフォーカス解除（ダイアログ復元との競合防止）
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) FocusScope.of(context).unfocus();
-    });
     switch (action) {
       case 'reorder':
         // 並び替え前のスクロール位置とタブ順を保存
@@ -2872,22 +2881,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     if (memoCount == 0) {
       // メモが無いなら確認ダイアログだけ
-      final confirmed = await showCupertinoDialog<bool>(
-        context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('タグを削除'),
-          content: Text('「${tag.name}」を削除しますか?'),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('キャンセル'),
-            ),
-            CupertinoDialogAction(
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('削除する'),
-            ),
-          ],
+      final confirmed = await focusSafe(
+        context,
+        () => showCupertinoDialog<bool>(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('タグを削除'),
+            content: Text('「${tag.name}」を削除しますか?'),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('キャンセル'),
+              ),
+              CupertinoDialogAction(
+                isDestructiveAction: true,
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('削除する'),
+              ),
+            ],
+          ),
         ),
       );
       if (confirmed != true || !mounted) return;
@@ -2904,52 +2916,58 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     // ステップ1: メモの扱いを選ぶ
-    final mode = await showCupertinoModalPopup<String>(
-      context: context,
-      builder: (ctx) => CupertinoActionSheet(
-        title: Text('「${tag.name}」を削除します'),
-        message: const Text('このタグに含まれるメモの扱いを選んでください'),
-        actions: [
-          CupertinoActionSheetAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, 'withMemos'),
-            child: const Text('メモも一緒に削除'),
+    final mode = await focusSafe(
+      context,
+      () => showCupertinoModalPopup<String>(
+        context: context,
+        builder: (ctx) => CupertinoActionSheet(
+          title: Text('「${tag.name}」を削除します'),
+          message: const Text('このタグに含まれるメモの扱いを選んでください'),
+          actions: [
+            CupertinoActionSheetAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx, 'withMemos'),
+              child: const Text('メモも一緒に削除'),
+            ),
+            CupertinoActionSheetAction(
+              onPressed: () => Navigator.pop(ctx, 'keepMemos'),
+              child: const Text('メモは残す（タグなしに変更）'),
+            ),
+          ],
+          cancelButton: CupertinoActionSheetAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('キャンセル'),
           ),
-          CupertinoActionSheetAction(
-            onPressed: () => Navigator.pop(ctx, 'keepMemos'),
-            child: const Text('メモは残す（タグなしに変更）'),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          isDefaultAction: true,
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('キャンセル'),
         ),
       ),
     );
     if (mode == null || !mounted) return;
 
     // ステップ2: 最終確認
-    final confirmed = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('本当に削除しますか？'),
-        content: Text(
-          mode == 'withMemos'
-              ? '「${tag.name}」とそのメモが全て削除されます。この操作は取り消せません。'
-              : 'タグ「${tag.name}」が削除されます。メモは全て「タグなし」に変更されます。',
+    final confirmed = await focusSafe(
+      context,
+      () => showCupertinoDialog<bool>(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('本当に削除しますか？'),
+          content: Text(
+            mode == 'withMemos'
+                ? '「${tag.name}」とそのメモが全て削除されます。この操作は取り消せません。'
+                : 'タグ「${tag.name}」が削除されます。メモは全て「タグなし」に変更されます。',
+          ),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('キャンセル'),
+            ),
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('削除する'),
+            ),
+          ],
         ),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('削除する'),
-          ),
-        ],
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -2982,15 +3000,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // 本家contextMenu準拠の項目: トップに移動 / 固定 / コピー / ロック / 削除
   // よく見るタブでは「トップに移動」「固定」非表示
   Future<void> _showMemoActions(Memo memo) async {
-    FocusScope.of(context).unfocus();
     final showMoveAndPin = !_isFrequentTab;
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.35),
-      builder: (sheetCtx) {
-        return SafeArea(
+    final action = await focusSafe(
+      context,
+      () => showModalBottomSheet<String>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        barrierColor: Colors.black.withValues(alpha: 0.35),
+        builder: (sheetCtx) {
+          return SafeArea(
           top: false,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -3125,10 +3144,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
         );
       },
+      ),
     );
 
     if (!mounted) return;
-    FocusScope.of(context).unfocus();
     final db = ref.read(databaseProvider);
     switch (action) {
       case 'moveTop':
@@ -3163,14 +3182,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // ToDoカード長押しメニュー（メモと同じボトムシート方式）
   // 項目: トップに移動 / 固定 / ロック / 削除
   Future<void> _showTodoActions(TodoList list) async {
-    FocusScope.of(context).unfocus();
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.35),
-      builder: (sheetCtx) {
-        return SafeArea(
+    final action = await focusSafe(
+      context,
+      () => showModalBottomSheet<String>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        barrierColor: Colors.black.withValues(alpha: 0.35),
+        builder: (sheetCtx) {
+          return SafeArea(
           top: false,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -3290,6 +3310,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
         );
       },
+      ),
     );
 
     if (!mounted) return;
@@ -3325,12 +3346,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       case 'delete':
         // 削除確認ダイアログ
         if (!mounted) return;
-        final confirmed = await showGeneralDialog<bool>(
-          context: context,
-          barrierDismissible: true, barrierLabel: '',
-          barrierColor: Colors.black.withValues(alpha: 0.3),
-          transitionDuration: const Duration(milliseconds: 150),
-          pageBuilder: (ctx, _, __) => Center(
+        final confirmed = await focusSafe(
+          context,
+          () => showGeneralDialog<bool>(
+            context: context,
+            barrierDismissible: true, barrierLabel: '',
+            barrierColor: Colors.black.withValues(alpha: 0.3),
+            transitionDuration: const Duration(milliseconds: 150),
+            pageBuilder: (ctx, _, __) => Center(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 40),
               child: Material(
@@ -3389,8 +3412,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
             ),
           ),
-          transitionBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
+            transitionBuilder: (_, anim, __, child) =>
+                FadeTransition(opacity: anim, child: child),
+          ),
         );
         if (confirmed == true) {
           await (db.delete(db.todoItems)

@@ -10,6 +10,7 @@ import '../constants/design_constants.dart';
 import '../constants/memo_bg_colors.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import 'frosted_alert_dialog.dart';
 import 'markdown_text_controller.dart';
@@ -588,22 +589,25 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     if (_contentController.text.isEmpty) return;
     widget.onDialogOpenChanged?.call(true);
     try {
-      final ok = await showCupertinoDialog<bool>(
-        context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('本文をクリアします。よろしいですか？'),
-          content: const Text('タイトルとタグはそのまま残ります。'),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('キャンセル'),
-            ),
-            CupertinoDialogAction(
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('クリア'),
-            ),
-          ],
+      final ok = await focusSafe(
+        context,
+        () => showCupertinoDialog<bool>(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('本文をクリアします。よろしいですか？'),
+            content: const Text('タイトルとタグはそのまま残ります。'),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('キャンセル'),
+              ),
+              CupertinoDialogAction(
+                isDestructiveAction: true,
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('クリア'),
+              ),
+            ],
+          ),
         ),
       );
       if (ok != true || !mounted) return;
@@ -1946,9 +1950,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     final wasEditing = _isInputFocused;
     if (wasEditing) widget.onDialogOpenChanged?.call(true);
     try {
-      final selected = await showDialog<int>(
-        context: context,
-        builder: (ctx) => _BgColorPickerDialog(current: _bgColorIndex),
+      final selected = await focusSafe(
+        context,
+        () => showDialog<int>(
+          context: context,
+          builder: (ctx) => _BgColorPickerDialog(current: _bgColorIndex),
+        ),
       );
       if (selected == null || !mounted) return;
       setState(() => _bgColorIndex = selected);
@@ -1968,21 +1975,24 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     final wasEditing = _isInputFocused;
     if (wasEditing) widget.onDialogOpenChanged?.call(true);
     try {
-      final confirmed = await showCupertinoDialog<bool>(
-        context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('このメモを削除します。よろしいですか?'),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('キャンセル'),
-            ),
-            CupertinoDialogAction(
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('削除'),
-            ),
-          ],
+      final confirmed = await focusSafe(
+        context,
+        () => showCupertinoDialog<bool>(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('このメモを削除します。よろしいですか?'),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('キャンセル'),
+              ),
+              CupertinoDialogAction(
+                isDestructiveAction: true,
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('削除'),
+              ),
+            ],
+          ),
         ),
       );
       if (confirmed != true || !mounted) return;

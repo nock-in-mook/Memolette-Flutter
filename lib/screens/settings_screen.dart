@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/database_provider.dart';
+import '../utils/safe_dialog.dart';
 import 'font_lab_screen.dart';
 import 'font_weight_lab_screen.dart';
 import 'icon_lab_screen.dart';
@@ -515,22 +516,25 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _wipeAllData(BuildContext context, WidgetRef ref) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('全データ削除'),
-        content: const Text('全てのメモとタグを削除します。よろしいですか？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('削除'),
-          ),
-        ],
+    final ok = await focusSafe(
+      context,
+      () => showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('全データ削除'),
+          content: const Text('全てのメモとタグを削除します。よろしいですか？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('削除'),
+            ),
+          ],
+        ),
       ),
     );
     if (ok != true) return;

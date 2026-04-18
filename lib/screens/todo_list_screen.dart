@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../widgets/frosted_alert_dialog.dart';
 import '../widgets/new_tag_sheet.dart';
@@ -161,14 +162,16 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   }
 
   void _showExpandDialog(List<TodoItem> allItems) {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: '',
-      barrierColor: Colors.black.withValues(alpha: 0.3),
-      transitionDuration: const Duration(milliseconds: 150),
-      pageBuilder: (context, anim1, anim2) {
-        return Center(
+    focusSafe(
+      context,
+      () => showGeneralDialog(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: '',
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        transitionDuration: const Duration(milliseconds: 150),
+        pageBuilder: (context, anim1, anim2) {
+          return Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40),
             child: Material(
@@ -250,9 +253,10 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           ),
         );
       },
-      transitionBuilder: (context, anim1, anim2, child) {
-        return FadeTransition(opacity: anim1, child: child);
-      },
+        transitionBuilder: (context, anim1, anim2, child) {
+          return FadeTransition(opacity: anim1, child: child);
+        },
+      ),
     );
   }
 
@@ -418,15 +422,16 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   }
 
   void _showMemoDeleteDialog(String itemId) {
-    FocusScope.of(context).unfocus();
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: '',
-      barrierColor: Colors.black.withValues(alpha: 0.3),
-      transitionDuration: const Duration(milliseconds: 150),
-      pageBuilder: (context, anim1, anim2) {
-        return Center(
+    focusSafe(
+      context,
+      () => showGeneralDialog(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: '',
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        transitionDuration: const Duration(milliseconds: 150),
+        pageBuilder: (context, anim1, anim2) {
+          return Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40),
             child: Material(
@@ -493,9 +498,10 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           ),
         );
       },
-      transitionBuilder: (context, anim1, anim2, child) {
-        return FadeTransition(opacity: anim1, child: child);
-      },
+        transitionBuilder: (context, anim1, anim2, child) {
+          return FadeTransition(opacity: anim1, child: child);
+        },
+      ),
     );
   }
 
@@ -579,12 +585,14 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
 
   void _showDeleteSelectedConfirm(List<TodoItem> allItems) {
     final count = _selectedItems.length;
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true, barrierLabel: '',
-      barrierColor: Colors.black.withValues(alpha: 0.3),
-      transitionDuration: const Duration(milliseconds: 150),
-      pageBuilder: (context, _, __) => Center(
+    focusSafe(
+      context,
+      () => showGeneralDialog(
+        context: context,
+        barrierDismissible: true, barrierLabel: '',
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        transitionDuration: const Duration(milliseconds: 150),
+        pageBuilder: (context, _, __) => Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40),
           child: Material(
@@ -638,7 +646,8 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           ),
         ),
       ),
-      transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+        transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+      ),
     );
   }
 
@@ -655,13 +664,15 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   }
 
   void _showDeleteMenu(List<TodoItem> allItems) {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: '',
-      barrierColor: Colors.black.withValues(alpha: 0.3),
-      transitionDuration: const Duration(milliseconds: 150),
-      pageBuilder: (context, _, __) => Center(
+    focusSafe(
+      context,
+      () => showGeneralDialog(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: '',
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        transitionDuration: const Duration(milliseconds: 150),
+        pageBuilder: (context, _, __) => Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40),
           child: Material(
@@ -749,33 +760,36 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           ),
         ),
       ),
-      transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+        transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+      ),
     );
   }
 
   void _showClearAllDialog(List<TodoItem> allItems) {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true, barrierLabel: '',
-      barrierColor: Colors.black.withValues(alpha: 0.3),
-      transitionDuration: const Duration(milliseconds: 150),
-      pageBuilder: (context, _, __) => Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white, borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 20, offset: const Offset(0, 4))],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('全項目を削除', style: TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Hiragino Sans')),
+    focusSafe(
+      context,
+      () => showGeneralDialog(
+        context: context,
+        barrierDismissible: true, barrierLabel: '',
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        transitionDuration: const Duration(milliseconds: 150),
+        pageBuilder: (context, _, __) => Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white, borderRadius: BorderRadius.circular(16),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15),
+                    blurRadius: 20, offset: const Offset(0, 4))],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('全項目を削除', style: TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Hiragino Sans')),
                   const SizedBox(height: 12),
                   Text('${allItems.length}件の項目を全て削除します\nリスト自体は残ります',
                     textAlign: TextAlign.center,
@@ -814,12 +828,15 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           ),
         ),
       ),
-      transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+        transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+      ),
     );
   }
 
   void _showClearAllConfirm() {
-    showGeneralDialog(
+    focusSafe(
+      context,
+      () => showGeneralDialog(
       context: context,
       barrierDismissible: true, barrierLabel: '',
       barrierColor: Colors.black.withValues(alpha: 0.3),
@@ -878,7 +895,8 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           ),
         ),
       ),
-      transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+        transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+      ),
     );
   }
 
@@ -2093,12 +2111,14 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
 
   /// チェックリセット確認ダイアログ
   void _showResetDialog(List<TodoItem> items, int doneCount) {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true, barrierLabel: '',
-      barrierColor: Colors.black.withValues(alpha: 0.3),
-      transitionDuration: const Duration(milliseconds: 150),
-      pageBuilder: (context, _, __) => Center(
+    focusSafe(
+      context,
+      () => showGeneralDialog(
+        context: context,
+        barrierDismissible: true, barrierLabel: '',
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        transitionDuration: const Duration(milliseconds: 150),
+        pageBuilder: (context, _, __) => Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40),
           child: Material(
@@ -2152,7 +2172,8 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           ),
         ),
       ),
-      transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+        transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+      ),
     );
   }
 

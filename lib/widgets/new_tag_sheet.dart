@@ -7,6 +7,7 @@ import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/keyboard_done_bar.dart';
+import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import 'trapezoid_tab_shape.dart';
 
@@ -50,15 +51,17 @@ class NewTagSheet extends ConsumerStatefulWidget {
     int specialInitialColorIndex = 0,
     ValueChanged<int>? onSpecialColorSaved,
   }) {
-    return showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      // 背景を透明にして、内部でBackdropFilter（すりガラス）を適用する
-      backgroundColor: Colors.transparent,
-      // 背景の暗幕は薄く（背後のUIをうっすら透けさせる）
-      barrierColor: Colors.black.withValues(alpha: 0.15),
-      builder: (ctx) {
+    return focusSafe(
+      context,
+      () => showModalBottomSheet<String>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        // 背景を透明にして、内部でBackdropFilter（すりガラス）を適用する
+        backgroundColor: Colors.transparent,
+        // 背景の暗幕は薄く（背後のUIをうっすら透けさせる）
+        barrierColor: Colors.black.withValues(alpha: 0.15),
+        builder: (ctx) {
         final mq = MediaQuery.of(ctx);
         final screenH = mq.size.height;
         final keyboardH = mq.viewInsets.bottom;
@@ -93,7 +96,8 @@ class NewTagSheet extends ConsumerStatefulWidget {
             ),
           ),
         ));
-      },
+        },
+      ),
     );
   }
 

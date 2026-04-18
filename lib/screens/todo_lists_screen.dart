@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/keyboard_done_bar.dart';
+import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../widgets/trapezoid_tab_shape.dart';
 import 'todo_list_screen.dart';
@@ -512,15 +513,18 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
 
   /// 新規リスト作成ダイアログを表示
   Future<void> _createListAndOpen() async {
-    final title = await showGeneralDialog<String>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'newTodoList',
-      barrierColor: Colors.black.withValues(alpha: 0.4),
-      transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (ctx, _, _) => const _NewListDialog(),
-      transitionBuilder: (_, anim, _, child) =>
-          FadeTransition(opacity: anim, child: child),
+    final title = await focusSafe(
+      context,
+      () => showGeneralDialog<String>(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: 'newTodoList',
+        barrierColor: Colors.black.withValues(alpha: 0.4),
+        transitionDuration: const Duration(milliseconds: 200),
+        pageBuilder: (ctx, _, _) => const _NewListDialog(),
+        transitionBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      ),
     );
     if (title == null || title.isEmpty) return;
     final db = ref.read(databaseProvider);
@@ -542,14 +546,15 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
 
   /// 長押しメニュー（ボトムシート: ピン固定 / ロック / 削除）
   Future<void> _showListActions(TodoList list) async {
-    FocusScope.of(context).unfocus();
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.35),
-      builder: (sheetCtx) {
-        return SafeArea(
+    final action = await focusSafe(
+      context,
+      () => showModalBottomSheet<String>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        barrierColor: Colors.black.withValues(alpha: 0.35),
+        builder: (sheetCtx) {
+          return SafeArea(
           top: false,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -644,6 +649,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
           ),
         );
       },
+      ),
     );
 
     if (!mounted) return;
@@ -682,12 +688,14 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
 
   /// 削除確認ダイアログ
   void _showDeleteConfirmDialog(TodoList list) {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true, barrierLabel: '',
-      barrierColor: Colors.black.withValues(alpha: 0.3),
-      transitionDuration: const Duration(milliseconds: 150),
-      pageBuilder: (context, _, __) => Center(
+    focusSafe(
+      context,
+      () => showGeneralDialog(
+        context: context,
+        barrierDismissible: true, barrierLabel: '',
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        transitionDuration: const Duration(milliseconds: 150),
+        pageBuilder: (context, _, __) => Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40),
           child: Material(
@@ -741,7 +749,8 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
           ),
         ),
       ),
-      transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+        transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+      ),
     );
   }
 

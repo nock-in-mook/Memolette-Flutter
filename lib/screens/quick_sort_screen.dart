@@ -9,6 +9,7 @@ import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/keyboard_done_bar.dart';
+import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../widgets/frosted_alert_dialog.dart';
 import '../widgets/memo_input_area.dart' show EraserGlyph;
@@ -1218,13 +1219,15 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
 
   // 終了確認ダイアログ（×ボタン）→ 本家 QuickSortView.exitConfirmDialog 準拠
   void _confirmExit() {
-    showGeneralDialog<void>(
-      context: context,
-      barrierLabel: 'exit-confirm',
-      barrierDismissible: true,
-      barrierColor: Colors.black.withValues(alpha: 0.4),
-      transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (ctx, _, __) {
+    focusSafe(
+      context,
+      () => showGeneralDialog<void>(
+        context: context,
+        barrierLabel: 'exit-confirm',
+        barrierDismissible: true,
+        barrierColor: Colors.black.withValues(alpha: 0.4),
+        transitionDuration: const Duration(milliseconds: 200),
+        pageBuilder: (ctx, _, __) {
         return Material(
           type: MaterialType.transparency,
           child: Center(
@@ -1328,16 +1331,17 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           ),
         );
       },
-      transitionBuilder: (ctx, anim, _, child) {
-        return FadeTransition(
-          opacity: anim,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.95, end: 1.0).animate(
-                CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-            child: child,
-          ),
-        );
-      },
+        transitionBuilder: (ctx, anim, _, child) {
+          return FadeTransition(
+            opacity: anim,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.95, end: 1.0).animate(
+                  CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+              child: child,
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -1547,15 +1551,18 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
       );
       return;
     }
-    showDialog<void>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.4),
-      builder: (ctx) => _DeleteConfirmDialog(
-        onConfirm: () {
-          Navigator.of(ctx).pop();
-          _performDelete(memo);
-        },
-        onCancel: () => Navigator.of(ctx).pop(),
+    focusSafe(
+      context,
+      () => showDialog<void>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.4),
+        builder: (ctx) => _DeleteConfirmDialog(
+          onConfirm: () {
+            Navigator.of(ctx).pop();
+            _performDelete(memo);
+          },
+          onCancel: () => Navigator.of(ctx).pop(),
+        ),
       ),
     );
   }
@@ -2008,24 +2015,27 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
 
   // 削除予定メモの確認ダイアログ
   void _showDeletedReview() {
-    showDialog<void>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.4),
-      builder: (ctx) => _DeletedReviewDialog(
-        memoIds: List.of(_deleteQueue),
-        allMemos: _allFilteredMemos,
-        onRestore: (id) {
-          setState(() {
-            _deleteQueue.remove(id);
-            final memo = _allFilteredMemos.firstWhere(
-              (m) => m.id == id,
-              orElse: () => _allFilteredMemos.first,
-            );
-            if (!_activeMemos.any((m) => m.id == id)) {
-              _activeMemos.add(memo);
-            }
-          });
-        },
+    focusSafe(
+      context,
+      () => showDialog<void>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.4),
+        builder: (ctx) => _DeletedReviewDialog(
+          memoIds: List.of(_deleteQueue),
+          allMemos: _allFilteredMemos,
+          onRestore: (id) {
+            setState(() {
+              _deleteQueue.remove(id);
+              final memo = _allFilteredMemos.firstWhere(
+                (m) => m.id == id,
+                orElse: () => _allFilteredMemos.first,
+              );
+              if (!_activeMemos.any((m) => m.id == id)) {
+                _activeMemos.add(memo);
+              }
+            });
+          },
+        ),
       ),
     );
   }
@@ -2313,22 +2323,25 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
   /// 本文クリア（確認ダイアログ付き・メモ入力画面と同じ挙動）
   Future<void> _clearBodyWithConfirm() async {
     if (_contentController.text.isEmpty) return;
-    final ok = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('本文をクリアします。よろしいですか？'),
-        content: const Text('タイトルとタグはそのまま残ります。'),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('キャンセル'),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('クリア'),
-          ),
-        ],
+    final ok = await focusSafe(
+      context,
+      () => showCupertinoDialog<bool>(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('本文をクリアします。よろしいですか？'),
+          content: const Text('タイトルとタグはそのまま残ります。'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('キャンセル'),
+            ),
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('クリア'),
+            ),
+          ],
+        ),
       ),
     );
     if (ok != true || !mounted) return;
@@ -2800,15 +2813,16 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
   }
 
   void _showTagPicker(BuildContext context) {
-    FocusScope.of(context).unfocus();
     final allTagsAsync = ref.read(allTagsProvider);
     final currentIds = _memoTags.map((t) => t.id).toSet();
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return StatefulBuilder(builder: (context, setSheetState) {
+    focusSafe(
+      context,
+      () => showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (context) {
+          return StatefulBuilder(builder: (context, setSheetState) {
           return Container(
             constraints: BoxConstraints(
                 maxHeight: MediaQuery.of(context).size.height * 0.5),
@@ -2868,11 +2882,12 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
               ),
               loading: () =>
                   const Center(child: CircularProgressIndicator()),
-              error: (_, _) => const Center(child: Text('エラー')),
-            ),
-          );
-        });
-      },
+                error: (_, _) => const Center(child: Text('エラー')),
+              ),
+            );
+          });
+        },
+      ),
     );
   }
 }

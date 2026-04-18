@@ -2,6 +2,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import '../utils/safe_dialog.dart';
+
 /// すりガラス背景＋中央配置のカスタムアラートダイアログ
 /// Swift版 .alert() 相当（ただしカスタムUI）
 ///
@@ -152,31 +154,34 @@ Future<void> showFrostedAlert({
   String? message,
   List<FrostedAlertAction>? actions,
 }) {
-  return showGeneralDialog<void>(
-    context: context,
-    barrierLabel: 'frosted-alert',
-    barrierDismissible: true,
-    barrierColor: Colors.black.withValues(alpha: 0.15),
-    transitionDuration: const Duration(milliseconds: 200),
-    pageBuilder: (ctx, anim1, anim2) {
-      return FrostedAlertDialog(
-        title: title,
-        message: message,
-        actions: actions ??
-            const [FrostedAlertAction(label: 'OK', isDefault: true)],
-      );
-    },
-    transitionBuilder: (ctx, anim, _, child) {
-      // フェード＋わずかなズーム
-      return FadeTransition(
-        opacity: anim,
-        child: ScaleTransition(
-          scale: Tween<double>(begin: 0.95, end: 1.0).animate(
-            CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+  return focusSafe(
+    context,
+    () => showGeneralDialog<void>(
+      context: context,
+      barrierLabel: 'frosted-alert',
+      barrierDismissible: true,
+      barrierColor: Colors.black.withValues(alpha: 0.15),
+      transitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (ctx, anim1, anim2) {
+        return FrostedAlertDialog(
+          title: title,
+          message: message,
+          actions: actions ??
+              const [FrostedAlertAction(label: 'OK', isDefault: true)],
+        );
+      },
+      transitionBuilder: (ctx, anim, _, child) {
+        // フェード＋わずかなズーム
+        return FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.95, end: 1.0).animate(
+              CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+            ),
+            child: child,
           ),
-          child: child,
-        ),
-      );
-    },
+        );
+      },
+    ),
   );
 }
