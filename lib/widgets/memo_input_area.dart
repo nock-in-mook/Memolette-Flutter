@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
@@ -256,6 +257,18 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
   // マークダウンツールバーのOverlay管理
   OverlayEntry? _mdToolbarOverlay;
+
+  // タグ欄フラッシュ (ルーレットでタグ設定した直後に一瞬ハイライト)
+  bool _tagFlashActive = false;
+  Timer? _tagFlashTimer;
+  void _flashTag() {
+    if (!mounted) return;
+    setState(() => _tagFlashActive = true);
+    _tagFlashTimer?.cancel();
+    _tagFlashTimer = Timer(const Duration(milliseconds: 600), () {
+      if (mounted) setState(() => _tagFlashActive = false);
+    });
+  }
 
   void _updateMdToolbarOverlay() {
     final shouldShow = _isMarkdown && _contentFocusNode.hasFocus;
@@ -672,6 +685,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     }
     _mdToolbarOverlay?.remove();
     _mdToolbarOverlay = null;
+    _tagFlashTimer?.cancel();
     _titleController.dispose();
     _contentController.dispose();
     _contentScrollController.dispose();
@@ -1191,6 +1205,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
         }
       });
       _pushUndoIfChanged();
+      _flashTag();
       return;
     }
 
@@ -1213,7 +1228,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     }
     _attachedTags = await db.getTagsForMemo(widget.editingMemoId!);
     _pushUndoIfChanged();
-    setState(() {});
+    if (mounted) setState(() {});
+    _flashTag();
   }
 
   /// ルーレットを開く（収納時のみ）
@@ -1429,8 +1445,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 alignment: Alignment.center,
                 color: Colors.transparent,
-                child: const Icon(Icons.sell, size: 20,
-                    color: Color.fromRGBO(142, 142, 147, 0.6)),
+                child: const Icon(Icons.sell,
+                    size: 20, color: Color.fromRGBO(142, 142, 147, 0.6)),
               ),
             )
           else
@@ -1497,11 +1513,17 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       // 親タグと子タグを4ptめり込ませる（本家 HStack(spacing: -4) 準拠）
       final parentWidget = ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxParentTagWidth),
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
           padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
           decoration: BoxDecoration(
             color: parentColor,
             borderRadius: BorderRadius.circular(CornerRadius.badge),
+            border: Border.all(
+              color: _tagFlashActive ? Colors.orange : Colors.transparent,
+              width: 2,
+            ),
           ),
           child: Text(
             parent.name,
@@ -1515,12 +1537,17 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       );
       final childWidget = ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxChildTagWidth),
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
           padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
           decoration: BoxDecoration(
             color: childColor,
             borderRadius: BorderRadius.circular(CornerRadius.badge),
-            border: Border.all(color: Colors.white, width: 1.5),
+            border: Border.all(
+              color: _tagFlashActive ? Colors.orange : Colors.white,
+              width: _tagFlashActive ? 2 : 1.5,
+            ),
           ),
           child: Text(
             child.name,
@@ -1552,11 +1579,17 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     final maxParentOnly = screenWidth * 0.35;
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxParentOnly),
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
         decoration: BoxDecoration(
           color: parentColor,
           borderRadius: BorderRadius.circular(CornerRadius.badge),
+          border: Border.all(
+            color: _tagFlashActive ? Colors.orange : Colors.transparent,
+            width: 2,
+          ),
         ),
         child: Text(
           parent.name,
