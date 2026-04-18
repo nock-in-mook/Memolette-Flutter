@@ -7,6 +7,7 @@ import '../utils/toast.dart';
 import 'font_lab_screen.dart';
 import 'font_weight_lab_screen.dart';
 import 'icon_lab_screen.dart';
+import 'all_tab_filter_lab_screen.dart';
 import 'maximize_icon_lab_screen.dart';
 import 'settings_icon_lab_screen.dart';
 
@@ -61,6 +62,16 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MaximizeIconLabScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.tune),
+            title: const Text('すべてフィルタタブラボ'),
+            subtitle: const Text('「すべて」タブ上部のフィルタ表示候補を比較'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                  builder: (_) => const AllTabFilterLabScreen()),
             ),
           ),
           ListTile(

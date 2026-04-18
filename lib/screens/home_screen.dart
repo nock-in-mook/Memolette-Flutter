@@ -2068,11 +2068,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // 7. メモグリッド
   // ========================================
   /// 「すべて」タブ専用のサブフィルタバー（件数 + 4ボタン）
+  static const Map<_AllTabSubFilter, IconData> _allTabSubFilterIcons = {
+    _AllTabSubFilter.all: Icons.list_alt,
+    _AllTabSubFilter.frequent: Icons.local_fire_department_outlined,
+    _AllTabSubFilter.recent: Icons.history,
+    _AllTabSubFilter.untagged: Icons.label_off_outlined,
+  };
+
   Widget _buildAllTabSubFilterBar() {
     return SizedBox(
-      height: 40,
+      height: 56,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: Row(
           children: [
             // 件数表示
@@ -2080,55 +2087,54 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               tabKey: _selectedTabKey,
               childTagId: _selectedChildTagId,
             ),
-            const SizedBox(width: 10),
-            // フィルタ：項目を仕切り線で並べ、選択中のみ強調
-            Text(
-              'フィルタ：',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey.shade600,
-              ),
-            ),
+            const SizedBox(width: 8),
             Expanded(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  for (int i = 0; i < _AllTabSubFilter.values.length; i++) ...[
-                    if (i > 0)
-                      Container(
-                        width: 1,
-                        height: 12,
-                        color: Colors.grey.shade300,
-                      ),
-                    Builder(builder: (_) {
-                      final filter = _AllTabSubFilter.values[i];
-                      final selected = _allTabSubFilter == filter;
-                      return GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () =>
-                            setState(() => _allTabSubFilter = filter),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 4),
-                          child: Text(
-                            filter.label,
-                            style: TextStyle(
-                              fontSize: 13,
-                              height: 1.0,
-                              fontWeight: selected
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                              color: selected
-                                  ? const Color(0xFF007AFF)
-                                  : Colors.grey.shade600,
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
-                  ],
+                  for (final filter in _AllTabSubFilter.values)
+                    _buildAllTabSubFilterChip(filter),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAllTabSubFilterChip(_AllTabSubFilter filter) {
+    final selected = _allTabSubFilter == filter;
+    final icon = _allTabSubFilterIcons[filter] ?? Icons.label_outline;
+    const accent = Color(0xFF007AFF);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() => _allTabSubFilter = filter),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: selected ? accent : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: selected ? Colors.white : Colors.grey.shade600,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              filter.label,
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.0,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? Colors.white : Colors.grey.shade600,
               ),
             ),
           ],
