@@ -197,9 +197,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   Future<void> _moveSelectedToTop() async {
     if (_selectedMemoIds.isEmpty) return;
+    final ids = _selectedMemoIds.toList();
+    final count = ids.length;
+    final firstId = ids.first;
     final db = ref.read(databaseProvider);
-    await db.moveMemosToTop(_selectedMemoIds.toList());
-    if (mounted) _exitSelectMode();
+    await db.moveMemosToTop(ids);
+    if (!mounted) return;
+    _exitSelectMode();
+    // フォルダのトップへスクロール + 対象メモを一時ハイライト + トースト
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_memosScrollController.hasClients) {
+        _memosScrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOut,
+        );
+      }
+      setState(() => _highlightedMemoId = firstId);
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (!mounted) return;
+        if (_highlightedMemoId == firstId) {
+          setState(() => _highlightedMemoId = null);
+        }
+      });
+      showToast(context, '$count件をトップに移動しました');
+    });
   }
 
   /// メモグリッドの左右スワイプで隣のタブへ切替
@@ -270,6 +293,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
   // タブバーのスクロール位置を並び替え前後で保持
   final ScrollController _tabBarScrollController = ScrollController();
+  // メモグリッドのスクロールコントローラ（トップ移動後のスクロール制御用）
+  final ScrollController _memosScrollController = ScrollController();
   double _savedTabBarOffset = 0;
   // キャンセル時に戻すための並び替え前のタブ順スナップショット
   List<String>? _savedTabOrder;
@@ -369,6 +394,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void dispose() {
     _drawerCtrl.dispose();
     _tabBarScrollController.dispose();
+    _memosScrollController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
     _folderSearchController.dispose();
@@ -793,9 +819,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
               curve: Curves.easeInOut,
               height: (_isInputExpanded || _isMemoListExpanded || _isInFolderSearch || (_isSearchFocused && !_isSearchActive)) ? 0 : null,
-              clipBehavior: Clip.hardEdge,
+              // 選択モードのバーは Transform で上に食い込むので clip しない
+              clipBehavior: _isSelectMode ? Clip.none : Clip.hardEdge,
               decoration: const BoxDecoration(),
-              child: _isEditingCompact ? _buildEditingBar() : _buildFunctionBar(),
+              child: _isSelectMode
+                  ? _buildSelectModeBar()
+                  : _isEditingCompact
+                      ? _buildEditingBar()
+                      : _buildFunctionBar(),
             ),
             // 4. 親タグタブ（アニメーション付き）
             // 編集コンパクトモード時も非表示（入力中は超シンプルに）
@@ -1191,6 +1222,61 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   // 編集中専用バー（消しゴムのみ）
+  /// 選択モード中のバー（入力欄下、タブ上）: 案内 + 件数を大きな枠付きで表示。
+  /// Transform.translate で上方向にはみ出させ、入力欄に少しかぶせることで
+  /// 「特殊モードに入った」ことを一瞬で伝える。
+  Widget _buildSelectModeBar() {
+    final isDelete = _selectMode == _SelectMode.delete;
+    final accent = isDelete ? Colors.red : const Color(0xFF007AFF);
+    return Transform.translate(
+      offset: const Offset(0, -28),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: accent, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                isDelete
+                    ? '削除するメモを選択してください'
+                    : 'トップに移動するメモを選択してください',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Hiragino Sans',
+                  color: accent,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${_selectedMemoIds.length}件 選択中',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Hiragino Sans',
+                  color: Color(0xFF555555),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildEditingBar() {
     final state = _inputAreaKey.currentState;
     final hasContent = state?.hasContent ?? false;
@@ -1903,27 +1989,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 本家準拠: 高さ37px（drawerBandHeight）。テキストは縦中央に近い位置
     final parentId = _currentParentTagId(parentTags);
     final tabColor = _currentTabColor(parentTags);
-    // 選択モード中はガイドテキストを中央表示
-    if (_isSelectMode) {
-      return Container(
-        height: 37,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        alignment: Alignment.center,
-        child: Text(
-          _selectMode == _SelectMode.delete
-              ? '削除するメモを選択してください'
-              : 'トップに移動するメモを選択してください',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            fontFamily: 'Hiragino Sans',
-            color: _selectMode == _SelectMode.delete
-                ? Colors.red
-                : Colors.blue,
-          ),
-        ),
-      );
-    }
     // 「よく見る」タブは件数の代わりにガイドテキストを中央表示
     if (_isFrequentTab) {
       return Container(
@@ -2077,9 +2142,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         selectedIds: _selectedMemoIds,
         onToggleSelect: _toggleMemoSelection,
         editingMemoId: _editingMemoId,
+        highlightedMemoId: _highlightedMemoId,
         cardHeightReference:
             _isMemoListExpanded ? _normalFolderHeight : null,
         onAvailableHeight: _onFolderAvailableHeight,
+        scrollController: _memosScrollController,
       );
     } else if (_selectedTabKey == kUntaggedTabKey) {
       return _MemoGridView(
@@ -2095,8 +2162,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         selectedIds: _selectedMemoIds,
         onToggleSelect: _toggleMemoSelection,
         editingMemoId: _editingMemoId,
+        highlightedMemoId: _highlightedMemoId,
         cardHeightReference: _isMemoListExpanded ? _normalFolderHeight : null,
         onAvailableHeight: _onFolderAvailableHeight,
+        scrollController: _memosScrollController,
       );
     } else {
       final parentId = _currentParentTagId(parentTags);
@@ -2248,18 +2317,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             child: Container(
               padding: const EdgeInsets.symmetric(
                   horizontal: 28, vertical: 14),
-              decoration: (isDelete && canExecute)
-                  ? BoxDecoration(
-                      color: Colors.red.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(28),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.2),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    )
+              decoration: canExecute
+                  ? (isDelete
+                      ? BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(28),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        )
+                      : BoxDecoration(
+                          color: _capsuleFill,
+                          borderRadius: BorderRadius.circular(28),
+                          border: Border.all(
+                              color: const Color(0xFF007AFF), width: 2),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x26000000),
+                              blurRadius: 3,
+                              offset: Offset(0, 1),
+                            ),
+                          ],
+                        ))
                   : _capsuleDeco(),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -2297,29 +2380,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 「よく見る」タブは特殊: トップに移動 / メモ作成 ボタンを出さない
     final hideMoveToTop = _isFrequentTab;
     final hideCreate = _isFrequentTab || _isAllTab;
+    // 現在タブのメモ件数（0 なら選択モード入りボタンをグレーアウト）
+    int tabMemoCount = 0;
+    if (_selectedTabKey == kAllTabKey) {
+      tabMemoCount = ref.watch(allMemosProvider).valueOrNull?.length ?? 0;
+    } else if (_selectedTabKey == kUntaggedTabKey) {
+      tabMemoCount = ref.watch(untaggedMemosProvider).valueOrNull?.length ?? 0;
+    } else if (_selectedTabKey != kFrequentTabKey) {
+      tabMemoCount = ref
+              .watch(memosForTagProvider(_selectedTabKey))
+              .valueOrNull
+              ?.length ??
+          0;
+    }
+    final hasNoMemos = tabMemoCount == 0;
+    final disabledColor = Colors.grey.withValues(alpha: 0.35);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
         children: [
           // ① ゴミ箱（円形カプセル, padding 10, アイコン17） → 削除選択モードへ
           GestureDetector(
-            onTap: () => _enterSelectMode(_SelectMode.delete),
+            onTap: hasNoMemos ? null : () => _enterSelectMode(_SelectMode.delete),
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: _capsuleDeco(),
-              child: const Icon(CupertinoIcons.delete_simple,
-                  size: 17, color: _secondary),
+              child: Icon(CupertinoIcons.delete_simple,
+                  size: 17,
+                  color: hasNoMemos ? disabledColor : _secondary),
             ),
           ),
           if (!hideMoveToTop) const SizedBox(width: 8),
           // ② トップに移動 → トップ移動選択モードへ
           if (!hideMoveToTop)
             GestureDetector(
-              onTap: () => _enterSelectMode(_SelectMode.moveToTop),
+              onTap: hasNoMemos
+                  ? null
+                  : () => _enterSelectMode(_SelectMode.moveToTop),
               child: Container(
                 padding: const EdgeInsets.all(10),
                 decoration: _capsuleDeco(),
-                child: const MoveToTopIcon(size: 20, color: _secondary),
+                child: MoveToTopIcon(
+                    size: 20,
+                    color: hasNoMemos ? disabledColor : _secondary),
               ),
             ),
           const Spacer(),
@@ -4282,6 +4385,7 @@ class _MemoGridView extends StatelessWidget {
   final void Function(Memo)? onToggleSelect;
 
   final String? editingMemoId;
+  final String? highlightedMemoId;
 
   /// フォルダ最大化時のカード高さ計算用に使う基準高さ。
   /// 指定があると `mainAxisExtent` の計算には constraints.maxHeight ではなくこちらを使う。
@@ -4291,6 +4395,9 @@ class _MemoGridView extends StatelessWidget {
   /// LayoutBuilder で得られた実際の `constraints.maxHeight` を親に通知するコールバック。
   /// 親側は通常モード時の値を保存しておき、最大化時に `cardHeightReference` として戻す。
   final ValueChanged<double>? onAvailableHeight;
+
+  /// スクロール位置を外部から制御するためのコントローラ
+  final ScrollController? scrollController;
 
   const _MemoGridView({
     required this.stream,
@@ -4306,8 +4413,10 @@ class _MemoGridView extends StatelessWidget {
     this.selectedIds = const <String>{},
     this.onToggleSelect,
     this.editingMemoId,
+    this.highlightedMemoId,
     this.cardHeightReference,
     this.onAvailableHeight,
+    this.scrollController,
   });
 
   Widget _buildCard(Memo memo) {
@@ -4349,7 +4458,7 @@ class _MemoGridView extends StatelessWidget {
                     onTap: () {},
                     parentTagId: parentTagId,
                     gridSize: gridSize,
-                    isHighlighted: memo.id == editingMemoId,
+                    isHighlighted: memo.id == editingMemoId || memo.id == highlightedMemoId,
                   ),
                 ),
               ),
@@ -4366,7 +4475,7 @@ class _MemoGridView extends StatelessWidget {
       onDoubleTap: onDoubleTap != null ? () => onDoubleTap!(memo) : null,
       parentTagId: parentTagId,
       gridSize: gridSize,
-      isHighlighted: memo.id == editingMemoId,
+      isHighlighted: memo.id == editingMemoId || memo.id == highlightedMemoId,
     );
     final wrapped = wrapBuilder != null ? wrapBuilder!(memo, card) : card;
     return KeyedSubtree(key: ValueKey('cell_${memo.id}'), child: wrapped);
@@ -4465,6 +4574,7 @@ class _MemoGridView extends StatelessWidget {
               // タイトルのみ: 1列リスト風（コンパクト）
               if (gridSize == GridSizeOption.titleOnly) {
                 return ListView.separated(
+                  controller: scrollController,
                   padding: const EdgeInsets.only(bottom: bottomPad),
                   itemCount: merged.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 2),
@@ -4475,6 +4585,7 @@ class _MemoGridView extends StatelessWidget {
               // 1×可変: 1列、カード高さは内容に追従、本文 max 15行
               if (gridSize == GridSizeOption.grid1flex) {
                 return ListView.separated(
+                  controller: scrollController,
                   padding: const EdgeInsets.only(bottom: bottomPad),
                   itemCount: merged.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
@@ -4494,6 +4605,7 @@ class _MemoGridView extends StatelessWidget {
                 cardHeightReference ?? constraints.maxHeight,
               );
               return GridView.builder(
+                controller: scrollController,
                 padding: EdgeInsets.only(bottom: bottomPad),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: gridSize.columns,
