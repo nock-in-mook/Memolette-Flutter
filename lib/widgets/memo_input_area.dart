@@ -12,6 +12,7 @@ import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
+import '../utils/toast.dart';
 import 'frosted_alert_dialog.dart';
 import 'markdown_text_controller.dart';
 import 'markdown_toolbar.dart';
@@ -572,14 +573,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     }
     // トースト表示
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          duration: const Duration(milliseconds: 1200),
-          content: Text(
-            value ? 'マークダウンモード オン' : 'マークダウンモード オフ',
-          ),
-        ),
-      );
+      showToast(context, value ? 'マークダウンモード オン' : 'マークダウンモード オフ',
+          duration: const Duration(milliseconds: 1200));
     }
   }
 
@@ -619,7 +614,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     }
   }
 
-  // 5万字到達トースト (連射防止: 直近の表示から3秒以内は無視)
+  // 5万字到達ダイアログ (連射防止: 直近の表示から3秒以内は無視)
   DateTime? _lastLimitToastAt;
   void _showLimitReached() {
     final now = DateTime.now();
@@ -629,23 +624,18 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     }
     _lastLimitToastAt = now;
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        duration: Duration(milliseconds: 2000),
-        content: Text('1メモあたり 50,000 文字までです'),
-      ),
+    showFrostedAlert(
+      context: context,
+      title: '文字数の上限に達しました',
+      message: '1メモあたり 50,000 文字までです',
     );
   }
 
   void _copyContent() {
     if (_contentController.text.isEmpty) return;
     Clipboard.setData(ClipboardData(text: _contentController.text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        duration: Duration(milliseconds: 1200),
-        content: Text('コピーしました'),
-      ),
-    );
+    showToast(context, '全文をコピーしました',
+        duration: const Duration(milliseconds: 1200));
   }
 
   @override

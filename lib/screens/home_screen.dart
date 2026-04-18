@@ -15,6 +15,7 @@ import '../providers/database_provider.dart';
 import '../utils/keyboard_done_bar.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
+import '../utils/toast.dart';
 import '../widgets/memo_card.dart';
 import '../widgets/memo_input_area.dart';
 import '../widgets/move_to_top_icon.dart';
@@ -153,12 +154,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   void _toggleMemoSelection(Memo memo) {
     if (memo.isLocked) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          duration: Duration(milliseconds: 1500),
-          content: Text('このメモはロック中です'),
-        ),
-      );
+      showToast(context, 'このメモはロック中です');
       return;
     }
     setState(() {
@@ -1128,106 +1124,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  /// 画面中央にトースト表示（キーボード上でも見える）
-  void _showCenterToast(String message) {
-    final overlay = Overlay.of(context);
-    late OverlayEntry entry;
-    entry = OverlayEntry(builder: (ctx) {
-      return Positioned(
-        top: MediaQuery.of(ctx).size.height * 0.35,
-        left: 40,
-        right: 40,
-        child: IgnorePointer(
-          child: Material(
-            color: Colors.transparent,
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0.0, end: 1.0),
-              duration: const Duration(milliseconds: 200),
-              builder: (_, opacity, child) => Opacity(opacity: opacity, child: child),
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.75),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    message,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      decoration: TextDecoration.none,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    });
-    overlay.insert(entry);
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      entry.remove();
-    });
-  }
-
-  /// 編集コンパクトモード時:「このフォルダにメモを保存」ボタン
-  Widget _buildSaveToFolderButton(List<Tag> parentTags) {
-    // 現在のタブ名を取得
-    String folderName;
-    if (_selectedTabKey == kAllTabKey) {
-      folderName = 'すべて';
-    } else if (_selectedTabKey == kUntaggedTabKey) {
-      folderName = 'タグなし';
-    } else if (_selectedTabKey == kFrequentTabKey) {
-      folderName = 'よく見る';
-    } else {
-      final tag = parentTags.where((t) => t.id == _selectedTabKey).firstOrNull;
-      folderName = tag?.name ?? '';
-    }
-
-    // 特殊タブ（すべて/タグなし/よく見る）ではボタン不要
-    final isSpecialTab = _selectedTabKey == kAllTabKey ||
-        _selectedTabKey == kUntaggedTabKey ||
-        _selectedTabKey == kFrequentTabKey;
-
-    // スワイプでフォルダ切替も受け付ける
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onHorizontalDragEnd: _onSwipeEnd,
-      child: Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: Center(
-          child: isSpecialTab
-              ? const SizedBox.shrink()
-              : _SaveToFolderBtn(
-                  folderName: folderName,
-                  onTap: () async {
-                    // 現在のタブのタグをメモに付与
-                    final memoId = _editingMemoId;
-                    if (memoId == null) return;
-                    final db = ref.read(databaseProvider);
-                    await db.addTagToMemo(memoId, _selectedTabKey);
-                    if (!mounted) return;
-                    // キーボードを閉じる
-                    FocusScope.of(context).unfocus();
-                    // 入力欄を閉じてメモ一覧に戻す
-                    setState(() {
-                      _editingMemoId = null;
-                      _highlightedMemoId = memoId;
-                    });
-                    _inputAreaKey.currentState?.closeMemo();
-                    // トースト表示
-                    _showCenterToast('"$folderName" に保存しました');
-                  },
-                ),
-        ),
       ),
     );
   }
@@ -3169,14 +3065,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         final wasLocked = memo.isLocked;
         await db.updateMemo(id: memo.id, isLocked: !memo.isLocked);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              duration: const Duration(milliseconds: 1500),
-              content: Text(
-                wasLocked ? 'ロックを解除しました' : 'メモをロックしました',
-              ),
-            ),
-          );
+          showToast(context,
+              wasLocked ? 'ロックを解除しました' : 'メモをロックしました');
         }
         break;
       case 'delete':
@@ -3339,14 +3229,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           updatedAt: Value(DateTime.now()),
         ));
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              duration: const Duration(milliseconds: 1500),
-              content: Text(
-                wasLocked ? 'ロックを解除しました' : 'リストをロックしました',
-              ),
-            ),
-          );
+          showToast(context,
+              wasLocked ? 'ロックを解除しました' : 'リストをロックしました');
         }
         break;
       case 'delete':
@@ -3432,63 +3316,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         }
         break;
     }
-  }
-}
-
-// ========================================
-// 「フォルダにメモを保存」ボタン（タップで色反転フィードバック）
-// ========================================
-class _SaveToFolderBtn extends StatefulWidget {
-  final String folderName;
-  final VoidCallback onTap;
-  const _SaveToFolderBtn({required this.folderName, required this.onTap});
-
-  @override
-  State<_SaveToFolderBtn> createState() => _SaveToFolderBtnState();
-}
-
-class _SaveToFolderBtnState extends State<_SaveToFolderBtn> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final bg = _pressed ? Colors.grey[700]! : Colors.white.withValues(alpha: 0.85);
-    final fg = _pressed ? Colors.white : Colors.grey[700]!;
-
-    return GestureDetector(
-      onTap: () async {
-        setState(() => _pressed = true);
-        widget.onTap();
-        await Future.delayed(const Duration(milliseconds: 400));
-        if (mounted) setState(() => _pressed = false);
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: _pressed ? Colors.grey[700]! : Colors.grey.withValues(alpha: 0.3),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.add_circle_outline, size: 18, color: fg),
-            const SizedBox(width: 6),
-            Text(
-              '"${widget.folderName}" にメモを保存',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: fg,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 

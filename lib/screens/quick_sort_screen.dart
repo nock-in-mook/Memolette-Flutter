@@ -11,6 +11,7 @@ import '../providers/database_provider.dart';
 import '../utils/keyboard_done_bar.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
+import '../utils/toast.dart';
 import '../widgets/frosted_alert_dialog.dart';
 import '../widgets/memo_input_area.dart' show EraserGlyph;
 import '../widgets/new_tag_sheet.dart';
@@ -1546,8 +1547,10 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
 
   void _deleteCurrent(Memo memo) {
     if (memo.isLocked) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ロックされているメモは削除できません')),
+      showFrostedAlert(
+        context: context,
+        title: '削除できません',
+        message: 'このメモはロック中です',
       );
       return;
     }

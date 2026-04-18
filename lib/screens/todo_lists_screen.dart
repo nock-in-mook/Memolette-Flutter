@@ -11,6 +11,7 @@ import '../providers/database_provider.dart';
 import '../utils/keyboard_done_bar.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
+import '../utils/toast.dart';
 import '../widgets/trapezoid_tab_shape.dart';
 import 'todo_list_screen.dart';
 
@@ -670,14 +671,8 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
           updatedAt: Value(DateTime.now()),
         ));
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              duration: const Duration(milliseconds: 1500),
-              content: Text(
-                wasLocked ? 'ロックを解除しました' : 'リストをロックしました',
-              ),
-            ),
-          );
+          showToast(context,
+              wasLocked ? 'ロックを解除しました' : 'リストをロックしました');
         }
         break;
       case 'delete':
