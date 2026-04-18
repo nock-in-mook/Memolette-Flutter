@@ -190,9 +190,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ),
     );
     if (confirmed != true || !mounted) return;
+    final ids = _selectedMemoIds.toList();
     final db = ref.read(databaseProvider);
-    await db.deleteMemos(_selectedMemoIds.toList());
-    if (mounted) _exitSelectMode();
+    await db.deleteMemos(ids);
+    if (!mounted) return;
+    // 削除対象に編集中メモが含まれていたら入力欄をクリア
+    if (_editingMemoId != null && ids.contains(_editingMemoId)) {
+      _inputAreaKey.currentState?.closeMemo();
+      setState(() {
+        _editingMemoId = null;
+        _highlightedMemoId = null;
+      });
+    }
+    _exitSelectMode();
   }
 
   Future<void> _moveSelectedToTop() async {
@@ -3244,6 +3254,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         );
         if (confirmed == true) {
           await db.deleteMemo(memo.id);
+          if (!mounted) return;
+          // 削除したメモが入力欄に表示されていたらクリア
+          if (_editingMemoId == memo.id) {
+            _inputAreaKey.currentState?.closeMemo();
+            setState(() {
+              _editingMemoId = null;
+              _highlightedMemoId = null;
+            });
+          }
         }
         break;
     }
