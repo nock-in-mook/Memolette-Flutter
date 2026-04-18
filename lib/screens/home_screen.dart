@@ -1933,7 +1933,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ),
     );
     return GestureDetector(
-      onTap: () => NewTagSheet.show(context: context),
+      onTap: () async {
+        final newTagId = await NewTagSheet.show(context: context);
+        if (newTagId == null || !mounted) return;
+        // 新規作成したフォルダを開いた状態にする
+        setState(() {
+          _selectedTabKey = newTagId;
+          _selectedChildTagId = null;
+          _childDrawerOpen = false;
+        });
+      },
       child: addTab,
     );
   }
@@ -2966,14 +2975,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
       );
       if (confirmed != true || !mounted) return;
+      // 削除前のタブバースクロール位置を保存（削除で先頭に戻るのを防ぐ）
+      final savedOffset = _tabBarScrollController.hasClients
+          ? _tabBarScrollController.offset
+          : 0.0;
+      final nextKey = _neighborTabKey(tag.id);
       await db.deleteTag(tag.id);
       if (mounted) {
         setState(() {
-          _selectedTabKey = kAllTabKey;
-          _childDrawerOpen = false;
-          _selectedChildTagId = null;
+          if (_selectedTabKey == tag.id) {
+            _selectedTabKey = nextKey;
+          }
+          if (_selectedChildTagId == tag.id) {
+            _selectedChildTagId = null;
+            _childDrawerOpen = false;
+          }
         });
-        _animateDrawer(false);
+        // 削除前のスクロール位置を復元
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_tabBarScrollController.hasClients) return;
+          final max = _tabBarScrollController.position.maxScrollExtent;
+          _tabBarScrollController.jumpTo(savedOffset.clamp(0.0, max));
+        });
       }
       return;
     }
@@ -3035,6 +3058,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
     if (confirmed != true || !mounted) return;
 
+    // 削除前のタブバースクロール位置を保存（削除で先頭に戻るのを防ぐ）
+    final savedOffset = _tabBarScrollController.hasClients
+        ? _tabBarScrollController.offset
+        : 0.0;
+    final nextKey = _neighborTabKey(tag.id);
     if (mode == 'withMemos') {
       await db.deleteTagWithMemos(tag.id);
     } else {
@@ -3042,12 +3070,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
     if (mounted) {
       setState(() {
-        _selectedTabKey = kAllTabKey;
-        _childDrawerOpen = false;
-        _selectedChildTagId = null;
+        if (_selectedTabKey == tag.id) {
+          _selectedTabKey = nextKey;
+        }
+        if (_selectedChildTagId == tag.id) {
+          _selectedChildTagId = null;
+          _childDrawerOpen = false;
+        }
       });
-      _animateDrawer(false);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_tabBarScrollController.hasClients) return;
+        final max = _tabBarScrollController.position.maxScrollExtent;
+        _tabBarScrollController.jumpTo(savedOffset.clamp(0.0, max));
+      });
     }
+  }
+
+  /// 削除対象タブの左隣タブキーを返す。左になければ右隣。どちらもなければ kAllTabKey。
+  String _neighborTabKey(String deletingKey) {
+    final order = _tabOrder;
+    if (order == null) return kAllTabKey;
+    final idx = order.indexOf(deletingKey);
+    if (idx < 0) return kAllTabKey;
+    if (idx - 1 >= 0) return order[idx - 1];
+    if (idx + 1 < order.length) return order[idx + 1];
+    return kAllTabKey;
   }
 
   // メモカードを長押し検知付きでラップする（ボトムシート方式）
