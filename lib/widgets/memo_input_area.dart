@@ -690,10 +690,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                   : MemoBgColors.getColor(_bgColorIndex),
               borderRadius: BorderRadius.circular(CornerRadius.card),
               border: Border.all(
-                color: _parentTag != null
-                    ? TagColors.getColor(_parentTag!.colorIndex)
-                        .withValues(alpha: 0.5)
-                    : const Color.fromRGBO(40, 40, 40, 0.55),
+                color: const Color.fromRGBO(40, 40, 40, 0.55),
                 width: 0.5,
               ),
               // \u30B7\u30E3\u30C9\u30A6\u306A\u3057\uFF08Swift\u7248\u6E96\u62E0\uFF09

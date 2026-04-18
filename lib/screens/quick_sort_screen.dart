@@ -2365,12 +2365,6 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
     super.dispose();
   }
 
-  // 親タグの色（ボーダーに使用）
-  Color? get _parentTagColor {
-    final parent = _memoTags.where((t) => t.parentTagId == null).firstOrNull;
-    return parent != null ? TagColors.getColor(parent.colorIndex) : null;
-  }
-
   // 全角換算8文字に丸め（本家 truncatedTagName 準拠）
   String _truncated(String name) {
     var width = 0.0;
@@ -2494,7 +2488,6 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
 
     return LayoutBuilder(builder: (context, constraints) {
       final tabWidth = constraints.maxWidth * tabRatio;
-      final borderColor = _parentTagColor;
 
       // カード全体の外形パスを描画するCustomPaint + 内部レイアウト
       return CustomPaint(
@@ -2505,9 +2498,8 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
               ? const Color(0xFFFFE0B2)
               : const Color(0xFFFFF0DB),
           bodyColor: Colors.white,
-          borderColor: borderColor?.withValues(alpha: 0.4) ??
-              Colors.grey.withValues(alpha: 0.2),
-          borderWidth: 2.5,
+          borderColor: const Color.fromRGBO(40, 40, 40, 0.55),
+          borderWidth: 0.5,
           cornerRadius: 14,
           tabTopRadius: 7,
           tabRootRadius: 9,
@@ -2661,11 +2653,10 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                               horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
                             color: widget.tagFooterColor,
-                            border: Border(
+                            border: const Border(
                               top: BorderSide(
-                                color: _parentTagColor?.withValues(alpha: 0.4) ??
-                                    Colors.grey.withValues(alpha: 0.2),
-                                width: 2.5,
+                                color: Color.fromRGBO(40, 40, 40, 0.5),
+                                width: 0.5,
                               ),
                             ),
                           ),
