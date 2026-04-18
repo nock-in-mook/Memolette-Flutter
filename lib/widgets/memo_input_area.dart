@@ -326,8 +326,17 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     if (widget.editingMemoId != oldWidget.editingMemoId) {
       if (widget.editingMemoId != null) {
         // 自分で作成したメモなら再ロード不要（閲覧モードにしない）
+        // ただしタグは外部（home_screen）から付与された可能性があるので再取得する
         if (widget.editingMemoId == _selfCreatedMemoId) {
           _selfCreatedMemoId = null;
+          final id = widget.editingMemoId!;
+          final db = ref.read(databaseProvider);
+          db.getTagsForMemo(id).then((tags) {
+            if (mounted && widget.editingMemoId == id) {
+              _attachedTags = tags;
+              setState(() {});
+            }
+          });
         } else if (_directLoadApplied) {
           // loadMemoDirectlyで既にロード済み → スキップ
           _directLoadApplied = false;
@@ -371,6 +380,19 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
         _attachedTags = tags;
         setState(() {});
       }
+    });
+  }
+
+  /// メモデータを適用し、編集モードで本文にフォーカスを当てる
+  /// （「このフォルダにメモ作成」ボタンから呼ばれる）
+  void loadMemoAndEdit(Memo memo) {
+    loadMemoDirectly(memo);
+    setState(() => _isViewMode = false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _contentFocusNode.requestFocus();
+      });
     });
   }
 

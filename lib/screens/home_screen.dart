@@ -295,6 +295,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   final ScrollController _tabBarScrollController = ScrollController();
   // メモグリッドのスクロールコントローラ（トップ移動後のスクロール制御用）
   final ScrollController _memosScrollController = ScrollController();
+  // 「このフォルダにメモ作成」ボタン起点の新規作成で、
+  // フォーカス後に MemoInputArea 側が作った空メモへ現在タブのタグを付与するためのフラグ
+  bool _pendingAttachCurrentFolderTags = false;
   double _savedTabBarOffset = 0;
   // キャンセル時に戻すための並び替え前のタブ順スナップショット
   List<String>? _savedTabOrder;
@@ -770,9 +773,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               child: MemoInputArea(
                 key: _inputAreaKey,
                 editingMemoId: _editingMemoId,
-                onMemoCreated: (id) {
+                onMemoCreated: (id) async {
                   _clearSearchIfActive();
-                  setState(() => _editingMemoId = id);
+                  // 「このフォルダにメモ作成」経由なら現在タブのタグを付与
+                  if (_pendingAttachCurrentFolderTags) {
+                    _pendingAttachCurrentFolderTags = false;
+                    final parentId = _currentParentTagId(parentTags);
+                    final db = ref.read(databaseProvider);
+                    if (parentId != null) {
+                      await db.addTagToMemo(id, parentId);
+                    }
+                    if (_selectedChildTagId != null) {
+                      await db.addTagToMemo(id, _selectedChildTagId!);
+                    }
+                  }
+                  if (mounted) setState(() => _editingMemoId = id);
                 },
                 onClosed: () {
                   if (_isInputExpanded && _openedFromMemoList) {
@@ -2651,18 +2666,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Future<void> _createMemoInFolder(List<Tag> parentTags) async {
+    if (_isSelectMode || _isReorderMode) return;
     if (await _checkMemoLimit()) return;
-    final db = ref.read(databaseProvider);
-    final memo = await db.createMemo();
-    // 現在のタブのタグを自動付与
-    final parentId = _currentParentTagId(parentTags);
-    if (parentId != null) {
-      await db.addTagToMemo(memo.id, parentId);
-    }
-    if (_selectedChildTagId != null) {
-      await db.addTagToMemo(memo.id, _selectedChildTagId!);
-    }
-    if (mounted) setState(() => _editingMemoId = memo.id);
+    if (!mounted) return;
+    // 先に入力欄にフォーカス要求（キーボードが出てフォルダが消える）。
+    // 実際のメモ作成とタグ付与は MemoInputArea の先行作成 → onMemoCreated 経由で行う。
+    setState(() {
+      _pendingAttachCurrentFolderTags = true;
+      _editingMemoId = null;
+      _focusInputTrigger++;
+    });
   }
 
   // メモタップ: 全画面エディタへ遷移するのではなく、上部の入力エリアに読み込む
