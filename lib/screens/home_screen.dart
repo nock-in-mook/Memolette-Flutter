@@ -703,6 +703,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             if (_inputAreaKey.currentState?.isRouletteOpen ?? false) {
               _inputAreaKey.currentState?.closeRoulette();
             }
+            // 編集中の枠外タップで編集を抜ける
+            if (_isEditingCompact) {
+              FocusScope.of(context).unfocus();
+            }
           },
           behavior: HitTestBehavior.translucent,
           child: Column(
