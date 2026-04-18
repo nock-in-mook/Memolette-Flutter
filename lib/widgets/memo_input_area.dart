@@ -693,8 +693,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 color: _parentTag != null
                     ? TagColors.getColor(_parentTag!.colorIndex)
                         .withValues(alpha: 0.5)
-                    : const Color.fromRGBO(142, 142, 147, 0.4),
-                width: _parentTag != null ? 2.5 : 1.5,
+                    : const Color.fromRGBO(40, 40, 40, 0.55),
+                width: 0.5,
               ),
               // \u30B7\u30E3\u30C9\u30A6\u306A\u3057\uFF08Swift\u7248\u6E96\u62E0\uFF09
             ),
@@ -710,13 +710,13 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               children: [
                 _buildHeader(),
                 Container(
-                  height: 1,
-                  color: const Color.fromRGBO(142, 142, 147, 0.35),
+                  height: 0.5,
+                  color: const Color.fromRGBO(40, 40, 40, 0.5),
                 ),
                 _buildContent(),
                 Container(
-                  height: 1,
-                  color: const Color.fromRGBO(142, 142, 147, 0.35),
+                  height: 0.5,
+                  color: const Color.fromRGBO(40, 40, 40, 0.5),
                 ),
                 _buildToolbar(),
               ],
@@ -1385,10 +1385,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           ),
           // 縦線セパレータ
           Container(
-            width: 1,
+            width: 0.5,
             height: 24,
             margin: const EdgeInsets.symmetric(horizontal: 6),
-            color: const Color.fromRGBO(142, 142, 147, 0.35),
+            color: const Color.fromRGBO(40, 40, 40, 0.5),
           ),
           // タグ表示エリア
           if (_parentTag == null)
