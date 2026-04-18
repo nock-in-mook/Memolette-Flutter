@@ -158,6 +158,9 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
       if (mounted) Navigator.of(context).pop();
       return;
     }
+    // 念のため save 時にも重複チェック（canSave で弾けているはずの二重防御）
+    final all = ref.read(allTagsProvider).value ?? const <Tag>[];
+    if (_isDuplicate(all)) return;
     // 編集モード
     if (_isEdit) {
       final name = _trimmed;
@@ -334,28 +337,51 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.3)),
+              borderSide: BorderSide(
+                color: duplicate
+                    ? Colors.red
+                    : Colors.grey.withValues(alpha: 0.3),
+                width: duplicate ? 1.5 : 1.0,
+              ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.3)),
+              borderSide: BorderSide(
+                color: duplicate
+                    ? Colors.red
+                    : Colors.grey.withValues(alpha: 0.3),
+                width: duplicate ? 1.5 : 1.0,
+              ),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(
-                color: Colors.grey.withValues(alpha: 0.5),
+                color: duplicate
+                    ? Colors.red
+                    : Colors.grey.withValues(alpha: 0.5),
+                width: duplicate ? 1.5 : 1.0,
               ),
             ),
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            if (duplicate)
-              const Text(
-                '同じ名前のタグが既にあります',
-                style: TextStyle(fontSize: 11, color: Colors.red),
+            if (duplicate) ...[
+              const Icon(Icons.error_outline, size: 14, color: Colors.red),
+              const SizedBox(width: 4),
+              Text(
+                _isChild
+                    ? 'このフォルダ内に同じ名前の子タグが既にあります'
+                    : '同じ名前の親タグが既にあります',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Colors.red,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
+            ],
             const Spacer(),
             Text(
               '${_nameController.text.characters.length}/$_maxNameLength',

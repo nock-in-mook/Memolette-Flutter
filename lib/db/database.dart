@@ -228,13 +228,24 @@ class AppDatabase extends _$AppDatabase {
     return (select(tags)..where((t) => t.id.equals(id))).getSingleOrNull();
   }
 
-  /// タグを新規作成
+  /// タグを新規作成。同じ親 + 同じ名前のタグが既に存在する場合はそれを返し、
+  /// 新規作成はしない（重複防止）。
   Future<Tag> createTag({
     required String name,
     int colorIndex = 1,
     String? parentTagId,
     bool isSystem = false,
   }) async {
+    // 重複チェック（同じ親スコープ内に同名タグがあれば既存を返す）
+    final query = select(tags)..where((t) => t.name.equals(name));
+    if (parentTagId == null) {
+      query.where((t) => t.parentTagId.isNull());
+    } else {
+      query.where((t) => t.parentTagId.equals(parentTagId));
+    }
+    final existing = await query.getSingleOrNull();
+    if (existing != null) return existing;
+
     final id = _uuid.v4();
     // 末尾にsortOrderを設定
     final maxSort = await _maxTagSortOrder(parentTagId);
