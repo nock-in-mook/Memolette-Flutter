@@ -1263,8 +1263,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
           const Spacer(),
           // 中央: 上シェブロン（フォルダ引き上げ）
+          // タップで最大化、上下スワイプでもフォルダタブと同じ挙動
           GestureDetector(
             onTap: () => setState(() => _isMemoListExpanded = true),
+            onVerticalDragEnd: _handleVerticalSwipe,
             behavior: HitTestBehavior.opaque,
             child: const SizedBox(
               width: 56,
@@ -1317,32 +1319,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  /// 上下スワイプ共通ハンドラ（フォルダタブ・機能バーシェブロン共用）
+  /// 上スワイプ: フォルダ最大化 / 下スワイプ: 縮小→入力欄最大化
+  void _handleVerticalSwipe(DragEndDetails details) {
+    if (_isReorderMode || _isSearchActive || _isInFolderSearch) return;
+    final v = details.primaryVelocity ?? 0;
+    if (v.abs() < 100) return;
+    if (v < 0) {
+      // 上スワイプ: フォルダ最大化
+      if (!_isMemoListExpanded) {
+        setState(() {
+          _isMemoListExpanded = true;
+          _isInputExpanded = false;
+        });
+      }
+    } else {
+      // 下スワイプ: フォルダ縮小 or 入力欄最大化
+      if (_isMemoListExpanded) {
+        setState(() => _isMemoListExpanded = false);
+      } else if (!_isInputExpanded) {
+        setState(() => _isInputExpanded = true);
+      }
+    }
+  }
+
   /// タブセクション（フォルダ引き上げ時はシェブロン付き）
   /// 上スワイプ: フォルダ最大化 / 下スワイプ: 縮小→入力欄最大化
   Widget _buildTabSection(AsyncValue<List<Tag>> parentTagsAsync) {
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
-      onVerticalDragEnd: (details) {
-        if (_isReorderMode || _isSearchActive || _isInFolderSearch) return;
-        final v = details.primaryVelocity ?? 0;
-        if (v.abs() < 100) return;
-        if (v < 0) {
-          // 上スワイプ: フォルダ最大化
-          if (!_isMemoListExpanded) {
-            setState(() {
-              _isMemoListExpanded = true;
-              _isInputExpanded = false;
-            });
-          }
-        } else {
-          // 下スワイプ: フォルダ縮小 or 入力欄最大化
-          if (_isMemoListExpanded) {
-            setState(() => _isMemoListExpanded = false);
-          } else if (!_isInputExpanded) {
-            setState(() => _isInputExpanded = true);
-          }
-        }
-      },
+      onVerticalDragEnd: _handleVerticalSwipe,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
