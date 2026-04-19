@@ -345,8 +345,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   /// 完了ボタン（KeyboardDoneBar）がカスタムツールバー群の上に出るよう、
   /// 現在表示中のオーバーレイ合計高さを通知
   void _syncAccessoryHeight() {
-    // Our toolbar overlay (53px) + MD toolbar (44px) のうち、表示されてる分だけ足す
-    final ourToolbar = (widget.isExpanded && _isInputFocused) ? 53.0 : 0.0;
+    // Our toolbar overlay (46px) + MD toolbar (44px) のうち、表示されてる分だけ足す
+    final ourToolbar = (widget.isExpanded && _isInputFocused) ? 46.0 : 0.0;
     final mdToolbar = (_isMarkdown && _isInputFocused) ? 44.0 : 0.0;
     KeyboardDoneBar.accessoryHeight.value = ourToolbar + mdToolbar;
   }
@@ -758,8 +758,16 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     }
     // トースト表示
     if (mounted) {
-      showToast(context, value ? 'マークダウンモード オン' : 'マークダウンモード オフ',
-          duration: const Duration(milliseconds: 1200));
+      if (value) {
+        showToast(
+          context,
+          'マークダウンモード オン\nボタンまたは左右フリックでプレビュー切替',
+          duration: const Duration(milliseconds: 2400),
+        );
+      } else {
+        showToast(context, 'マークダウンモード オフ',
+            duration: const Duration(milliseconds: 1200));
+      }
     }
   }
 
@@ -921,28 +929,31 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
   Widget _buildPreviewButton() {
     final isOn = _showMarkdownPreview;
-    final color = isOn ? Colors.orange : Colors.grey.shade500;
+    final accent = Colors.orange;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
-        if (!_showMarkdownPreview) {
-          FocusScope.of(context).unfocus();
+        if (_showMarkdownPreview) {
+          _exitPreview();
+        } else {
+          _enterPreview();
         }
-        setState(() => _showMarkdownPreview = !_showMarkdownPreview);
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color, width: 1),
-          color: Colors.white,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+              color: isOn ? accent : Colors.grey.shade500, width: 1),
+          // ON時はオレンジ塗りつぶしで目立たせる
+          color: isOn ? accent : Colors.white,
         ),
         child: Text(
           'プレビュー',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.bold,
-            color: color,
+            color: isOn ? Colors.white : Colors.grey.shade500,
           ),
         ),
       ),
@@ -1794,6 +1805,36 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   /// ソース文字オフセットへマッピングするのに使う
   double _lastPreviewTapY = 0;
 
+  /// プレビューに入る直前のカーソル位置（シリアライズ本文の文字 offset）
+  /// 編集→プレビュー→編集 と戻った際にカーソルを元の位置に復元する用途
+  int? _savedSourceOffsetBeforePreview;
+
+  /// プレビューに切り替え（カーソル位置を保存 + キーボード閉じ）
+  void _enterPreview() {
+    if (!_isMarkdown) return;
+    _savedSourceOffsetBeforePreview =
+        _blockEditorKey.currentState?.currentSourceOffset;
+    FocusScope.of(context).unfocus();
+    setState(() => _showMarkdownPreview = true);
+  }
+
+  /// プレビューを抜ける。カーソル復元のロジック:
+  /// - fallbackOffset（プレビュー本文タップから渡される）が優先。明示的な
+  ///   「ここを編集したい」意思とみなす
+  /// - なければ保存済みカーソル（プレビュー入る前に編集中だった場合）
+  /// - どちらもなければ閲覧モードのまま（フォーカスしない／キーボード出ない）
+  void _exitPreview({int? fallbackOffset}) {
+    final targetOffset = fallbackOffset ?? _savedSourceOffsetBeforePreview;
+    _savedSourceOffsetBeforePreview = null;
+    setState(() {
+      _showMarkdownPreview = false;
+      if (targetOffset != null) _isViewMode = false;
+    });
+    if (targetOffset != null) {
+      _blockEditorKey.currentState?.focusAtSourceOffset(targetOffset);
+    }
+  }
+
   /// プレビュー Y 座標をおおまかな行 index に落とし、ソースの文字 offset を返す
   /// - 見出し・画像・ブロック間隔までは正確に扱わず、プレーンテキスト想定で概算
   int _sourceOffsetFromPreviewY(double tapY) {
@@ -1854,8 +1895,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       for (final img in imagesList) img.id: img.filePath,
     };
     final raw = _contentController.text;
-    final previewData = raw.isEmpty
-        ? '*タップで編集に戻る*'
+    // 本文が空: MarkdownBody ではなく薄いプレースホルダーを直接出す
+    final isEmpty = raw.isEmpty;
+    final previewData = isEmpty
+        ? ''
         : raw.replaceAllMapped(
             RegExp('\uFFFC([^\uFFFC]+)\uFFFC'),
             (m) => '\n\n![](memolette:${m.group(1)})\n\n',
@@ -1867,20 +1910,27 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           _lastPreviewTapY = details.localPosition.dy;
         },
         onTap: () {
-          // BlockEditor は裏で mount 継続しているので即 focus OK
-          setState(() {
-            _showMarkdownPreview = false;
-            _isViewMode = false;
-          });
-          final offset = _sourceOffsetFromPreviewY(_lastPreviewTapY);
-          _blockEditorKey.currentState?.focusAtSourceOffset(offset);
+          // 保存済みカーソルがあればそこに戻す、なければタップ位置から近似
+          _exitPreview(
+            fallbackOffset: _sourceOffsetFromPreviewY(_lastPreviewTapY),
+          );
         },
         child: Container(
           color: Colors.white,
           child: SingleChildScrollView(
             // BlockEditor 側は外側 9 + ブロック内 2 = 上 11px から始まるので揃える
             padding: const EdgeInsets.fromLTRB(9, 11, 9, 20),
-            child: Builder(builder: (ctx) {
+            child: isEmpty
+                ? Text(
+                    'プレビュー中（タップで編集に戻る）',
+                    style: TextStyle(
+                      fontSize: 16,
+                      height: 1.25,
+                      fontFamily: 'PingFang JP',
+                      color: Colors.grey.withValues(alpha: 0.4),
+                    ),
+                  )
+                : Builder(builder: (ctx) {
               // MarkdownBody 1回の build に対してチェックボックスの通し番号をカウントし、
               // タップしたら同じ順番の [ ] / [x] を _contentController 側でトグルする
               var checkboxIdx = 0;
@@ -1994,14 +2044,33 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   Widget _buildContent() {
     // BlockEditor は常時マウント。プレビューモードは Stack で上に重ねる
     // （こうすることでプレビュータップから1タップで編集に戻れて focus も立つ）
+    // 左右フリックで preview ↔ edit を切り替える（MDモード時のみ）
     return Flexible(
-      child: Stack(
-        children: [
-          _buildEditArea(),
-          if (_isMarkdown && _showMarkdownPreview) _buildPreviewOverlay(),
-        ],
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragEnd: _onBodyHorizontalDragEnd,
+        child: Stack(
+          children: [
+            _buildEditArea(),
+            if (_isMarkdown && _showMarkdownPreview) _buildPreviewOverlay(),
+          ],
+        ),
       ),
     );
+  }
+
+  /// 本文欄の左右フリック: 一定以上の横速度で preview ↔ edit をトグル。
+  /// 閾値は遅めのスワイプで text selection と競合しないよう高めに設定。
+  /// 方向は問わない（どちらにフリックしてもトグル）
+  void _onBodyHorizontalDragEnd(DragEndDetails details) {
+    if (!_isMarkdown) return;
+    final v = (details.primaryVelocity ?? 0).abs();
+    if (v < 700) return;
+    if (_showMarkdownPreview) {
+      _exitPreview();
+    } else {
+      _enterPreview();
+    }
   }
 
   Widget _buildEditArea() {
@@ -2072,8 +2141,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     final isEditing = _isInputFocused || compact;
     final inViewMode = !isEditing;
     return Container(
-      constraints: const BoxConstraints(minHeight: 41),
-      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+      constraints: const BoxConstraints(minHeight: 36),
+      padding: const EdgeInsets.fromLTRB(10, 3, 10, 3),
       child: Row(
         children: [
           Builder(builder: (_) {

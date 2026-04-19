@@ -117,6 +117,27 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
     last.focusNode.requestFocus();
   }
 
+  /// 現在フォーカス中の TextBlock から、シリアライズ本文における文字 offset を算出。
+  /// プレビュー突入前に記録しておき、復帰時に focusAtSourceOffset で復元する用途。
+  int? get currentSourceOffset {
+    var cursor = 0;
+    for (final b in _blocks) {
+      if (b is _TextBlock) {
+        if (b.focusNode.hasFocus) {
+          final sel = b.controller.selection;
+          final offset = sel.baseOffset < 0
+              ? b.controller.text.length
+              : sel.baseOffset;
+          return cursor + offset;
+        }
+        cursor += b.controller.text.length;
+      } else if (b is _ImageBlock) {
+        cursor += '$_marker${b.image.id}$_marker'.length;
+      }
+    }
+    return null;
+  }
+
   /// シリアライズ後の本文における character offset にカーソルを合わせる。
   /// プレビューのタップ位置から逆引きして編集位置を合わせるときに使う。
   /// 画像マーカーに当たった場合はその直後の TextBlock の先頭に寄せる。

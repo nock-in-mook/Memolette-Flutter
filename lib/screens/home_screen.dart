@@ -275,21 +275,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     _scrollTabBarToSelected(next);
   }
 
-  /// 選択されたタブが画面内に見えるようにタブバーを自動スクロール
+  /// 選択されたタブが画面内に見えるようにタブバーを自動スクロール。
+  /// 画面内に既に見えているタブはそのまま。画面外のタブだけ最小限スクロールして
+  /// ギリギリ見える位置に移動させる（中央には寄せない）。
   void _scrollTabBarToSelected(int selectedIndex) {
     if (!_tabBarScrollController.hasClients) return;
-    // 各タブの幅を概算（表示名最大5文字+padding 28px、平均約80px）
     const estimatedTabWidth = 80.0;
     final screenWidth = MediaQuery.of(context).size.width;
-    // 選択タブの中央が画面中央に来るようにスクロール
-    final targetOffset =
-        (selectedIndex * estimatedTabWidth) - (screenWidth / 2) + (estimatedTabWidth / 2);
-    final clampedOffset = targetOffset.clamp(
-      0.0,
-      _tabBarScrollController.position.maxScrollExtent,
-    );
+    final currentOffset = _tabBarScrollController.offset;
+    final maxOffset = _tabBarScrollController.position.maxScrollExtent;
+
+    final tabLeft = selectedIndex * estimatedTabWidth;
+    final tabRight = tabLeft + estimatedTabWidth;
+    final viewLeft = currentOffset;
+    final viewRight = currentOffset + screenWidth;
+
+    double target;
+    if (tabLeft < viewLeft) {
+      // 左にはみ出し: 左端に寄せる
+      target = tabLeft;
+    } else if (tabRight > viewRight) {
+      // 右にはみ出し: 右端に寄せる
+      target = tabRight - screenWidth;
+    } else {
+      // 画面内にある → 動かさない
+      return;
+    }
+
     _tabBarScrollController.animateTo(
-      clampedOffset,
+      target.clamp(0.0, maxOffset),
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOut,
     );
@@ -2109,11 +2123,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: Row(
           children: [
-            // 件数表示（フィルタ連動）
-            _MemoCountText(
-              tabKey: _selectedTabKey,
-              childTagId: _selectedChildTagId,
-              subFilter: _allTabSubFilter,
+            // 件数表示（フィルタ連動）— 桁数でボタン位置がずれないよう幅固定
+            SizedBox(
+              width: 60,
+              child: _MemoCountText(
+                tabKey: _selectedTabKey,
+                childTagId: _selectedChildTagId,
+                subFilter: _allTabSubFilter,
+              ),
             ),
             const SizedBox(width: 8),
             Expanded(
