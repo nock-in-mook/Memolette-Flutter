@@ -117,6 +117,46 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
     last.focusNode.requestFocus();
   }
 
+  /// シリアライズ後の本文における character offset にカーソルを合わせる。
+  /// プレビューのタップ位置から逆引きして編集位置を合わせるときに使う。
+  /// 画像マーカーに当たった場合はその直後の TextBlock の先頭に寄せる。
+  void focusAtSourceOffset(int targetOffset) {
+    var cursor = 0;
+    for (var i = 0; i < _blocks.length; i++) {
+      final b = _blocks[i];
+      if (b is _TextBlock) {
+        final len = b.controller.text.length;
+        if (cursor + len >= targetOffset) {
+          final within =
+              (targetOffset - cursor).clamp(0, len).toInt();
+          b.controller.selection =
+              TextSelection.collapsed(offset: within);
+          b.focusNode.requestFocus();
+          return;
+        }
+        cursor += len;
+      } else if (b is _ImageBlock) {
+        final markerLen = '$_marker${b.image.id}$_marker'.length;
+        if (cursor + markerLen >= targetOffset) {
+          // マーカー内 → 直後の TextBlock の先頭に
+          for (var j = i + 1; j < _blocks.length; j++) {
+            final nb = _blocks[j];
+            if (nb is _TextBlock) {
+              nb.controller.selection =
+                  const TextSelection.collapsed(offset: 0);
+              nb.focusNode.requestFocus();
+              return;
+            }
+          }
+          focusLast();
+          return;
+        }
+        cursor += markerLen;
+      }
+    }
+    focusLast();
+  }
+
   /// 画像ピッカー → 圧縮 → DB保存 → カーソル位置に挿入
   Future<void> insertImageFromPicker(ImageSource source) async {
     final picker = ImagePicker();

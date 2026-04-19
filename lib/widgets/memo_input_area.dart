@@ -1790,6 +1790,27 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     leadingDistribution: TextLeadingDistribution.even,
   );
 
+  /// プレビュータップ時の Y 座標（ローカル）を記録しておき、編集戻り時に
+  /// ソース文字オフセットへマッピングするのに使う
+  double _lastPreviewTapY = 0;
+
+  /// プレビュー Y 座標をおおまかな行 index に落とし、ソースの文字 offset を返す
+  /// - 見出し・画像・ブロック間隔までは正確に扱わず、プレーンテキスト想定で概算
+  int _sourceOffsetFromPreviewY(double tapY) {
+    const lineHeight = 20.0;
+    const topPadding = 11.0;
+    final lineIndex = ((tapY - topPadding) / lineHeight).floor();
+    if (lineIndex <= 0) return 0;
+    final text = _contentController.text;
+    final lines = text.split('\n');
+    if (lineIndex >= lines.length) return text.length;
+    var offset = 0;
+    for (var i = 0; i < lineIndex; i++) {
+      offset += lines[i].length + 1; // +1 for '\n'
+    }
+    return offset;
+  }
+
   /// プレビュー中の N 番目のチェックボックス ([ ] / [x]) を本文側でトグル
   void _togglePreviewCheckbox(int index) {
     final text = _contentController.text;
@@ -1821,35 +1842,41 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _onChanged();
   }
 
-  Widget _buildContent() {
-    // プレビューモード: マークダウン描画を表示（タップでエディタに戻す）
-    if (_isMarkdown && _showMarkdownPreview) {
-      // BlockEditor のマーカー (\uFFFC<id>\uFFFC) を Markdown の画像タグ
-      // ![](memolette:<id>) に置換して flutter_markdown に食わせる。
-      // imageBuilder で memo_images テーブルから実パスを引いて Image.file 描画。
-      final memoIdForImages =
-          widget.editingMemoId ?? _selfCreatedMemoId;
-      final imagesList = memoIdForImages == null
-          ? const <MemoImage>[]
-          : (ref.watch(memoImagesProvider(memoIdForImages)).valueOrNull ??
-              const <MemoImage>[]);
-      final imgPathById = {
-        for (final img in imagesList) img.id: img.filePath,
-      };
-      final raw = _contentController.text;
-      final previewData = raw.isEmpty
-          ? '*タップで編集に戻る*'
-          : raw.replaceAllMapped(
-              RegExp('\uFFFC([^\uFFFC]+)\uFFFC'),
-              (m) => '\n\n![](memolette:${m.group(1)})\n\n',
-            );
-      return Expanded(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () {
-            setState(() => _showMarkdownPreview = false);
-            _enterEditMode(focusContent: true);
-          },
+  /// プレビュー描画部分（Stack で BlockEditor の上に重ねる）。
+  /// BlockEditor は裏でマウント継続しているので、タップで即 focusFirst できる。
+  Widget _buildPreviewOverlay() {
+    final memoIdForImages = widget.editingMemoId ?? _selfCreatedMemoId;
+    final imagesList = memoIdForImages == null
+        ? const <MemoImage>[]
+        : (ref.watch(memoImagesProvider(memoIdForImages)).valueOrNull ??
+            const <MemoImage>[]);
+    final imgPathById = {
+      for (final img in imagesList) img.id: img.filePath,
+    };
+    final raw = _contentController.text;
+    final previewData = raw.isEmpty
+        ? '*タップで編集に戻る*'
+        : raw.replaceAllMapped(
+            RegExp('\uFFFC([^\uFFFC]+)\uFFFC'),
+            (m) => '\n\n![](memolette:${m.group(1)})\n\n',
+          );
+    return Positioned.fill(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (details) {
+          _lastPreviewTapY = details.localPosition.dy;
+        },
+        onTap: () {
+          // BlockEditor は裏で mount 継続しているので即 focus OK
+          setState(() {
+            _showMarkdownPreview = false;
+            _isViewMode = false;
+          });
+          final offset = _sourceOffsetFromPreviewY(_lastPreviewTapY);
+          _blockEditorKey.currentState?.focusAtSourceOffset(offset);
+        },
+        child: Container(
+          color: Colors.white,
           child: SingleChildScrollView(
             // BlockEditor 側は外側 9 + ブロック内 2 = 上 11px から始まるので揃える
             padding: const EdgeInsets.fromLTRB(9, 11, 9, 20),
@@ -1960,13 +1987,25 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             }),
           ),
         ),
-      );
-    }
+      ),
+    );
+  }
 
-    // エディタモード (Phase 10++ ブロックエディタ実験)
-    // BlockEditor が TextField と画像ブロックを縦並びで描画する
+  Widget _buildContent() {
+    // BlockEditor は常時マウント。プレビューモードは Stack で上に重ねる
+    // （こうすることでプレビュータップから1タップで編集に戻れて focus も立つ）
     return Flexible(
-      child: MediaQuery(
+      child: Stack(
+        children: [
+          _buildEditArea(),
+          if (_isMarkdown && _showMarkdownPreview) _buildPreviewOverlay(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEditArea() {
+    return MediaQuery(
         data: MediaQuery.of(context).copyWith(viewInsets: EdgeInsets.zero),
         child: LayoutBuilder(builder: (context, constraints) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2024,7 +2063,6 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           ),
         );
       }),
-      ),
     );
   }
 
