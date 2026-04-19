@@ -131,29 +131,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   double? _expandedFolderHeight;
   // フォルダ並び替えモード
   bool _isReorderMode = false;
-  // メモ複数選択モード（削除 or トップに移動）
+  // メモ・ToDo複数選択モード（削除 or トップに移動）
   _SelectMode _selectMode = _SelectMode.none;
   final Set<String> _selectedMemoIds = <String>{};
+  final Set<String> _selectedTodoIds = <String>{};
   bool get _isSelectMode => _selectMode != _SelectMode.none;
+  int get _selectedCount => _selectedMemoIds.length + _selectedTodoIds.length;
   bool get _isFrequentTab => _selectedTabKey == kFrequentTabKey;
   bool get _isAllTab => _selectedTabKey == kAllTabKey;
+
+  /// setStateブロック内で呼ぶ前提。選択モード解除＋選択集合クリア。
+  void _resetSelection() {
+    _selectMode = _SelectMode.none;
+    _selectedMemoIds.clear();
+    _selectedTodoIds.clear();
+  }
 
   void _enterSelectMode(_SelectMode mode) {
     setState(() {
       _selectMode = mode;
       _selectedMemoIds.clear();
+      _selectedTodoIds.clear();
     });
   }
 
   void _exitSelectMode() {
-    setState(() {
-      _selectMode = _SelectMode.none;
-      _selectedMemoIds.clear();
-    });
+    setState(_resetSelection);
   }
 
   void _toggleMemoSelection(Memo memo) {
-    if (memo.isLocked) {
+    // ロックは削除防止のためなので、削除モードの時だけブロックする
+    if (_selectMode == _SelectMode.delete && memo.isLocked) {
       showToast(context, 'このメモはロック中です');
       return;
     }
@@ -166,15 +174,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     });
   }
 
+  void _toggleTodoSelection(TodoList list) {
+    if (_selectMode == _SelectMode.delete && list.isLocked) {
+      showToast(context, 'このToDoはロック中です');
+      return;
+    }
+    setState(() {
+      if (_selectedTodoIds.contains(list.id)) {
+        _selectedTodoIds.remove(list.id);
+      } else {
+        _selectedTodoIds.add(list.id);
+      }
+    });
+  }
+
   Future<void> _confirmDeleteSelected() async {
-    final count = _selectedMemoIds.length;
+    final count = _selectedCount;
     if (count == 0) return;
     final confirmed = await focusSafe(
       context,
       () => showCupertinoDialog<bool>(
         context: context,
         builder: (ctx) => CupertinoAlertDialog(
-          title: Text('$count件のメモを削除します。よろしいですか？'),
+          title: Text('$count件を削除します。よろしいですか？'),
           actions: [
             CupertinoDialogAction(
               onPressed: () => Navigator.pop(ctx, false),
@@ -190,12 +212,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ),
     );
     if (confirmed != true || !mounted) return;
-    final ids = _selectedMemoIds.toList();
+    final memoIds = _selectedMemoIds.toList();
+    final todoIds = _selectedTodoIds.toList();
     final db = ref.read(databaseProvider);
-    await db.deleteMemos(ids);
+    if (memoIds.isNotEmpty) await db.deleteMemos(memoIds);
+    for (final id in todoIds) {
+      await (db.delete(db.todoLists)..where((t) => t.id.equals(id))).go();
+    }
     if (!mounted) return;
     // 削除対象に編集中メモが含まれていたら入力欄をクリア
-    if (_editingMemoId != null && ids.contains(_editingMemoId)) {
+    if (_editingMemoId != null && memoIds.contains(_editingMemoId)) {
       _inputAreaKey.currentState?.closeMemo();
       setState(() {
         _editingMemoId = null;
@@ -206,14 +232,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Future<void> _moveSelectedToTop() async {
-    if (_selectedMemoIds.isEmpty) return;
-    final ids = _selectedMemoIds.toList();
-    final count = ids.length;
+    if (_selectedCount == 0) return;
+    final memoIds = _selectedMemoIds.toList();
+    final todoIds = _selectedTodoIds.toList();
+    final count = memoIds.length + todoIds.length;
     final db = ref.read(databaseProvider);
-    await db.moveMemosToTop(ids);
+    await db.moveItemsToTop(memoIds: memoIds, todoListIds: todoIds);
     if (!mounted) return;
     _exitSelectMode();
-    // フォルダのトップへスクロール + 対象メモを一時ハイライト + トースト
+    // フォルダのトップへスクロール + 対象を一時ハイライト + トースト
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (_memosScrollController.hasClients) {
@@ -223,7 +250,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           curve: Curves.easeOut,
         );
       }
-      _flashMemos(ids);
+      _flashItems([...memoIds, ...todoIds]);
       showToast(context, '$count件をトップに移動しました');
     });
   }
@@ -242,8 +269,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       _selectedTabKey = order[next];
       _selectedChildTagId = null;
       _childDrawerOpen = false;
-      _selectMode = _SelectMode.none;
-      _selectedMemoIds.clear();
+      _resetSelection();
     });
     _animateDrawer(false);
     _scrollTabBarToSelected(next);
@@ -338,7 +364,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // 最後にタップしたメモのID（薄水色ハイライト用）
   String? _highlightedMemoId;
   // 操作直後のフラッシュ対象（複数同時可）
-  final Set<String> _flashingMemoIds = <String>{};
+  final Set<String> _flashingItemIds = <String>{};
   // フラッシュの強度 (0.0 = 透明 / 1.0 = フル)。アニメーションでジワッと変化させる
   double _flashLevel = 0;
 
@@ -368,8 +394,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       _folderSearchTagName = tag?.name ?? '';
       _folderSearchQuery = '';
       _folderSearchController.clear();
-      _selectMode = _SelectMode.none;
-      _selectedMemoIds.clear();
+      _resetSelection();
     });
   }
 
@@ -1273,8 +1298,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             children: [
               Text(
                 isDelete
-                    ? '削除するメモを選択してください'
-                    : 'トップに移動するメモを選択してください',
+                    ? '削除するメモ/ToDoを選択してください'
+                    : 'トップに移動するメモ/ToDoを選択してください',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -1284,7 +1309,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
               const SizedBox(height: 4),
               Text(
-                '${_selectedMemoIds.length}件 選択中',
+                '$_selectedCount件 選択中',
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -1458,8 +1483,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               _selectedTabKey = kFrequentTabKey;
               _childDrawerOpen = false;
               _selectedChildTagId = null;
-              _selectMode = _SelectMode.none;
-              _selectedMemoIds.clear();
+              _resetSelection();
             });
             _animateDrawer(false);
           },
@@ -1468,8 +1492,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               _selectedTabKey = kFrequentTabKey;
               _childDrawerOpen = false;
               _selectedChildTagId = null;
-              _selectMode = _SelectMode.none;
-              _selectedMemoIds.clear();
+              _resetSelection();
             });
             _animateDrawer(false);
             _showSpecialTabActions(ctx, specialKind: _SpecialKind.frequent);
@@ -1493,8 +1516,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               _selectedTabKey = kAllTabKey;
               _childDrawerOpen = false;
               _selectedChildTagId = null;
-              _selectMode = _SelectMode.none;
-              _selectedMemoIds.clear();
+              _resetSelection();
             });
             _animateDrawer(false);
           },
@@ -1523,8 +1545,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               _selectedTabKey = kUntaggedTabKey;
               _childDrawerOpen = false;
               _selectedChildTagId = null;
-              _selectMode = _SelectMode.none;
-              _selectedMemoIds.clear();
+              _resetSelection();
             });
             _animateDrawer(false);
           },
@@ -1554,8 +1575,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             _selectedTabKey = key;
             _selectedChildTagId = null;
             _childDrawerOpen = false;
-            _selectMode = _SelectMode.none;
-            _selectedMemoIds.clear();
+            _resetSelection();
           });
           _animateDrawer(false);
         },
@@ -1564,8 +1584,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             _selectedTabKey = key;
             _selectedChildTagId = null;
             _childDrawerOpen = false;
-            _selectMode = _SelectMode.none;
-            _selectedMemoIds.clear();
+            _resetSelection();
           });
           _animateDrawer(false);
           _showTagActionsFromContext(ctx, tag);
@@ -2176,11 +2195,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         onTodoLongPress: _showTodoActions,
         wrapBuilder: (memo, card) => _wrapMemoInContextMenu(memo, card),
         selectMode: _isSelectMode,
+        isDeleteSelectMode: _selectMode == _SelectMode.delete,
         selectedIds: _selectedMemoIds,
+        selectedTodoIds: _selectedTodoIds,
         onToggleSelect: _toggleMemoSelection,
+        onToggleTodoSelect: _toggleTodoSelection,
         editingMemoId: _editingMemoId,
         highlightedMemoId: _highlightedMemoId,
-        flashingMemoIds: _flashingMemoIds,
+        flashingItemIds: _flashingItemIds,
         flashLevel: _flashLevel,
         cardHeightReference:
             _isMemoListExpanded ? _normalFolderHeight : null,
@@ -2198,11 +2220,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         onTodoLongPress: _showTodoActions,
         wrapBuilder: (memo, card) => _wrapMemoInContextMenu(memo, card),
         selectMode: _isSelectMode,
+        isDeleteSelectMode: _selectMode == _SelectMode.delete,
         selectedIds: _selectedMemoIds,
+        selectedTodoIds: _selectedTodoIds,
         onToggleSelect: _toggleMemoSelection,
+        onToggleTodoSelect: _toggleTodoSelection,
         editingMemoId: _editingMemoId,
         highlightedMemoId: _highlightedMemoId,
-        flashingMemoIds: _flashingMemoIds,
+        flashingItemIds: _flashingItemIds,
         flashLevel: _flashLevel,
         cardHeightReference: _isMemoListExpanded ? _normalFolderHeight : null,
         onAvailableHeight: _onFolderAvailableHeight,
@@ -2219,21 +2244,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         onTap: _openMemo,
         onDoubleTap: _openMemoExpanded,
         onTodoTap: _openTodoList,
+        onTodoLongPress: _showTodoActions,
         // 親タグフォルダ表示時のみ子タグバッジ用にIDを渡す
         parentTagId: parentId,
         selectMode: _isSelectMode,
+        isDeleteSelectMode: _selectMode == _SelectMode.delete,
         selectedIds: _selectedMemoIds,
+        selectedTodoIds: _selectedTodoIds,
         onToggleSelect: _toggleMemoSelection,
+        onToggleTodoSelect: _toggleTodoSelection,
         editingMemoId: _editingMemoId,
+        highlightedMemoId: _highlightedMemoId,
+        flashingItemIds: _flashingItemIds,
+        flashLevel: _flashLevel,
         wrapBuilder: (memo, card) => _wrapMemoInContextMenu(memo, card),
         cardHeightReference: _isMemoListExpanded ? _normalFolderHeight : null,
         onAvailableHeight: _onFolderAvailableHeight,
+        scrollController: _memosScrollController,
       );
     }
   }
 
   /// ToDoリストを開く
   void _openTodoList(TodoList list) {
+    // 選択モード中はカードタップを選択トグルに振り替え（編集に入らない）
+    if (_isSelectMode) {
+      _toggleTodoSelection(list);
+      return;
+    }
+    if (_isReorderMode) return;
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (_, _, _) => TodoListScreen(listId: list.id),
@@ -2313,7 +2352,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   // 選択モード中のボトムバー: 中央に大きな取消 + 実行ボタンを並べる
   Widget _buildSelectModeBottomBar() {
-    final canExecute = _selectedMemoIds.isNotEmpty;
+    final canExecute = _selectedCount > 0;
     final isDelete = _selectMode == _SelectMode.delete;
     return Center(
       child: Row(
@@ -2421,20 +2460,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 「よく見る」タブは特殊: トップに移動 / メモ作成 ボタンを出さない
     final hideMoveToTop = _isFrequentTab;
     final hideCreate = _isFrequentTab || _isAllTab;
-    // 現在タブのメモ件数（0 なら選択モード入りボタンをグレーアウト）
-    int tabMemoCount = 0;
+    // 現在タブのメモ + ToDo 件数（0 なら選択モード入りボタンをグレーアウト）
+    int tabItemCount = 0;
     if (_selectedTabKey == kAllTabKey) {
-      tabMemoCount = ref.watch(allMemosProvider).valueOrNull?.length ?? 0;
+      tabItemCount = (ref.watch(allMemosProvider).valueOrNull?.length ?? 0) +
+          (ref.watch(allTodoListsProvider).valueOrNull?.length ?? 0);
     } else if (_selectedTabKey == kUntaggedTabKey) {
-      tabMemoCount = ref.watch(untaggedMemosProvider).valueOrNull?.length ?? 0;
+      tabItemCount =
+          (ref.watch(untaggedMemosProvider).valueOrNull?.length ?? 0) +
+              (ref.watch(untaggedTodoListsProvider).valueOrNull?.length ?? 0);
     } else if (_selectedTabKey != kFrequentTabKey) {
-      tabMemoCount = ref
-              .watch(memosForTagProvider(_selectedTabKey))
-              .valueOrNull
-              ?.length ??
-          0;
+      tabItemCount = (ref
+                  .watch(memosForTagProvider(_selectedTabKey))
+                  .valueOrNull
+                  ?.length ??
+              0) +
+          (ref
+                  .watch(todoListsForTagProvider(_selectedTabKey))
+                  .valueOrNull
+                  ?.length ??
+              0);
     }
-    final hasNoMemos = tabMemoCount == 0;
+    final hasNoMemos = tabItemCount == 0;
     final disabledColor = Colors.grey.withValues(alpha: 0.35);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -2729,20 +2776,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   void _openMemo(Memo memo) {
-    // 選択モード中: メモタップは選択トグル
+    // 選択モード中: メモタップは選択トグル（ロック判定は _toggleMemoSelection 内）
     if (_isSelectMode) {
-      if (_selectMode == _SelectMode.moveToTop) {
-        // 上部へ移動モード: ロック関係なしに単純にトグル
-        setState(() {
-          if (_selectedMemoIds.contains(memo.id)) {
-            _selectedMemoIds.remove(memo.id);
-          } else {
-            _selectedMemoIds.add(memo.id);
-          }
-        });
-      } else {
-        _toggleMemoSelection(memo);
-      }
+      _toggleMemoSelection(memo);
       return;
     }
     // 並び替えモード中: タップは無効
@@ -3094,13 +3130,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   /// 指定メモ（複数可）をオレンジ枠で 2 回ジワッと光らせる
-  Future<void> _flashMemo(String memoId) => _flashMemos([memoId]);
+  Future<void> _flashItem(String itemId) => _flashItems([itemId]);
 
-  Future<void> _flashMemos(Iterable<String> memoIds) async {
+  Future<void> _flashItems(Iterable<String> itemIds) async {
     if (!mounted) return;
-    final ids = memoIds.toSet();
+    final ids = itemIds.toSet();
     if (ids.isEmpty) return;
-    setState(() => _flashingMemoIds.addAll(ids));
+    setState(() => _flashingItemIds.addAll(ids));
     const steps = 8;
     const stepMs = 24; // 18 → 24 (約1.3倍)
     for (int rep = 0; rep < 2; rep++) {
@@ -3120,7 +3156,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
     if (mounted) {
       setState(() {
-        _flashingMemoIds.removeAll(ids);
+        _flashingItemIds.removeAll(ids);
         _flashLevel = 0;
       });
     }
@@ -3313,12 +3349,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               curve: Curves.easeOut,
             );
           }
-          _flashMemo(memo.id);
+          _flashItem(memo.id);
         });
         break;
       case 'pin':
         await db.updateMemo(id: memo.id, isPinned: !memo.isPinned);
-        if (mounted) _flashMemo(memo.id);
+        if (mounted) _flashItem(memo.id);
         break;
       case 'copy':
         await Clipboard.setData(ClipboardData(text: memo.content));
@@ -3327,7 +3363,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         final wasLocked = memo.isLocked;
         await db.updateMemo(id: memo.id, isLocked: !memo.isLocked);
         if (mounted) {
-          _flashMemo(memo.id);
+          _flashItem(memo.id);
           showToast(context,
               wasLocked ? 'ロックを解除しました' : 'メモをロックしました');
         }
@@ -4538,12 +4574,16 @@ class _MemoGridView extends StatelessWidget {
   final String? parentTagId;
   // 複数選択モード関連
   final bool selectMode;
+  // 削除モード時はロック中アイテムを操作不能扱い（UI もロックアイコン化）
+  final bool isDeleteSelectMode;
   final Set<String> selectedIds;
+  final Set<String> selectedTodoIds;
   final void Function(Memo)? onToggleSelect;
+  final void Function(TodoList)? onToggleTodoSelect;
 
   final String? editingMemoId;
   final String? highlightedMemoId;
-  final Set<String> flashingMemoIds;
+  final Set<String> flashingItemIds;
   final double flashLevel;
 
   /// フォルダ最大化時のカード高さ計算用に使う基準高さ。
@@ -4569,11 +4609,14 @@ class _MemoGridView extends StatelessWidget {
     this.wrapBuilder,
     this.parentTagId,
     this.selectMode = false,
+    this.isDeleteSelectMode = false,
     this.selectedIds = const <String>{},
+    this.selectedTodoIds = const <String>{},
     this.onToggleSelect,
+    this.onToggleTodoSelect,
     this.editingMemoId,
     this.highlightedMemoId,
-    this.flashingMemoIds = const <String>{},
+    this.flashingItemIds = const <String>{},
     this.flashLevel = 0,
     this.cardHeightReference,
     this.onAvailableHeight,
@@ -4583,18 +4626,20 @@ class _MemoGridView extends StatelessWidget {
   Widget _buildCard(Memo memo) {
     if (selectMode) {
       final isSelected = selectedIds.contains(memo.id);
-      final isLocked = memo.isLocked;
+      // ロックは削除を防ぐ用なので、削除モードのときだけ操作不可扱い。
+      // トップ移動モードではロック中も普通に選択できる。
+      final isLockedBlocked = isDeleteSelectMode && memo.isLocked;
       // 本家準拠: HStack(spacing: 4) { icon(16pt); MemoCard }
       // crossAxisAlignment: stretch でカードがセル高さを満たす（縮まない）
       // アイコンとカード両方が選択トグルのタップ対象
       final iconWidget = Icon(
-        isLocked
+        isLockedBlocked
             ? CupertinoIcons.lock_fill
             : isSelected
                 ? CupertinoIcons.checkmark_circle_fill
                 : CupertinoIcons.circle,
         size: 16,
-        color: isLocked
+        color: isLockedBlocked
             ? Colors.grey.withValues(alpha: 0.4)
             : isSelected
                 ? Colors.blue
@@ -4611,7 +4656,7 @@ class _MemoGridView extends StatelessWidget {
             const SizedBox(width: 4),
             Expanded(
               child: Opacity(
-                opacity: isLocked ? 0.4 : 1.0,
+                opacity: isLockedBlocked ? 0.4 : 1.0,
                 // IgnorePointer でカード内のGestureDetectorを無効化
                 child: IgnorePointer(
                   child: MemoCard(
@@ -4620,7 +4665,7 @@ class _MemoGridView extends StatelessWidget {
                     parentTagId: parentTagId,
                     gridSize: gridSize,
                     isHighlighted: memo.id == editingMemoId || memo.id == highlightedMemoId,
-      flashLevel: flashingMemoIds.contains(memo.id) ? flashLevel : 0,
+      flashLevel: flashingItemIds.contains(memo.id) ? flashLevel : 0,
                   ),
                 ),
               ),
@@ -4638,7 +4683,7 @@ class _MemoGridView extends StatelessWidget {
       parentTagId: parentTagId,
       gridSize: gridSize,
       isHighlighted: memo.id == editingMemoId || memo.id == highlightedMemoId,
-      flashLevel: flashingMemoIds.contains(memo.id) ? flashLevel : 0,
+      flashLevel: flashingItemIds.contains(memo.id) ? flashLevel : 0,
     );
     final wrapped = wrapBuilder != null ? wrapBuilder!(memo, card) : card;
     return KeyedSubtree(key: ValueKey('cell_${memo.id}'), child: wrapped);
@@ -4684,15 +4729,61 @@ class _MemoGridView extends StatelessWidget {
   Widget _buildGridItem(_GridItem item) {
     return switch (item) {
       _MemoGridItem(memo: final memo) => _buildCard(memo),
-      _TodoGridItem(todoList: final list) => GestureDetector(
-          key: ValueKey('todocard_${list.id}'),
-          onLongPress: () => onTodoLongPress?.call(list),
-          child: TodoCard(
-            todoList: list,
-            onTap: () => onTodoTap?.call(list),
-          ),
-        ),
+      _TodoGridItem(todoList: final list) => _buildTodoCard(list),
     };
+  }
+
+  Widget _buildTodoCard(TodoList list) {
+    final flash = flashingItemIds.contains(list.id) ? flashLevel : 0.0;
+    if (selectMode) {
+      final isSelected = selectedTodoIds.contains(list.id);
+      final isLockedBlocked = isDeleteSelectMode && list.isLocked;
+      final iconWidget = Icon(
+        isLockedBlocked
+            ? CupertinoIcons.lock_fill
+            : isSelected
+                ? CupertinoIcons.checkmark_circle_fill
+                : CupertinoIcons.circle,
+        size: 16,
+        color: isLockedBlocked
+            ? Colors.grey.withValues(alpha: 0.4)
+            : isSelected
+                ? Colors.blue
+                : Colors.grey.withValues(alpha: 0.6),
+      );
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => onToggleTodoSelect?.call(list),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(child: iconWidget),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Opacity(
+                opacity: isLockedBlocked ? 0.4 : 1.0,
+                child: IgnorePointer(
+                  child: TodoCard(
+                    todoList: list,
+                    onTap: () {},
+                    flashLevel: flash,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return GestureDetector(
+      key: ValueKey('todocard_${list.id}'),
+      onLongPress: () => onTodoLongPress?.call(list),
+      child: TodoCard(
+        todoList: list,
+        onTap: () => onTodoTap?.call(list),
+        flashLevel: flash,
+      ),
+    );
   }
 
   @override

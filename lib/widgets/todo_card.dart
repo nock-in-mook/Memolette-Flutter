@@ -12,12 +12,15 @@ class TodoCard extends ConsumerWidget {
   final TodoList todoList;
   final VoidCallback onTap;
   final bool isHighlighted;
+  // メモカードと同じ仕組みでオレンジ枠フラッシュさせる
+  final double flashLevel;
 
   const TodoCard({
     super.key,
     required this.todoList,
     required this.onTap,
     this.isHighlighted = false,
+    this.flashLevel = 0,
   });
 
   @override
@@ -41,6 +44,15 @@ class TodoCard extends ConsumerWidget {
           behavior: HitTestBehavior.opaque,
           child: Container(
             padding: const EdgeInsets.all(8),
+            // フラッシュ枠は foregroundDecoration で中身に重ねてレイアウトを変えない
+            foregroundDecoration: flashLevel > 0
+                ? BoxDecoration(
+                    border: Border.all(
+                        color: Colors.orange.withValues(alpha: flashLevel * 0.7),
+                        width: 1.5),
+                    borderRadius: BorderRadius.circular(6),
+                  )
+                : null,
             decoration: BoxDecoration(
               color: isHighlighted
                   ? Colors.blue.withValues(alpha: 0.08)

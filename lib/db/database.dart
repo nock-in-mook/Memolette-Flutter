@@ -166,20 +166,39 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
-  /// 複数メモをまとめてトップに移動。+1, +2, +3... の順で並ぶ
-  Future<void> moveMemosToTop(List<String> memoIds) async {
-    if (memoIds.isEmpty) return;
-    final maxRow = await (selectOnly(memos)
+  /// メモ+ToDoリストをまとめてトップに移動。
+  /// memos と todoLists の manualSortOrder の現在の最大値を超えるよう連番を振る。
+  Future<void> moveItemsToTop({
+    List<String> memoIds = const [],
+    List<String> todoListIds = const [],
+  }) async {
+    if (memoIds.isEmpty && todoListIds.isEmpty) return;
+    final memoMaxRow = await (selectOnly(memos)
           ..addColumns([memos.manualSortOrder.max()]))
         .getSingle();
-    final maxOrder = maxRow.read(memos.manualSortOrder.max()) ?? 0;
+    final memoMax = memoMaxRow.read(memos.manualSortOrder.max()) ?? 0;
+    final todoMaxRow = await (selectOnly(todoLists)
+          ..addColumns([todoLists.manualSortOrder.max()]))
+        .getSingle();
+    final todoMax = todoMaxRow.read(todoLists.manualSortOrder.max()) ?? 0;
+    final base = memoMax > todoMax ? memoMax : todoMax;
     await batch((b) {
-      for (var i = 0; i < memoIds.length; i++) {
+      var i = 1;
+      for (final id in memoIds) {
         b.update(
           memos,
-          MemosCompanion(manualSortOrder: Value(maxOrder + i + 1)),
-          where: (t) => t.id.equals(memoIds[i]),
+          MemosCompanion(manualSortOrder: Value(base + i)),
+          where: (t) => t.id.equals(id),
         );
+        i++;
+      }
+      for (final id in todoListIds) {
+        b.update(
+          todoLists,
+          TodoListsCompanion(manualSortOrder: Value(base + i)),
+          where: (t) => t.id.equals(id),
+        );
+        i++;
       }
     });
   }
