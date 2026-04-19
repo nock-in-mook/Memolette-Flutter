@@ -2180,7 +2180,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             },
             behavior: HitTestBehavior.opaque,
             child: SizedBox(
-              width: 48,
+              width: 34,
               height: 40,
               child: Align(
                 alignment: Alignment.centerRight,
