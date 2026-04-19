@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
@@ -13,12 +12,11 @@ import '../constants/design_constants.dart';
 import '../constants/memo_bg_colors.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
-import '../utils/image_storage.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
+import 'block_editor.dart';
 import 'frosted_alert_dialog.dart';
-import 'image_viewer.dart';
 import 'markdown_text_controller.dart';
 import 'markdown_toolbar.dart';
 import 'new_tag_sheet.dart';
@@ -116,8 +114,16 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   final _titleFocusNode = FocusNode();
   final _contentFocusNode = FocusNode();
   final _contentScrollController = ScrollController();
+  // Phase 10++ ブロックエディタ実験: 本文を TextField+画像 Strip ではなく BlockEditor で描画
+  final GlobalKey<BlockEditorState> _blockEditorKey =
+      GlobalKey<BlockEditorState>();
+  /// BlockEditor 内の任意の TextField にフォーカスがあるか
+  bool get _isBlockEditorFocused =>
+      _blockEditorKey.currentState?.hasAnyFocus ?? false;
   bool get _isInputFocused =>
-      _titleFocusNode.hasFocus || _contentFocusNode.hasFocus;
+      _titleFocusNode.hasFocus ||
+      _contentFocusNode.hasFocus ||
+      _isBlockEditorFocused;
   List<Tag> _attachedTags = [];
   bool _hasMemo = false;
   bool _rouletteOpen = false;
@@ -528,12 +534,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     return _selfCreatedMemoId;
   }
 
-  /// 画像ソースを選ぶすりガラスダイアログ → ピッカー → 圧縮 → DB保存
+  /// 画像ソースを選ぶすりガラスダイアログ → BlockEditor に挿入を委譲
+  /// (Phase 10++ ブロックエディタ実験: 画像はカーソル位置にインライン挿入される)
   Future<void> _attachImage() async {
-    // キーボードを閉じてからピッカー起動（ピッカー側でも閉じるが UX を安定させる）
-    if (_isInputFocused) FocusScope.of(context).unfocus();
+    // キーボードは閉じない方針: 閉じると最後にフォーカスされたブロック情報が
+    // 消えるかもしれないので、そのまま picker を起動する。picker側で一時的に閉じる。
     if (!mounted) return;
-    // FrostedAlertDialog は自動で pop するので、選択結果はクロージャで保持する
     ImageSource? source;
     await showFrostedAlert(
       context: context,
@@ -552,49 +558,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       ],
     );
     if (source == null || !mounted) return;
-    await _pickAndSave(source!);
-  }
-
-  /// 画像ソースからピック → 圧縮 → DB保存。失敗時はトースト。
-  Future<void> _pickAndSave(ImageSource source) async {
-    final picker = ImagePicker();
-    XFile? picked;
-    try {
-      picked = await picker.pickImage(source: source);
-    } catch (e) {
-      if (mounted) showToast(context, '画像の取り込みに失敗しました');
-      return;
-    }
-    if (picked == null) return; // キャンセル
+    // メモがまだ無ければ先に作成（memoIdResolver が非空を返すように）
     final memoId = await _ensureMemoId();
-    if (memoId == null) return;
-    final relPath = await ImageStorage.saveCompressed(picked.path);
-    if (relPath == null) {
-      if (mounted) showToast(context, '画像の保存に失敗しました');
-      return;
-    }
-    final db = ref.read(databaseProvider);
-    await db.addMemoImage(memoId: memoId, filePath: relPath);
-  }
-
-  /// 画像削除の確認 + 実行
-  Future<void> _confirmDeleteImage(MemoImage img) async {
-    var ok = false;
-    await showFrostedAlert(
-      context: context,
-      title: '画像を削除しますか？',
-      actions: [
-        FrostedAlertAction(label: 'キャンセル'),
-        FrostedAlertAction(
-          label: '削除',
-          isDestructive: true,
-          onPressed: () => ok = true,
-        ),
-      ],
-    );
-    if (!ok) return;
-    final db = ref.read(databaseProvider);
-    await db.deleteMemoImage(img.id);
+    if (memoId == null || !mounted) return;
+    await _blockEditorKey.currentState?.insertImageFromPicker(source!);
   }
 
   /// フォーカス取得時に空メモを先行作成
@@ -819,7 +786,6 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                   color: const Color.fromRGBO(40, 40, 40, 0.5),
                 ),
                 _buildContent(),
-                _buildImageStrip(),
                 Container(
                   height: 0.5,
                   color: const Color.fromRGBO(40, 40, 40, 0.5),
@@ -1788,180 +1754,56 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       );
     }
 
-    // エディタモード
-    // ToDoリストと同じパターン: 外側にScrollable、TextFieldはexpandsなし
-    // 最大化時のみ、キーボード分の余白を確保してカーソルがキーボード上に来るよう
-    // スクロールさせる。縮小時(316固定)は枠が小さいので、キーボード対策が強すぎると
-    // テキストが上に吹き飛ぶ → 縮小時は固定値のみ使う。
-    final kb = MediaQuery.of(context).viewInsets.bottom;
-    final cursorBottomBuffer =
-        widget.isExpanded && kb > 0 ? kb - 10 : 20;
-    // viewInsetsの変化をコンテンツ領域に伝播させない
-    // （キーボード開閉アニメ中の毎フレームrebuildによるガタつきを防止）
-    // カーソル追従はscrollPaddingで十分対応できる
+    // エディタモード (Phase 10++ ブロックエディタ実験)
+    // BlockEditor が TextField と画像ブロックを縦並びで描画する
     return Flexible(
       child: MediaQuery(
         data: MediaQuery.of(context).copyWith(viewInsets: EdgeInsets.zero),
         child: LayoutBuilder(builder: (context, constraints) {
-        // Overlay更新（キーボード高さ変化に対応）
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _updateMdToolbarOverlay();
         });
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
-            if (_isViewMode) {
-              _enterEditMode(focusContent: true);
-            } else {
-              _contentFocusNode.requestFocus();
+            // 空白領域タップで末尾 TextBlock にフォーカス
+            if (!_isViewMode) {
+              _blockEditorKey.currentState?.focusFirst();
             }
             if (_rouletteOpen) _closeRoulette();
           },
           child: SingleChildScrollView(
             controller: _contentScrollController,
-            padding: EdgeInsets.fromLTRB(9, 9, 9,
+            padding: EdgeInsets.fromLTRB(0, 9, 0,
                 widget.isExpanded && !_isViewMode ? 400 : 100),
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 minHeight: (constraints.maxHeight - 100)
                     .clamp(0.0, double.infinity),
               ),
-              child: TextField(
-                controller: _contentController,
-                focusNode: _contentFocusNode,
-                onChanged: (_) => _onChanged(),
+              child: BlockEditor(
+                key: _blockEditorKey,
+                memoIdResolver: () =>
+                    widget.editingMemoId ?? _selfCreatedMemoId ?? '',
+                initialContent: _contentController.text,
                 readOnly: _isViewMode,
-                onTap: TextMenuDismisser.wrap(() {
-                  if (_isViewMode) {
-                    _enterEditMode(focusContent: true);
-                  }
-                  if (_rouletteOpen) _closeRoulette();
-                }),
-                inputFormatters: [
-                  _LimitWithToastFormatter(
-                    maxLength: _maxContentLength,
-                    onLimit: _showLimitReached,
-                  ),
-                ],
-                style: const TextStyle(
-                  fontSize: 16,
-                  height: 1.25,
-                  fontWeight: FontWeight.w500,
-                  fontFamily: 'PingFang JP',
-                  color: Colors.black87,
-                ),
-                decoration: InputDecoration(
-                  // フォーカス時はプレースホルダー非表示（空で抜けたら再表示）
-                  hintText: _contentFocusNode.hasFocus
-                      ? null
-                      : _isMarkdown
-                          ? 'タップでマークダウン編集...'
-                          : 'メモを入力...',
-                  border: InputBorder.none,
-                  hintStyle:
-                      TextStyle(color: Colors.grey.withValues(alpha: 0.4)),
-                  isDense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
-                contextMenuBuilder: TextMenuDismisser.builder,
-                maxLines: null,
-                textAlignVertical: TextAlignVertical.top,
-                keyboardType: TextInputType.multiline,
-                scrollPadding:
-                    EdgeInsets.only(bottom: cursorBottomBuffer.toDouble()),
+                isMarkdown: _isMarkdown,
+                onFocusChanged: () {
+                  widget.onFocusChanged?.call();
+                  if (mounted) setState(() {});
+                },
+                onContentChanged: (content) {
+                  if (content == _contentController.text) return;
+                  // TextEditingValue.value 経由で selection を潰さないように
+                  _contentController.text = content;
+                  _onChanged();
+                },
               ),
             ),
           ),
         );
       }),
       ),
-    );
-  }
-
-  /// 画像プレビュー行（添付画像がある場合のみ表示）
-  /// 横スクロールリスト、各画像は 72x72、右上に × ボタン
-  /// 画像タップ: フルスクリーン拡大表示
-  Widget _buildImageStrip() {
-    final memoId = widget.editingMemoId ?? _selfCreatedMemoId;
-    if (memoId == null) return const SizedBox.shrink();
-    final imagesAsync = ref.watch(memoImagesProvider(memoId));
-    final images = imagesAsync.valueOrNull ?? const <MemoImage>[];
-    if (images.isEmpty) return const SizedBox.shrink();
-    return Container(
-      height: 84,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: images.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, i) => _buildImageThumb(images[i], images, i),
-      ),
-    );
-  }
-
-  Widget _buildImageThumb(MemoImage img, List<MemoImage> all, int index) {
-    return FutureBuilder<String>(
-      future: ImageStorage.absolutePath(img.filePath),
-      builder: (ctx, snap) {
-        final path = snap.data;
-        return GestureDetector(
-          onTap: path == null
-              ? null
-              : () => _openImageViewer(all, index),
-          onLongPress: () => _confirmDeleteImage(img),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  width: 72,
-                  height: 72,
-                  color: Colors.grey.shade200,
-                  child: path == null
-                      ? const SizedBox()
-                      : Image.file(
-                          File(path),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const Icon(Icons.broken_image,
-                                  color: Colors.grey),
-                          // gaplessPlayback で再ビルド時のチラつきを抑制
-                          gaplessPlayback: true,
-                        ),
-                ),
-              ),
-              Positioned(
-                top: -6,
-                right: -6,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _confirmDeleteImage(img),
-                  child: Container(
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.black.withValues(alpha: 0.7),
-                    ),
-                    child: const Icon(Icons.close,
-                        size: 14, color: Colors.white),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  /// 画像ビューアを開く
-  void _openImageViewer(List<MemoImage> images, int initialIndex) {
-    ImageViewer.open(
-      context,
-      images: images,
-      initialIndex: initialIndex,
     );
   }
 
