@@ -2101,25 +2101,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // ========================================
   // 7. メモグリッド
   // ========================================
-  /// 「すべて」タブ専用のサブフィルタバー（件数 + 4ボタン）
-  static const Map<_AllTabSubFilter, IconData> _allTabSubFilterIcons = {
-    _AllTabSubFilter.all: Icons.list_alt,
-    _AllTabSubFilter.frequent: Icons.local_fire_department_outlined,
-    _AllTabSubFilter.recent: Icons.history,
-    _AllTabSubFilter.untagged: Icons.label_off_outlined,
-  };
-
+  /// 「すべて」タブ専用のサブフィルタバー（件数 + ピル状フィルタ）
   Widget _buildAllTabSubFilterBar() {
     return SizedBox(
-      height: 56,
+      height: 40,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: Row(
           children: [
-            // 件数表示
+            // 件数表示（フィルタ連動）
             _MemoCountText(
               tabKey: _selectedTabKey,
               childTagId: _selectedChildTagId,
+              subFilter: _allTabSubFilter,
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -2137,9 +2131,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  // ラボ3「ピル状」: 選択中だけ青塗りピル、非選択は透明テキスト
   Widget _buildAllTabSubFilterChip(_AllTabSubFilter filter) {
     final selected = _allTabSubFilter == filter;
-    final icon = _allTabSubFilterIcons[filter] ?? Icons.label_outline;
     const accent = Color(0xFF007AFF);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -2147,31 +2141,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
-        padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: selected ? accent : Colors.transparent,
           borderRadius: BorderRadius.circular(14),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 18,
-              color: selected ? Colors.white : Colors.grey.shade600,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              filter.label,
-              style: TextStyle(
-                fontSize: 11,
-                height: 1.0,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                color: selected ? Colors.white : Colors.grey.shade600,
-              ),
-            ),
-          ],
+        child: Text(
+          filter.label,
+          style: TextStyle(
+            fontSize: 13,
+            height: 1.0,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            color: selected ? Colors.white : Colors.grey.shade600,
+          ),
         ),
       ),
     );
@@ -3674,31 +3656,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 class _MemoCountText extends ConsumerWidget {
   final String tabKey;
   final String? childTagId;
+  // 「すべて」タブのときだけ意味を持つ。サブフィルタに連動した件数を出すため。
+  final _AllTabSubFilter subFilter;
 
   const _MemoCountText({
     required this.tabKey,
     this.childTagId,
+    this.subFilter = _AllTabSubFilter.all,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AsyncValue<List<Memo>> memosAsync;
+    AsyncValue<List<TodoList>> todosAsync;
     if (tabKey == kAllTabKey) {
-      memosAsync = ref.watch(allMemosProvider);
+      memosAsync = switch (subFilter) {
+        _AllTabSubFilter.all => ref.watch(allMemosProvider),
+        _AllTabSubFilter.frequent => ref.watch(frequentMemosProvider),
+        _AllTabSubFilter.recent => ref.watch(recentMemosProvider),
+        _AllTabSubFilter.untagged => ref.watch(untaggedMemosProvider),
+      };
+      todosAsync = switch (subFilter) {
+        _AllTabSubFilter.all => ref.watch(allTodoListsProvider),
+        _AllTabSubFilter.untagged => ref.watch(untaggedTodoListsProvider),
+        // よく見る・最近見たは ToDo 対象外（メモのみ）
+        _ => const AsyncValue<List<TodoList>>.data([]),
+      };
     } else if (tabKey == kUntaggedTabKey) {
       memosAsync = ref.watch(untaggedMemosProvider);
+      todosAsync = ref.watch(untaggedTodoListsProvider);
     } else {
       final tagId = childTagId ?? tabKey;
       memosAsync = ref.watch(memosForTagProvider(tagId));
+      todosAsync = ref.watch(todoListsForTagProvider(tagId));
     }
 
-    return memosAsync.when(
-      data: (memos) => Text(
-        '${memos.length}件',
-        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-      ),
-      loading: () => const SizedBox(),
-      error: (_, _) => const SizedBox(),
+    final memoCount = memosAsync.valueOrNull?.length ?? 0;
+    final todoCount = todosAsync.valueOrNull?.length ?? 0;
+    return Text(
+      '${memoCount + todoCount}件',
+      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
     );
   }
 }
