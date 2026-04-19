@@ -1790,6 +1790,37 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     leadingDistribution: TextLeadingDistribution.even,
   );
 
+  /// プレビュー中の N 番目のチェックボックス ([ ] / [x]) を本文側でトグル
+  void _togglePreviewCheckbox(int index) {
+    final text = _contentController.text;
+    var count = 0;
+    final buf = StringBuffer();
+    var i = 0;
+    while (i < text.length) {
+      if (i + 3 <= text.length &&
+          text[i] == '[' &&
+          (text[i + 1] == ' ' || text[i + 1] == 'x' || text[i + 1] == 'X') &&
+          text[i + 2] == ']') {
+        if (count == index) {
+          buf.write('[');
+          buf.write(text[i + 1] == ' ' ? 'x' : ' ');
+          buf.write(']');
+        } else {
+          buf.write(text.substring(i, i + 3));
+        }
+        count++;
+        i += 3;
+      } else {
+        buf.write(text[i]);
+        i++;
+      }
+    }
+    final result = buf.toString();
+    if (result == text) return;
+    _contentController.text = result;
+    _onChanged();
+  }
+
   Widget _buildContent() {
     // プレビューモード: マークダウン描画を表示（タップでエディタに戻す）
     if (_isMarkdown && _showMarkdownPreview) {
@@ -1822,9 +1853,32 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           child: SingleChildScrollView(
             // BlockEditor 側は外側 9 + ブロック内 2 = 上 11px から始まるので揃える
             padding: const EdgeInsets.fromLTRB(9, 11, 9, 20),
-            child: MarkdownBody(
+            child: Builder(builder: (ctx) {
+              // MarkdownBody 1回の build に対してチェックボックスの通し番号をカウントし、
+              // タップしたら同じ順番の [ ] / [x] を _contentController 側でトグルする
+              var checkboxIdx = 0;
+              return MarkdownBody(
               data: previewData,
               fitContent: false,
+              checkboxBuilder: (checked) {
+                final idx = checkboxIdx++;
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _togglePreviewCheckbox(idx),
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 2),
+                    child: Icon(
+                      checked
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                      size: 18,
+                      color: checked
+                          ? const Color(0xFF007AFF)
+                          : Colors.grey[600],
+                    ),
+                  ),
+                );
+              },
               imageBuilder: (uri, _, __) {
                 if (uri.scheme == 'memolette') {
                   final id = uri.path.isNotEmpty ? uri.path : uri.host;
@@ -1902,7 +1956,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                   borderRadius: BorderRadius.circular(4),
                 ),
               ),
-            ),
+            );
+            }),
           ),
         ),
       );
@@ -1920,12 +1975,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
-            // 空白領域タップ: 閲覧モードなら編集モードへ、そうでなければ先頭ブロックへフォーカス
+            // 本文欄の下に広がる余白タップ: 末尾ブロックにフォーカス。
+            // 閲覧モードなら編集モードに移行 + 即 focusLast でキーボード。
             if (_isViewMode) {
-              _enterEditMode(focusContent: true);
-            } else {
-              _blockEditorKey.currentState?.focusFirst();
+              setState(() => _isViewMode = false);
             }
+            _blockEditorKey.currentState?.focusLast();
             if (_rouletteOpen) _closeRoulette();
           },
           child: SingleChildScrollView(
@@ -1945,9 +2000,11 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 readOnly: _isViewMode,
                 isMarkdown: _isMarkdown,
                 onTap: () {
-                  // TextBlock タップ: 閲覧モードなら編集モード遷移
+                  // TextBlock タップ: 閲覧モードなら編集モード遷移するだけ。
+                  // カーソル位置は TextField の native なタップ処理に任せる
+                  // （タップした位置に素直にカーソルが立つ）
                   if (_isViewMode) {
-                    _enterEditMode(focusContent: true);
+                    setState(() => _isViewMode = false);
                   }
                   if (_rouletteOpen) _closeRoulette();
                 },

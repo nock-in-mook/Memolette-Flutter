@@ -93,7 +93,7 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
     return last?.controller;
   }
 
-  /// 先頭の TextBlock にフォーカス。カーソルは末尾に寄せる（閲覧→編集遷移時の体感向上）
+  /// 先頭の TextBlock にフォーカス。カーソルは末尾に寄せる。
   void focusFirst() {
     final first = _blocks.whereType<_TextBlock>().firstOrNull;
     if (first == null) return;
@@ -101,6 +101,20 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
     first.controller.selection =
         TextSelection.collapsed(offset: text.length);
     first.focusNode.requestFocus();
+  }
+
+  /// 末尾の TextBlock にフォーカス。カーソルはその末尾に。
+  /// 本文欄の下の広い余白をタップしたときに呼ぶ想定。
+  void focusLast() {
+    _TextBlock? last;
+    for (final b in _blocks) {
+      if (b is _TextBlock) last = b;
+    }
+    if (last == null) return;
+    final text = last.controller.text;
+    last.controller.selection =
+        TextSelection.collapsed(offset: text.length);
+    last.focusNode.requestFocus();
   }
 
   /// 画像ピッカー → 圧縮 → DB保存 → カーソル位置に挿入
