@@ -569,17 +569,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   // readOnly=false が反映された後のフレームで走るため、2フレーム待つ
   void _enterEditMode({bool focusContent = true, bool focusTitle = false}) {
     setState(() => _isViewMode = false);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        if (focusTitle) _titleFocusNode.requestFocus();
-        if (focusContent) {
-          // BlockEditor の先頭 TextBlock にフォーカス
-          _blockEditorKey.currentState?.focusFirst();
-        }
-      });
-    });
+    // postFrame に逃がすと iOS のタップジェスチャーコンテキストが切れて
+    // キーボードが出ない（1回目のタップ無反応）。即時 requestFocus する。
+    if (focusTitle) _titleFocusNode.requestFocus();
+    if (focusContent) {
+      _blockEditorKey.currentState?.focusFirst();
+    }
   }
 
   /// 入力内容を即座に保存
