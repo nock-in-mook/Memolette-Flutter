@@ -29,7 +29,18 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            // メモ背景色カラム追加
+            await m.addColumn(memos, memos.bgColorIndex);
+          }
+        },
+      );
 
   // ========================================
   // メモ CRUD
@@ -56,18 +67,55 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// メモを新規作成
-  Future<Memo> createMemo({String title = '', String content = ''}) async {
+  Future<Memo> createMemo({
+    String title = '',
+    String content = '',
+    bool isMarkdown = false,
+    int bgColorIndex = 0,
+  }) async {
     final id = _uuid.v4();
     final now = DateTime.now();
+    final nextOrder = await nextItemSortOrder();
     final companion = MemosCompanion.insert(
       id: id,
       title: Value(title),
       content: Value(content),
+      isMarkdown: Value(isMarkdown),
+      bgColorIndex: Value(bgColorIndex),
+      manualSortOrder: Value(nextOrder),
       createdAt: Value(now),
       updatedAt: Value(now),
     );
     await into(memos).insert(companion);
     return (await getMemoById(id))!;
+  }
+
+  /// ToDoリスト新規作成（メモと一貫した manualSortOrder を設定）
+  Future<TodoList> createTodoList({String title = ''}) async {
+    final id = _uuid.v4();
+    final nextOrder = await nextItemSortOrder();
+    final companion = TodoListsCompanion.insert(
+      id: id,
+      title: Value(title),
+      manualSortOrder: Value(nextOrder),
+    );
+    await into(todoLists).insert(companion);
+    return (await (select(todoLists)..where((t) => t.id.equals(id)))
+        .getSingle());
+  }
+
+  /// memos と todoLists の manualSortOrder 最大値 + 1 を返す。
+  /// 新規作成・トップ移動の sort order を統一するためのヘルパー。
+  Future<int> nextItemSortOrder() async {
+    final memoMaxRow = await (selectOnly(memos)
+          ..addColumns([memos.manualSortOrder.max()]))
+        .getSingle();
+    final memoMax = memoMaxRow.read(memos.manualSortOrder.max()) ?? 0;
+    final todoMaxRow = await (selectOnly(todoLists)
+          ..addColumns([todoLists.manualSortOrder.max()]))
+        .getSingle();
+    final todoMax = todoMaxRow.read(todoLists.manualSortOrder.max()) ?? 0;
+    return (memoMax > todoMax ? memoMax : todoMax) + 1;
   }
 
   /// 全メモ件数を取得
@@ -86,6 +134,7 @@ class AppDatabase extends _$AppDatabase {
     bool? isPinned,
     bool? isLocked,
     int? manualSortOrder,
+    int? bgColorIndex,
   }) {
     return (update(memos)..where((t) => t.id.equals(id))).write(
       MemosCompanion(
@@ -98,48 +147,77 @@ class AppDatabase extends _$AppDatabase {
         manualSortOrder: manualSortOrder != null
             ? Value(manualSortOrder)
             : const Value.absent(),
+        bgColorIndex: bgColorIndex != null
+            ? Value(bgColorIndex)
+            : const Value.absent(),
         updatedAt: Value(DateTime.now()),
       ),
     );
   }
 
-  /// メモを削除
-  Future<void> deleteMemo(String id) {
-    return (delete(memos)..where((t) => t.id.equals(id))).go();
+  /// メモを削除（memo_tags もカスケード削除）
+  Future<void> deleteMemo(String id) async {
+    await transaction(() async {
+      await (delete(memoTags)..where((t) => t.memoId.equals(id))).go();
+      await (delete(memos)..where((t) => t.id.equals(id))).go();
+    });
   }
 
-  /// 複数メモをまとめて削除
+  /// タイトル・本文が空のメモをまとめて削除（起動時セーフティネット）
+  /// 返り値: 削除件数
+  Future<int> purgeEmptyMemos() async {
+    final emptyIds = await (select(memos)
+          ..where((t) => t.title.equals('') & t.content.equals('')))
+        .map((m) => m.id)
+        .get();
+    if (emptyIds.isEmpty) return 0;
+    await deleteMemos(emptyIds);
+    return emptyIds.length;
+  }
+
+  /// 複数メモをまとめて削除（memo_tags もカスケード削除）
   Future<void> deleteMemos(List<String> ids) async {
     if (ids.isEmpty) return;
-    await (delete(memos)..where((t) => t.id.isIn(ids))).go();
+    await transaction(() async {
+      await (delete(memoTags)..where((t) => t.memoId.isIn(ids))).go();
+      await (delete(memos)..where((t) => t.id.isIn(ids))).go();
+    });
   }
 
-  /// メモをトップに移動: 既存最大の manualSortOrder + 1 を設定
+  /// メモをトップに移動: nextItemSortOrder で memos+todoLists 通しの最大+1 を設定
   /// （ソートは isPinned → manualSortOrder → createdAt の優先順）
   Future<void> moveMemoToTop(String id) async {
-    final maxRow = await (selectOnly(memos)
-          ..addColumns([memos.manualSortOrder.max()]))
-        .getSingle();
-    final maxOrder = maxRow.read(memos.manualSortOrder.max()) ?? 0;
+    final next = await nextItemSortOrder();
     await (update(memos)..where((t) => t.id.equals(id))).write(
-      MemosCompanion(manualSortOrder: Value(maxOrder + 1)),
+      MemosCompanion(manualSortOrder: Value(next)),
     );
   }
 
-  /// 複数メモをまとめてトップに移動。+1, +2, +3... の順で並ぶ
-  Future<void> moveMemosToTop(List<String> memoIds) async {
-    if (memoIds.isEmpty) return;
-    final maxRow = await (selectOnly(memos)
-          ..addColumns([memos.manualSortOrder.max()]))
-        .getSingle();
-    final maxOrder = maxRow.read(memos.manualSortOrder.max()) ?? 0;
+  /// メモ+ToDoリストをまとめてトップに移動。
+  /// nextItemSortOrder を起点に連番を振る（memos と todoLists 通し）。
+  Future<void> moveItemsToTop({
+    List<String> memoIds = const [],
+    List<String> todoListIds = const [],
+  }) async {
+    if (memoIds.isEmpty && todoListIds.isEmpty) return;
+    final base = (await nextItemSortOrder()) - 1;
     await batch((b) {
-      for (var i = 0; i < memoIds.length; i++) {
+      var i = 1;
+      for (final id in memoIds) {
         b.update(
           memos,
-          MemosCompanion(manualSortOrder: Value(maxOrder + i + 1)),
-          where: (t) => t.id.equals(memoIds[i]),
+          MemosCompanion(manualSortOrder: Value(base + i)),
+          where: (t) => t.id.equals(id),
         );
+        i++;
+      }
+      for (final id in todoListIds) {
+        b.update(
+          todoLists,
+          TodoListsCompanion(manualSortOrder: Value(base + i)),
+          where: (t) => t.id.equals(id),
+        );
+        i++;
       }
     });
   }
@@ -188,13 +266,24 @@ class AppDatabase extends _$AppDatabase {
     return (select(tags)..where((t) => t.id.equals(id))).getSingleOrNull();
   }
 
-  /// タグを新規作成
+  /// タグを新規作成。同じ親 + 同じ名前のタグが既に存在する場合はそれを返し、
+  /// 新規作成はしない（重複防止）。
   Future<Tag> createTag({
     required String name,
     int colorIndex = 1,
     String? parentTagId,
     bool isSystem = false,
   }) async {
+    // 重複チェック（同じ親スコープ内に同名タグがあれば既存を返す）
+    final query = select(tags)..where((t) => t.name.equals(name));
+    if (parentTagId == null) {
+      query.where((t) => t.parentTagId.isNull());
+    } else {
+      query.where((t) => t.parentTagId.equals(parentTagId));
+    }
+    final existing = await query.getSingleOrNull();
+    if (existing != null) return existing;
+
     final id = _uuid.v4();
     // 末尾にsortOrderを設定
     final maxSort = await _maxTagSortOrder(parentTagId);
@@ -346,6 +435,7 @@ class AppDatabase extends _$AppDatabase {
             viewCount: row.read<int>('view_count'),
             lastViewedAt: row.readNullable<DateTime>('last_viewed_at'),
             isLocked: row.read<bool>('is_locked'),
+            bgColorIndex: row.read<int>('bg_color_index'),
           );
         }).toList());
   }
@@ -388,6 +478,16 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// タグに紐づくメモを取得（リアルタイム）
+  /// タグに紐づくメモの件数を取得（子タグは含まない）
+  Future<int> countMemosForTag(String tagId) async {
+    final exp = memoTags.memoId.count();
+    final row = await (selectOnly(memoTags)
+          ..addColumns([exp])
+          ..where(memoTags.tagId.equals(tagId)))
+        .getSingle();
+    return row.read(exp) ?? 0;
+  }
+
   Stream<List<Memo>> watchMemosForTag(String tagId) {
     final query = select(memos).join([
       innerJoin(memoTags, memoTags.memoId.equalsExp(memos.id)),
@@ -402,6 +502,83 @@ class AppDatabase extends _$AppDatabase {
             expression: memos.createdAt, mode: OrderingMode.desc),
       ]);
     return query.map((row) => row.readTable(memos)).watch();
+  }
+
+  // ========================================
+  // ToDoリスト ↔ タグ リレーション
+  // ========================================
+
+  /// ToDoリストにタグを付ける
+  Future<void> addTagToTodoList(String todoListId, String tagId) {
+    return into(todoListTags).insert(
+      TodoListTagsCompanion.insert(todoListId: todoListId, tagId: tagId),
+      mode: InsertMode.insertOrIgnore,
+    );
+  }
+
+  /// ToDoリストからタグを外す
+  Future<void> removeTagFromTodoList(String todoListId, String tagId) {
+    return (delete(todoListTags)
+          ..where((t) =>
+              t.todoListId.equals(todoListId) & t.tagId.equals(tagId)))
+        .go();
+  }
+
+  /// ToDoリストに紐づくタグを取得
+  Future<List<Tag>> getTagsForTodoList(String todoListId) {
+    final query = select(tags).join([
+      innerJoin(todoListTags, todoListTags.tagId.equalsExp(tags.id)),
+    ])
+      ..where(todoListTags.todoListId.equals(todoListId));
+    return query.map((row) => row.readTable(tags)).get();
+  }
+
+  /// ToDoリストに紐づくタグをリアルタイム監視
+  Stream<List<Tag>> watchTagsForTodoList(String todoListId) {
+    final query = select(tags).join([
+      innerJoin(todoListTags, todoListTags.tagId.equalsExp(tags.id)),
+    ])
+      ..where(todoListTags.todoListId.equals(todoListId));
+    return query.map((row) => row.readTable(tags)).watch();
+  }
+
+  /// タグに紐づくToDoリストを取得（リアルタイム）
+  Stream<List<TodoList>> watchTodoListsForTag(String tagId) {
+    final query = select(todoLists).join([
+      innerJoin(
+          todoListTags, todoListTags.todoListId.equalsExp(todoLists.id)),
+    ])
+      ..where(todoListTags.tagId.equals(tagId))
+      ..orderBy([
+        OrderingTerm(
+            expression: todoLists.isPinned, mode: OrderingMode.desc),
+        OrderingTerm(
+            expression: todoLists.manualSortOrder,
+            mode: OrderingMode.desc),
+        OrderingTerm(
+            expression: todoLists.createdAt, mode: OrderingMode.desc),
+      ]);
+    return query.map((row) => row.readTable(todoLists)).watch();
+  }
+
+  /// タグなしToDoリストを取得（リアルタイム）
+  Stream<List<TodoList>> watchUntaggedTodoLists() {
+    return customSelect(
+      'SELECT * FROM todo_lists WHERE id NOT IN '
+      '(SELECT DISTINCT todo_list_id FROM todo_list_tags) '
+      'ORDER BY is_pinned DESC, manual_sort_order DESC, created_at DESC',
+      readsFrom: {todoLists, todoListTags},
+    ).watch().map((rows) => rows.map((row) {
+          return TodoList(
+            id: row.read<String>('id'),
+            title: row.read<String>('title'),
+            createdAt: row.read<DateTime>('created_at'),
+            updatedAt: row.read<DateTime>('updated_at'),
+            isPinned: row.read<bool>('is_pinned'),
+            isLocked: row.read<bool>('is_locked'),
+            manualSortOrder: row.read<int>('manual_sort_order'),
+          );
+        }).toList());
   }
 
   // ========================================
@@ -471,6 +648,151 @@ class AppDatabase extends _$AppDatabase {
 
     for (final (name, colorIndex) in dummyTags) {
       await createTag(name: name, colorIndex: colorIndex);
+    }
+  }
+
+  /// ダミータグ履歴を挿入（開発用）
+  /// 親タグのみ・親子セット・重複を含むパターンで生成
+  Future<void> seedDummyTagHistory() async {
+    final existing = await getRecentTagHistory();
+    // 長いタグ名テスト済みかチェック（テストタグの存在で判定）
+    final hasLongTest = (await (select(tags)
+          ..where((t) => t.name.equals('とても長い親タグの名前テスト用')))
+        .get()).isNotEmpty;
+    if (existing.isNotEmpty && hasLongTest) return;
+
+    final parentTags = await (select(tags)
+          ..where((t) => t.parentTagId.isNull())
+          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+        .get();
+    if (parentTags.isEmpty) return;
+
+    // 各親タグの子タグを取得
+    final childMap = <String, List<Tag>>{};
+    for (final p in parentTags) {
+      final children = await (select(tags)
+            ..where((t) => t.parentTagId.equals(p.id)))
+          .get();
+      childMap[p.id] = children;
+    }
+
+    // パターン生成: 親タグのみ、親+子、重複チェック用（初回のみ）
+    if (existing.isEmpty)
+    for (var i = 0; i < parentTags.length && i < 5; i++) {
+      final p = parentTags[i];
+      final children = childMap[p.id] ?? [];
+
+      // 親タグのみ
+      await recordTagHistory(p.id);
+
+      // 子タグがあれば親+子セットも
+      if (children.isNotEmpty) {
+        await recordTagHistory(p.id, childTagId: children.first.id);
+      }
+      if (children.length > 1) {
+        await recordTagHistory(p.id, childTagId: children[1].id);
+      }
+    }
+
+    // 重複テスト: 最初の親タグをもう一度記録（日時更新されるはず）
+    if (parentTags.isNotEmpty) {
+      await recordTagHistory(parentTags.first.id);
+    }
+
+    // 長いタグ名テスト用
+    final longParent = parentTags.where((t) => t.name.length > 5).firstOrNull;
+    if (longParent != null) {
+      final longChildren = childMap[longParent.id] ?? [];
+      final longChild = longChildren.where((t) => t.name.length > 3).firstOrNull;
+      await recordTagHistory(longParent.id, childTagId: longChild?.id);
+    }
+
+    // 超長い名前のテスト用タグを一時作成して履歴に入れる
+    final longTestParentId = _uuid.v4();
+    final longTestChildId = _uuid.v4();
+    await into(tags).insert(TagsCompanion.insert(
+      id: longTestParentId, name: const Value('とても長い親タグの名前テスト用'), colorIndex: const Value(20),
+    ));
+    await into(tags).insert(TagsCompanion.insert(
+      id: longTestChildId, name: const Value('超長い子タグ名前テスト'), colorIndex: const Value(30),
+      parentTagId: Value(longTestParentId),
+    ));
+    await recordTagHistory(longTestParentId, childTagId: longTestChildId);
+  }
+
+  /// 長文メモのダミーデータ（開発用・「長文テスト」タグに紐付け）
+  Future<void> seedDummyLongMemos() async {
+    // 既にタイトル「長文テスト1」があればスキップ
+    final existing = await (select(memos)
+          ..where((t) => t.title.equals('長文テスト1')))
+        .get();
+    if (existing.isNotEmpty) return;
+
+    // タグが無ければ作る
+    var longTag = await (select(tags)
+          ..where((t) => t.name.equals('長文テスト')))
+        .getSingleOrNull();
+    longTag ??= await createTag(name: '長文テスト', colorIndex: 60);
+
+    // 基本パラグラフ（~200文字）
+    const para1 =
+        '朝の光が部屋に差し込む頃、窓辺のコーヒーカップから立ちのぼる湯気が、昨夜の考えごとをゆっくりと溶かしていくような気がする。日々の中で見過ごしがちな小さな瞬間こそ、後から振り返って意味を持つことが多い。'
+        'そういうものを丁寧に拾い集めていきたいと、最近よく思う。忙しない時間の中で、自分の呼吸を取り戻すための時間を意識して作ることが、結局は一番遠回りに見えて最短の道なのかもしれない。';
+    const para2 =
+        '本を読んでいると、まったく関係のない出来事の間に思いがけないつながりを見つけることがある。ある章で登場した言葉が、何日も経ってから別の場面で急に意味を持ちはじめる。'
+        '情報は蓄積されるだけでなく、発酵する時間を経て、ようやく自分の一部になっていく。急いで答えを出すよりも、保留にしておける余白を大切にしたい。';
+    const para3 =
+        '散歩の途中でふと立ち止まる。街路樹の葉が光を透かして揺れているのを見ながら、こういう景色は毎日あるのに気付くのはまれだ、と感じる。'
+        '観察する目を持つには、余裕が必要で、余裕は意識して作らないと勝手には生まれない。小さな非効率を肯定することが、豊かさの入り口なのかもしれない。';
+    const para4 =
+        '書きながら考えるという行為は、話しながら考えるのとはまるで違う。書き出すことで輪郭がはっきりしてくる。'
+        '曖昧な感覚のままでは扱えないが、言葉に起こすと、まるで別のものを観察するように自分の思考を見ることができる。';
+
+    // 3パターンの長文（約800 / 1600 / 3200文字）
+    final memo1Content =
+        [para1, para2, para3, para4].join('\n\n');
+    final memo2Content =
+        [para1, para2, para3, para4, para1, para2, para3, para4].join('\n\n');
+    final memo3Content = List.generate(
+            16, (i) => [para1, para2, para3, para4][i % 4])
+        .join('\n\n');
+
+    final seeds = [
+      ('長文テスト1', memo1Content),
+      ('長文テスト2 - 中程度の文量', memo2Content),
+      ('長文テスト3 - タイトルも長めにしてみる超長大なメモ', memo3Content),
+    ];
+
+    for (final (title, content) in seeds) {
+      final memo = await createMemo(title: title, content: content);
+      await addTagToMemo(memo.id, longTag.id);
+    }
+  }
+
+  /// 爆速モード動作確認用: 指定タグに大量のダミーメモを投入
+  Future<void> seedDummyBulkMemos({
+    String tagName = 'ダミー70',
+    int count = 70,
+  }) async {
+    // 既に同名タグ＋ダミーメモがあればスキップ
+    final existingTag = await (select(tags)
+          ..where((t) => t.name.equals(tagName)))
+        .getSingleOrNull();
+    if (existingTag != null) {
+      final existingMemos = await (select(memos)
+            ..where((m) => m.title.like('$tagName-%')))
+          .get();
+      if (existingMemos.length >= count) return;
+    }
+
+    final tag = existingTag ?? await createTag(name: tagName, colorIndex: 42);
+
+    for (int i = 1; i <= count; i++) {
+      final memo = await createMemo(
+        title: '$tagName-${i.toString().padLeft(3, '0')}',
+        content: 'ダミーメモ#$i: 爆速整理モードの動作確認用です。適当な本文を入れておきます。',
+      );
+      await addTagToMemo(memo.id, tag.id);
     }
   }
 

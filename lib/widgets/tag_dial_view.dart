@@ -179,8 +179,10 @@ class _TagDialViewState extends State<TagDialView>
     final displayAngle = (pi - angleRad) * 180 / pi;
 
     // タッチX位置で親/子を判定
+    // 視覚的な境界は canvas 上の X = cx - parentInnerR にある
+    // （親の内半径＝子の外半径）。それより右（中心寄り）なら子エリア
     final borderX = cx - parentInnerR;
-    final isChild = showChild && pos.dx > canvasWidth - borderX;
+    final isChild = showChild && pos.dx > borderX;
 
     final rotation = isChild ? _childRotation : _parentRotation;
     final options = isChild ? widget.childOptions : widget.parentOptions;
@@ -284,7 +286,7 @@ class _TagDialViewState extends State<TagDialView>
         // ドラッグ開始時にターゲットを確定（途中で切り替えない）
         final touchX = d.localPosition.dx;
         final borderX = cx - parentInnerR;
-        _dragTargetIsChild = showChild && touchX > canvasWidth - borderX;
+        _dragTargetIsChild = showChild && touchX > borderX;
       },
       onVerticalDragUpdate: (d) {
         if (!widget.isOpen || _dragTargetIsChild == null) return;

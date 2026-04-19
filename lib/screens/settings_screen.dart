@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/database_provider.dart';
+import '../utils/safe_dialog.dart';
+import '../utils/toast.dart';
 import 'font_lab_screen.dart';
 import 'font_weight_lab_screen.dart';
 import 'icon_lab_screen.dart';
+import 'all_tab_filter_lab_screen.dart';
+import 'maximize_icon_lab_screen.dart';
 import 'settings_icon_lab_screen.dart';
 
 /// 設定画面
@@ -49,6 +53,25 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const SettingsIconLabScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.zoom_out_map),
+            title: const Text('最大化アイコンラボ'),
+            subtitle: const Text('機能バー右端の最大化ボタン候補を比較'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MaximizeIconLabScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.tune),
+            title: const Text('すべてフィルタタブラボ'),
+            subtitle: const Text('「すべて」タブ上部のフィルタ表示候補を比較'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                  builder: (_) => const AllTabFilterLabScreen()),
             ),
           ),
           ListTile(
@@ -274,9 +297,7 @@ class SettingsScreen extends ConsumerWidget {
         'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. 日本語混じりでもどうなるかチェック。改行も入れてみる。\n\n第二段落。\n第三段落。');
 
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('ダミーデータを投入しました')),
-    );
+    showToast(context, 'ダミーデータを投入しました');
   }
 
   // 子タグドロワー検証用: 子タグを30個持つ親タグを1つ作る
@@ -306,11 +327,7 @@ class SettingsScreen extends ConsumerWidget {
     }
 
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('「もりもり」親タグ + 子タグ30個を追加しました'),
-      ),
-    );
+    showToast(context, '「もりもり」親タグ + 子タグ30個を追加しました');
   }
 
   // 検索検証用: Claude という単語を様々な大小・全半角で含むメモを大量投入
@@ -388,9 +405,7 @@ class SettingsScreen extends ConsumerWidget {
     }
 
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Claude検索検証用ダミーデータを投入しました')),
-    );
+    showToast(context, 'Claude検索検証用ダミーデータを投入しました');
   }
 
   // 長文メモ検証用: 1000〜10000文字を1000刻みで10件
@@ -424,9 +439,7 @@ class SettingsScreen extends ConsumerWidget {
     }
 
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('長文ダミーメモ10件を追加しました')),
-    );
+    showToast(context, '長文ダミーメモ10件を追加しました');
   }
 
   Future<void> _seedLongTitleTagMemos(
@@ -498,29 +511,30 @@ class SettingsScreen extends ConsumerWidget {
     await db.addTagToMemo(m6.id, longParent.id);
 
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('長タイトル＋長タグ名ダミーを追加しました')),
-      );
+      showToast(context, '長タイトル＋長タグ名ダミーを追加しました');
     }
   }
 
   Future<void> _wipeAllData(BuildContext context, WidgetRef ref) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('全データ削除'),
-        content: const Text('全てのメモとタグを削除します。よろしいですか？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('削除'),
-          ),
-        ],
+    final ok = await focusSafe(
+      context,
+      () => showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('全データ削除'),
+          content: const Text('全てのメモとタグを削除します。よろしいですか？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('削除'),
+            ),
+          ],
+        ),
       ),
     );
     if (ok != true) return;
@@ -529,9 +543,7 @@ class SettingsScreen extends ConsumerWidget {
     await db.wipeAll();
 
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('全データを削除しました')),
-    );
+    showToast(context, '全データを削除しました');
   }
 }
 

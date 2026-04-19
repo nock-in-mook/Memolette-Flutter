@@ -3,12 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'db/database.dart';
 import 'screens/home_screen.dart';
+import 'utils/keyboard_done_bar.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // ダミータグ挿入（タグ0件のときだけ）
   final db = AppDatabase();
   await db.seedDummyTags();
+  await db.seedDummyTagHistory();
+  await db.seedDummyLongMemos();
+  await db.seedDummyBulkMemos(tagName: 'ダミー70', count: 70);
   await db.close();
 
   runApp(
@@ -26,6 +30,15 @@ class MemolettApp extends StatelessWidget {
     return MaterialApp(
       title: 'Memolette',
       debugShowCheckedModeBanner: false,
+      builder: (context, child) {
+        // システムのテキストスケールを無視してアプリ内は1.0固定
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.noScaling,
+          ),
+          child: KeyboardDoneBar(child: child!),
+        );
+      },
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.blueAccent,

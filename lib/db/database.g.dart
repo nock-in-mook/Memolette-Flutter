@@ -143,6 +143,18 @@ class $MemosTable extends Memos with TableInfo<$MemosTable, Memo> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _bgColorIndexMeta = const VerificationMeta(
+    'bgColorIndex',
+  );
+  @override
+  late final GeneratedColumn<int> bgColorIndex = GeneratedColumn<int>(
+    'bg_color_index',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -156,6 +168,7 @@ class $MemosTable extends Memos with TableInfo<$MemosTable, Memo> {
     viewCount,
     lastViewedAt,
     isLocked,
+    bgColorIndex,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -240,6 +253,15 @@ class $MemosTable extends Memos with TableInfo<$MemosTable, Memo> {
         isLocked.isAcceptableOrUnknown(data['is_locked']!, _isLockedMeta),
       );
     }
+    if (data.containsKey('bg_color_index')) {
+      context.handle(
+        _bgColorIndexMeta,
+        bgColorIndex.isAcceptableOrUnknown(
+          data['bg_color_index']!,
+          _bgColorIndexMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -293,6 +315,10 @@ class $MemosTable extends Memos with TableInfo<$MemosTable, Memo> {
         DriftSqlType.bool,
         data['${effectivePrefix}is_locked'],
       )!,
+      bgColorIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}bg_color_index'],
+      )!,
     );
   }
 
@@ -314,6 +340,7 @@ class Memo extends DataClass implements Insertable<Memo> {
   final int viewCount;
   final DateTime? lastViewedAt;
   final bool isLocked;
+  final int bgColorIndex;
   const Memo({
     required this.id,
     required this.content,
@@ -326,6 +353,7 @@ class Memo extends DataClass implements Insertable<Memo> {
     required this.viewCount,
     this.lastViewedAt,
     required this.isLocked,
+    required this.bgColorIndex,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -343,6 +371,7 @@ class Memo extends DataClass implements Insertable<Memo> {
       map['last_viewed_at'] = Variable<DateTime>(lastViewedAt);
     }
     map['is_locked'] = Variable<bool>(isLocked);
+    map['bg_color_index'] = Variable<int>(bgColorIndex);
     return map;
   }
 
@@ -361,6 +390,7 @@ class Memo extends DataClass implements Insertable<Memo> {
           ? const Value.absent()
           : Value(lastViewedAt),
       isLocked: Value(isLocked),
+      bgColorIndex: Value(bgColorIndex),
     );
   }
 
@@ -381,6 +411,7 @@ class Memo extends DataClass implements Insertable<Memo> {
       viewCount: serializer.fromJson<int>(json['viewCount']),
       lastViewedAt: serializer.fromJson<DateTime?>(json['lastViewedAt']),
       isLocked: serializer.fromJson<bool>(json['isLocked']),
+      bgColorIndex: serializer.fromJson<int>(json['bgColorIndex']),
     );
   }
   @override
@@ -398,6 +429,7 @@ class Memo extends DataClass implements Insertable<Memo> {
       'viewCount': serializer.toJson<int>(viewCount),
       'lastViewedAt': serializer.toJson<DateTime?>(lastViewedAt),
       'isLocked': serializer.toJson<bool>(isLocked),
+      'bgColorIndex': serializer.toJson<int>(bgColorIndex),
     };
   }
 
@@ -413,6 +445,7 @@ class Memo extends DataClass implements Insertable<Memo> {
     int? viewCount,
     Value<DateTime?> lastViewedAt = const Value.absent(),
     bool? isLocked,
+    int? bgColorIndex,
   }) => Memo(
     id: id ?? this.id,
     content: content ?? this.content,
@@ -425,6 +458,7 @@ class Memo extends DataClass implements Insertable<Memo> {
     viewCount: viewCount ?? this.viewCount,
     lastViewedAt: lastViewedAt.present ? lastViewedAt.value : this.lastViewedAt,
     isLocked: isLocked ?? this.isLocked,
+    bgColorIndex: bgColorIndex ?? this.bgColorIndex,
   );
   Memo copyWithCompanion(MemosCompanion data) {
     return Memo(
@@ -445,6 +479,9 @@ class Memo extends DataClass implements Insertable<Memo> {
           ? data.lastViewedAt.value
           : this.lastViewedAt,
       isLocked: data.isLocked.present ? data.isLocked.value : this.isLocked,
+      bgColorIndex: data.bgColorIndex.present
+          ? data.bgColorIndex.value
+          : this.bgColorIndex,
     );
   }
 
@@ -461,7 +498,8 @@ class Memo extends DataClass implements Insertable<Memo> {
           ..write('manualSortOrder: $manualSortOrder, ')
           ..write('viewCount: $viewCount, ')
           ..write('lastViewedAt: $lastViewedAt, ')
-          ..write('isLocked: $isLocked')
+          ..write('isLocked: $isLocked, ')
+          ..write('bgColorIndex: $bgColorIndex')
           ..write(')'))
         .toString();
   }
@@ -479,6 +517,7 @@ class Memo extends DataClass implements Insertable<Memo> {
     viewCount,
     lastViewedAt,
     isLocked,
+    bgColorIndex,
   );
   @override
   bool operator ==(Object other) =>
@@ -494,7 +533,8 @@ class Memo extends DataClass implements Insertable<Memo> {
           other.manualSortOrder == this.manualSortOrder &&
           other.viewCount == this.viewCount &&
           other.lastViewedAt == this.lastViewedAt &&
-          other.isLocked == this.isLocked);
+          other.isLocked == this.isLocked &&
+          other.bgColorIndex == this.bgColorIndex);
 }
 
 class MemosCompanion extends UpdateCompanion<Memo> {
@@ -509,6 +549,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
   final Value<int> viewCount;
   final Value<DateTime?> lastViewedAt;
   final Value<bool> isLocked;
+  final Value<int> bgColorIndex;
   final Value<int> rowid;
   const MemosCompanion({
     this.id = const Value.absent(),
@@ -522,6 +563,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
     this.viewCount = const Value.absent(),
     this.lastViewedAt = const Value.absent(),
     this.isLocked = const Value.absent(),
+    this.bgColorIndex = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MemosCompanion.insert({
@@ -536,6 +578,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
     this.viewCount = const Value.absent(),
     this.lastViewedAt = const Value.absent(),
     this.isLocked = const Value.absent(),
+    this.bgColorIndex = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id);
   static Insertable<Memo> custom({
@@ -550,6 +593,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
     Expression<int>? viewCount,
     Expression<DateTime>? lastViewedAt,
     Expression<bool>? isLocked,
+    Expression<int>? bgColorIndex,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -564,6 +608,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
       if (viewCount != null) 'view_count': viewCount,
       if (lastViewedAt != null) 'last_viewed_at': lastViewedAt,
       if (isLocked != null) 'is_locked': isLocked,
+      if (bgColorIndex != null) 'bg_color_index': bgColorIndex,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -580,6 +625,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
     Value<int>? viewCount,
     Value<DateTime?>? lastViewedAt,
     Value<bool>? isLocked,
+    Value<int>? bgColorIndex,
     Value<int>? rowid,
   }) {
     return MemosCompanion(
@@ -594,6 +640,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
       viewCount: viewCount ?? this.viewCount,
       lastViewedAt: lastViewedAt ?? this.lastViewedAt,
       isLocked: isLocked ?? this.isLocked,
+      bgColorIndex: bgColorIndex ?? this.bgColorIndex,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -634,6 +681,9 @@ class MemosCompanion extends UpdateCompanion<Memo> {
     if (isLocked.present) {
       map['is_locked'] = Variable<bool>(isLocked.value);
     }
+    if (bgColorIndex.present) {
+      map['bg_color_index'] = Variable<int>(bgColorIndex.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -654,6 +704,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
           ..write('viewCount: $viewCount, ')
           ..write('lastViewedAt: $lastViewedAt, ')
           ..write('isLocked: $isLocked, ')
+          ..write('bgColorIndex: $bgColorIndex, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3189,6 +3240,7 @@ typedef $$MemosTableCreateCompanionBuilder =
       Value<int> viewCount,
       Value<DateTime?> lastViewedAt,
       Value<bool> isLocked,
+      Value<int> bgColorIndex,
       Value<int> rowid,
     });
 typedef $$MemosTableUpdateCompanionBuilder =
@@ -3204,6 +3256,7 @@ typedef $$MemosTableUpdateCompanionBuilder =
       Value<int> viewCount,
       Value<DateTime?> lastViewedAt,
       Value<bool> isLocked,
+      Value<int> bgColorIndex,
       Value<int> rowid,
     });
 
@@ -3291,6 +3344,11 @@ class $$MemosTableFilterComposer extends Composer<_$AppDatabase, $MemosTable> {
 
   ColumnFilters<bool> get isLocked => $composableBuilder(
     column: $table.isLocked,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get bgColorIndex => $composableBuilder(
+    column: $table.bgColorIndex,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3383,6 +3441,11 @@ class $$MemosTableOrderingComposer
     column: $table.isLocked,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get bgColorIndex => $composableBuilder(
+    column: $table.bgColorIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MemosTableAnnotationComposer
@@ -3432,6 +3495,11 @@ class $$MemosTableAnnotationComposer
 
   GeneratedColumn<bool> get isLocked =>
       $composableBuilder(column: $table.isLocked, builder: (column) => column);
+
+  GeneratedColumn<int> get bgColorIndex => $composableBuilder(
+    column: $table.bgColorIndex,
+    builder: (column) => column,
+  );
 
   Expression<T> memoTagsRefs<T extends Object>(
     Expression<T> Function($$MemoTagsTableAnnotationComposer a) f,
@@ -3498,6 +3566,7 @@ class $$MemosTableTableManager
                 Value<int> viewCount = const Value.absent(),
                 Value<DateTime?> lastViewedAt = const Value.absent(),
                 Value<bool> isLocked = const Value.absent(),
+                Value<int> bgColorIndex = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MemosCompanion(
                 id: id,
@@ -3511,6 +3580,7 @@ class $$MemosTableTableManager
                 viewCount: viewCount,
                 lastViewedAt: lastViewedAt,
                 isLocked: isLocked,
+                bgColorIndex: bgColorIndex,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3526,6 +3596,7 @@ class $$MemosTableTableManager
                 Value<int> viewCount = const Value.absent(),
                 Value<DateTime?> lastViewedAt = const Value.absent(),
                 Value<bool> isLocked = const Value.absent(),
+                Value<int> bgColorIndex = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MemosCompanion.insert(
                 id: id,
@@ -3539,6 +3610,7 @@ class $$MemosTableTableManager
                 viewCount: viewCount,
                 lastViewedAt: lastViewedAt,
                 isLocked: isLocked,
+                bgColorIndex: bgColorIndex,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

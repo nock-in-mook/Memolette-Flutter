@@ -6,6 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/keyboard_done_bar.dart';
+import '../utils/safe_dialog.dart';
+import '../utils/text_menu_dismisser.dart';
 import 'trapezoid_tab_shape.dart';
 
 /// タグシート（Swift版 NewTagSheetView 準拠）
@@ -48,15 +51,17 @@ class NewTagSheet extends ConsumerStatefulWidget {
     int specialInitialColorIndex = 0,
     ValueChanged<int>? onSpecialColorSaved,
   }) {
-    return showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      // 背景を透明にして、内部でBackdropFilter（すりガラス）を適用する
-      backgroundColor: Colors.transparent,
-      // 背景の暗幕は薄く（背後のUIをうっすら透けさせる）
-      barrierColor: Colors.black.withValues(alpha: 0.15),
-      builder: (ctx) {
+    return focusSafe(
+      context,
+      () => showModalBottomSheet<String>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        // 背景を透明にして、内部でBackdropFilter（すりガラス）を適用する
+        backgroundColor: Colors.transparent,
+        // 背景の暗幕は薄く（背後のUIをうっすら透けさせる）
+        barrierColor: Colors.black.withValues(alpha: 0.15),
+        builder: (ctx) {
         final mq = MediaQuery.of(ctx);
         final screenH = mq.size.height;
         final keyboardH = mq.viewInsets.bottom;
@@ -64,7 +69,7 @@ class NewTagSheet extends ConsumerStatefulWidget {
         final maxVisible = screenH - mq.padding.top - 10 - keyboardH;
         final actualVisible =
             visibleH > maxVisible && maxVisible > 0 ? maxVisible : visibleH;
-        return Padding(
+        return SuppressKeyboardDoneBar(child: Padding(
           padding: EdgeInsets.only(bottom: keyboardH),
           child: SizedBox(
             height: actualVisible,
@@ -90,8 +95,9 @@ class NewTagSheet extends ConsumerStatefulWidget {
               ),
             ),
           ),
-        );
-      },
+        ));
+        },
+      ),
     );
   }
 
@@ -152,6 +158,9 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
       if (mounted) Navigator.of(context).pop();
       return;
     }
+    // 念のため save 時にも重複チェック（canSave で弾けているはずの二重防御）
+    final all = ref.read(allTagsProvider).value ?? const <Tag>[];
+    if (_isDuplicate(all)) return;
     // 編集モード
     if (_isEdit) {
       final name = _trimmed;
@@ -186,7 +195,7 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
     // 特殊タブは色変更だけなので常に保存可能
     final canSave = _isSpecial || (_trimmed.isNotEmpty && !duplicate);
 
-    return Column(
+    return KeyboardDoneBar(child: Column(
       children: [
         _buildHeader(canSave: canSave),
         // 仕切り線なし（Swift版同様に余白で区切る）
@@ -209,7 +218,7 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
           ),
         ),
       ],
-    );
+    ));
   }
 
   Widget _buildHeader({required bool canSave}) {
@@ -313,6 +322,8 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
         TextField(
           controller: _nameController,
           maxLength: _maxNameLength,
+          onTap: TextMenuDismisser.wrap(null),
+          contextMenuBuilder: TextMenuDismisser.builder,
           // 自動フォーカスしない（Swift版同様、ユーザータップでキーボードが出る）
           style: const TextStyle(fontSize: 16),
           decoration: InputDecoration(
@@ -326,28 +337,51 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.3)),
+              borderSide: BorderSide(
+                color: duplicate
+                    ? Colors.red
+                    : Colors.grey.withValues(alpha: 0.3),
+                width: duplicate ? 1.5 : 1.0,
+              ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.3)),
+              borderSide: BorderSide(
+                color: duplicate
+                    ? Colors.red
+                    : Colors.grey.withValues(alpha: 0.3),
+                width: duplicate ? 1.5 : 1.0,
+              ),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(
-                color: Colors.grey.withValues(alpha: 0.5),
+                color: duplicate
+                    ? Colors.red
+                    : Colors.grey.withValues(alpha: 0.5),
+                width: duplicate ? 1.5 : 1.0,
               ),
             ),
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            if (duplicate)
-              const Text(
-                '同じ名前のタグが既にあります',
-                style: TextStyle(fontSize: 11, color: Colors.red),
+            if (duplicate) ...[
+              const Icon(Icons.error_outline, size: 14, color: Colors.red),
+              const SizedBox(width: 4),
+              Text(
+                _isChild
+                    ? 'このフォルダ内に同じ名前の子タグが既にあります'
+                    : '同じ名前の親タグが既にあります',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Colors.red,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
+            ],
             const Spacer(),
             Text(
               '${_nameController.text.characters.length}/$_maxNameLength',

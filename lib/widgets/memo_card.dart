@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../constants/design_constants.dart';
+import '../constants/memo_bg_colors.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../screens/home_screen.dart' show GridSizeOption;
@@ -12,17 +13,23 @@ import '../screens/home_screen.dart' show GridSizeOption;
 class MemoCard extends ConsumerWidget {
   final Memo memo;
   final VoidCallback onTap;
+  final VoidCallback? onDoubleTap;
   final String? parentTagId;
   final GridSizeOption gridSize;
   final bool isHighlighted;
+  // 一時的な強調表示の強度 (0.0 = 表示なし / 1.0 = フル)
+  // ロック/トップ移動などの操作後にジワッと点滅させる
+  final double flashLevel;
 
   const MemoCard({
     super.key,
     required this.memo,
     required this.onTap,
+    this.onDoubleTap,
     this.parentTagId,
     this.gridSize = GridSizeOption.grid2x3,
     this.isHighlighted = false,
+    this.flashLevel = 0,
   });
 
   // 本家準拠: グリッドサイズに応じたフォントサイズ・行数・パディング
@@ -80,12 +87,34 @@ class MemoCard extends ConsumerWidget {
   Widget _buildTitleOnly() {
     final hasTitle = memo.title.isNotEmpty;
     final displayTitle = hasTitle ? memo.title : '無題';
+    // 背景はメモ色（未設定なら白）。ハイライトはオレンジ枠で表現
+    final bgColor = memo.bgColorIndex == 0
+        ? Colors.white
+        : MemoBgColors.getColor(memo.bgColorIndex);
     return GestureDetector(
       onTap: onTap,
+      onDoubleTap: onDoubleTap,
       child: Container(
         clipBehavior: Clip.hardEdge,
+        // 縁取りは foregroundDecoration として中身に重ねる
+        // （border 分だけコンテンツが押されてレイアウトが変わるのを防ぐ）
+        foregroundDecoration: flashLevel > 0
+            ? BoxDecoration(
+                border: Border.all(
+                    color: Colors.orange.withValues(alpha: flashLevel * 0.7),
+                    width: 1.5),
+                borderRadius: BorderRadius.circular(4),
+              )
+            : isHighlighted
+                ? BoxDecoration(
+                    border: Border.all(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        width: 1.5),
+                    borderRadius: BorderRadius.circular(4),
+                  )
+                : null,
         decoration: BoxDecoration(
-          color: isHighlighted ? const Color(0xFFFFF3E0) : Colors.white,
+          color: bgColor,
           borderRadius: BorderRadius.circular(4),
           boxShadow: [
             BoxShadow(
@@ -106,7 +135,7 @@ class MemoCard extends ConsumerWidget {
                   fontWeight:
                       hasTitle ? FontWeight.w700 : FontWeight.w400,
                   color: hasTitle
-                      ? Colors.black
+                      ? const Color(0xFF2D1F50) // 黒寄り紫
                       : Colors.grey.withValues(alpha: 0.5),
                   height: 1.0,
                   fontFamily: 'PingFang JP',
@@ -146,7 +175,7 @@ class MemoCard extends ConsumerWidget {
     }
     // 本家準拠: タイトル空なら "(タイトルなし)" を薄く、本文は常に memo.content
     final hasTitle = memo.title.isNotEmpty;
-    final displayTitle = hasTitle ? memo.title : '(タイトルなし)';
+    final displayTitle = hasTitle ? memo.title : '(無題)';
     final displayBody = memo.content;
 
     // 現在のフォルダの親タグに属する子タグを1つ見つける（本家 childTagForBadge 準拠）
@@ -160,11 +189,33 @@ class MemoCard extends ConsumerWidget {
           .firstOrNull;
     }
 
-    // カード本体（白背景・角丸・影）。中身（タイトル・本文）+ 右上 Pin/Lock
-    final cardBody = Container(
+    // カード本体（メモ背景色・角丸・影、ハイライトは半透明黒枠）
+    final cardBgColor = memo.bgColorIndex == 0
+        ? Colors.white
+        : MemoBgColors.getColor(memo.bgColorIndex);
+    // ValueKey でハイライト状態変化時に Widget を強制差し替え（アニメ抑制）
+    final cardBody = KeyedSubtree(
+      key: ValueKey('memocard_body_${memo.id}_${isHighlighted ? 1 : 0}_${(flashLevel * 10).round()}'),
+      child: Container(
       clipBehavior: Clip.hardEdge,
+      // 縁取りは foregroundDecoration で中身に重ねてレイアウトを変えない
+      foregroundDecoration: flashLevel > 0
+          ? BoxDecoration(
+              border: Border.all(
+                  color: Colors.orange.withValues(alpha: flashLevel * 0.7),
+                  width: 1.5),
+              borderRadius: BorderRadius.circular(12),
+            )
+          : isHighlighted
+              ? BoxDecoration(
+                  border: Border.all(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      width: 1.5),
+                  borderRadius: BorderRadius.circular(12),
+                )
+              : null,
       decoration: BoxDecoration(
-        color: isHighlighted ? const Color(0xFFFFF3E0) : Colors.white,
+        color: cardBgColor,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -189,32 +240,42 @@ class MemoCard extends ConsumerWidget {
                     fontWeight:
                         hasTitle ? FontWeight.w700 : FontWeight.w400,
                     color: hasTitle
-                        ? Colors.black
+                        ? const Color(0xFF2D1F50) // 黒寄り紫
                         : Colors.grey.withValues(alpha: 0.5),
                     height: 1.3,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (displayBody.isNotEmpty)
+                Container(
+                  height: 0.5,
+                  margin: const EdgeInsets.only(top: 4, bottom: 3),
+                  color: Colors.grey.withValues(alpha: 0.6),
+                ),
+                if (displayBody.isNotEmpty) ...[
                   Flexible(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        displayBody,
-                        style: TextStyle(
-                          fontSize: _bodyFont,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.grey[600],
-                          height: 1.4,
-                        ),
-                        // 本家準拠: …で省略、グラデーションフェードしない
-                        // bodyLines == 0 は無制限
-                        maxLines: _bodyLines == 0 ? null : _bodyLines,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        // 利用可能な高さから表示できる行数を動的計算
+                        final lineHeight = _bodyFont * 1.4;
+                        final maxLines = (constraints.maxHeight / lineHeight)
+                            .floor()
+                            .clamp(1, _bodyLines == 0 ? 999 : _bodyLines);
+                        return Text(
+                          displayBody,
+                          style: TextStyle(
+                            fontSize: _bodyFont,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black87,
+                            height: 1.4,
+                          ),
+                          maxLines: maxLines,
+                          overflow: TextOverflow.ellipsis,
+                        );
+                      },
                     ),
                   ),
+                ],
               ],
             ),
           ),
@@ -247,10 +308,12 @@ class MemoCard extends ConsumerWidget {
             ),
         ],
       ),
+    ),
     );
 
     return GestureDetector(
       onTap: onTap,
+      onDoubleTap: onDoubleTap,
       // 子タグバッジは右下にカード端からはみ出して表示
       // 親の高さ制約が有限ならカードがセル全体を埋め(StackFit.expand)、
       // 無限なら内容に合わせて縮む(StackFit.loose) — 両ケースに対応
