@@ -12,6 +12,7 @@ import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
 import 'frosted_alert_dialog.dart';
 import 'image_viewer.dart';
+import 'markdown_text_controller.dart';
 
 /// Phase 10++ ブロックエディタ（実験版）
 ///
@@ -75,7 +76,7 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
 
   /// 現在（または最後に）フォーカスされている TextBlock の controller。
   /// マークダウンツールバー等、外部から本文編集を差し込むときに使う。
-  TextEditingController? get focusedController {
+  MarkdownTextController? get focusedController {
     for (final b in _blocks.whereType<_TextBlock>()) {
       if (b.focusNode.hasFocus) return b.controller;
     }
@@ -129,13 +130,102 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
   }
 
   /// 本文文字列の外部更新（親から置き換えたい場合）
-  /// DB から画像を再ロードするので、別メモに切り替わるケースも正しく復元できる
+  /// - 画像マーカーの並びが現在と同じなら TextBlock.controller.text のみ更新
+  ///   (フォーカス維持 = キーボードが閉じない)
+  /// - 構造が違うなら全ブロック再生成（DB画像も再ロード）
   void replaceContent(String content) {
+    final currentStructure = _extractMarkerSequence(_serialize());
+    final newStructure = _extractMarkerSequence(content);
+    if (_listEquals(currentStructure, newStructure)) {
+      // 画像の並びが同じ: テキスト部分だけ更新してフォーカスを保つ
+      _applyTextOnlyUpdate(content);
+      return;
+    }
     _disposeBlocks();
     _blocks.clear();
     _initialized = false;
     if (mounted) setState(() {});
     _loadBlocksFromContent(content);
+  }
+
+  static List<String> _extractMarkerSequence(String content) {
+    final regex = RegExp('$_marker([^$_marker]+)$_marker');
+    return regex
+        .allMatches(content)
+        .map((m) => m.group(1)!)
+        .toList(growable: false);
+  }
+
+  static bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  /// 画像マーカー位置で content を分割し、
+  /// 現在の _blocks の各 TextBlock にテキストを上書き
+  void _applyTextOnlyUpdate(String content) {
+    final regex = RegExp('$_marker([^$_marker]+)$_marker');
+    final texts = <String>[];
+    var cursor = 0;
+    for (final match in regex.allMatches(content)) {
+      texts.add(content.substring(cursor, match.start));
+      cursor = match.end;
+    }
+    texts.add(content.substring(cursor));
+    // _blocks は TextBlock / ImageBlock が交互に並ぶ想定だが厳密ではないので
+    // TextBlock だけを順に拾って上書きする
+    var textIdx = 0;
+    for (final b in _blocks) {
+      if (b is _TextBlock && textIdx < texts.length) {
+        final newText = texts[textIdx++];
+        if (b.controller.text != newText) {
+          // 変化位置にカーソルを寄せる: Undo/Redo で文字数が変わったとき、
+          // カーソルが「ファイル先頭からの文字数固定」で残ると見かけ上ずれる。
+          // 共通 prefix / suffix を取って変化領域を特定し、カーソルをそこに移す。
+          final oldText = b.controller.text;
+          final oldCursor = b.controller.selection.baseOffset;
+          final newCursor = _adjustCursor(oldText, newText, oldCursor);
+          b.controller.value = TextEditingValue(
+            text: newText,
+            selection: TextSelection.collapsed(offset: newCursor),
+          );
+        }
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// Undo/Redo 時に、新テキストに対してカーソル位置を変化領域に追従させる
+  /// - 旧カーソルが共通 prefix 内 → そのまま維持
+  /// - 共通 suffix 内 → 長さ差分だけシフト
+  /// - 変化領域の中 → 共通 prefix 末尾（= 変化の開始点）に寄せる
+  static int _adjustCursor(String oldText, String newText, int oldCursor) {
+    if (oldCursor < 0) return newText.length;
+    // 共通 prefix
+    var prefix = 0;
+    final minLen =
+        oldText.length < newText.length ? oldText.length : newText.length;
+    while (prefix < minLen && oldText[prefix] == newText[prefix]) {
+      prefix++;
+    }
+    // 共通 suffix
+    var oldSuffix = oldText.length;
+    var newSuffix = newText.length;
+    while (oldSuffix > prefix &&
+        newSuffix > prefix &&
+        oldText[oldSuffix - 1] == newText[newSuffix - 1]) {
+      oldSuffix--;
+      newSuffix--;
+    }
+    if (oldCursor <= prefix) return oldCursor;
+    if (oldCursor >= oldSuffix) {
+      final shifted = oldCursor - (oldSuffix - newSuffix);
+      return shifted.clamp(0, newText.length);
+    }
+    return prefix.clamp(0, newText.length);
   }
 
   // ========================================
@@ -155,6 +245,16 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
         _serialize() != widget.initialContent) {
       // 外部から content が書き変わったケース（別メモに切替 / Undo/Redo等）
       replaceContent(widget.initialContent);
+    }
+    if (oldWidget.isMarkdown != widget.isMarkdown) {
+      _applyMarkdownToControllers();
+    }
+  }
+
+  /// 全 TextBlock の MarkdownTextController の enabled を現在の isMarkdown に同期
+  void _applyMarkdownToControllers() {
+    for (final b in _blocks.whereType<_TextBlock>()) {
+      b.controller.enabled = widget.isMarkdown;
     }
   }
 
@@ -186,6 +286,7 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
       }
     }
     _attachListeners();
+    _applyMarkdownToControllers();
     _initialized = true;
     if (mounted) setState(() {});
   }
@@ -314,6 +415,7 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
     _blocks.insert(idx + 1, imageBlock);
     _blocks.insert(idx + 2, afterBlock);
     _attachListeners();
+    _applyMarkdownToControllers();
     widget.onContentChanged(_serialize());
     // 挿入後は画像の下の TextBlock にフォーカス移動
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -375,6 +477,7 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
       _blocks.removeAt(idx);
     }
     _attachListeners();
+    _applyMarkdownToControllers();
     widget.onContentChanged(_serialize());
     if (mounted) setState(() {});
   }
@@ -388,22 +491,28 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
     if (!_initialized) {
       return const SizedBox.shrink();
     }
+    // 先頭 TextBlock にだけプレースホルダーを出す
+    final children = <Widget>[];
+    var firstTextSeen = false;
+    for (final block in _blocks) {
+      if (block is _TextBlock) {
+        children.add(_buildTextField(block, isFirstText: !firstTextSeen));
+        firstTextSeen = true;
+      } else if (block is _ImageBlock) {
+        children.add(_buildImage(block));
+      }
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final block in _blocks) _buildBlock(block),
-      ],
+      children: children,
     );
   }
 
-  Widget _buildBlock(_Block block) {
-    if (block is _TextBlock) return _buildTextField(block);
-    if (block is _ImageBlock) return _buildImage(block);
-    return const SizedBox.shrink();
-  }
-
-  Widget _buildTextField(_TextBlock block) {
+  Widget _buildTextField(_TextBlock block, {bool isFirstText = false}) {
+    final hintText = isFirstText
+        ? (widget.isMarkdown ? 'タップでマークダウン編集...' : 'メモを入力...')
+        : null;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
       child: TextField(
@@ -420,7 +529,9 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
           fontFamily: 'PingFang JP',
           color: Colors.black87,
         ),
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
+          hintText: hintText,
+          hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.4)),
           border: InputBorder.none,
           isDense: true,
           contentPadding: EdgeInsets.zero,
@@ -520,11 +631,11 @@ sealed class _Block {
 class _TextBlock extends _Block {
   @override
   final String id;
-  final TextEditingController controller;
+  final MarkdownTextController controller;
   final FocusNode focusNode;
 
   _TextBlock({required String text, required this.id})
-      : controller = TextEditingController(text: text),
+      : controller = MarkdownTextController(text: text),
         focusNode = FocusNode();
 }
 
