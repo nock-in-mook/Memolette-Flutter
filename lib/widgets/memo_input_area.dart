@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
@@ -6,15 +7,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../constants/design_constants.dart';
 import '../constants/memo_bg_colors.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/image_storage.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
 import 'frosted_alert_dialog.dart';
+import 'image_viewer.dart';
 import 'markdown_text_controller.dart';
 import 'markdown_toolbar.dart';
 import 'new_tag_sheet.dart';
@@ -515,6 +519,84 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   // loadMemoDirectlyで直接ロード済み → didUpdateWidgetでの_loadMemoをスキップ
   bool _directLoadApplied = false;
 
+  /// 画像を紐付ける先のメモID。必要なら新規作成する。
+  /// _preCreateEmptyMemo と同等の処理を行い、作成済みメモがあればそれを返す。
+  Future<String?> _ensureMemoId() async {
+    if (widget.editingMemoId != null) return widget.editingMemoId;
+    if (_selfCreatedMemoId != null) return _selfCreatedMemoId;
+    await _preCreateEmptyMemo();
+    return _selfCreatedMemoId;
+  }
+
+  /// 画像ソースを選ぶすりガラスダイアログ → ピッカー → 圧縮 → DB保存
+  Future<void> _attachImage() async {
+    // キーボードを閉じてからピッカー起動（ピッカー側でも閉じるが UX を安定させる）
+    if (_isInputFocused) FocusScope.of(context).unfocus();
+    if (!mounted) return;
+    // FrostedAlertDialog は自動で pop するので、選択結果はクロージャで保持する
+    ImageSource? source;
+    await showFrostedAlert(
+      context: context,
+      title: '画像を追加',
+      message: '取り込み元を選んでください',
+      actions: [
+        FrostedAlertAction(
+          label: 'カメラ',
+          onPressed: () => source = ImageSource.camera,
+        ),
+        FrostedAlertAction(
+          label: 'ライブラリ',
+          isDefault: true,
+          onPressed: () => source = ImageSource.gallery,
+        ),
+      ],
+    );
+    if (source == null || !mounted) return;
+    await _pickAndSave(source!);
+  }
+
+  /// 画像ソースからピック → 圧縮 → DB保存。失敗時はトースト。
+  Future<void> _pickAndSave(ImageSource source) async {
+    final picker = ImagePicker();
+    XFile? picked;
+    try {
+      picked = await picker.pickImage(source: source);
+    } catch (e) {
+      if (mounted) showToast(context, '画像の取り込みに失敗しました');
+      return;
+    }
+    if (picked == null) return; // キャンセル
+    final memoId = await _ensureMemoId();
+    if (memoId == null) return;
+    final relPath = await ImageStorage.saveCompressed(picked.path);
+    if (relPath == null) {
+      if (mounted) showToast(context, '画像の保存に失敗しました');
+      return;
+    }
+    final db = ref.read(databaseProvider);
+    await db.addMemoImage(memoId: memoId, filePath: relPath);
+  }
+
+  /// 画像削除の確認 + 実行
+  Future<void> _confirmDeleteImage(MemoImage img) async {
+    var ok = false;
+    await showFrostedAlert(
+      context: context,
+      title: '画像を削除しますか？',
+      actions: [
+        FrostedAlertAction(label: 'キャンセル'),
+        FrostedAlertAction(
+          label: '削除',
+          isDestructive: true,
+          onPressed: () => ok = true,
+        ),
+      ],
+    );
+    if (!ok) return;
+    final db = ref.read(databaseProvider);
+    await db.deleteMemoImage(img.id);
+  }
+
   /// フォーカス取得時に空メモを先行作成
   /// 以降の入力はすべてupdateMemoで処理されるため、rebuildが発生せず
   /// カスタムキーボードのテキスト消失を防ぐ
@@ -737,6 +819,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                   color: const Color.fromRGBO(40, 40, 40, 0.5),
                 ),
                 _buildContent(),
+                _buildImageStrip(),
                 Container(
                   height: 0.5,
                   color: const Color.fromRGBO(40, 40, 40, 0.5),
@@ -1795,6 +1878,93 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     );
   }
 
+  /// 画像プレビュー行（添付画像がある場合のみ表示）
+  /// 横スクロールリスト、各画像は 72x72、右上に × ボタン
+  /// 画像タップ: フルスクリーン拡大表示
+  Widget _buildImageStrip() {
+    final memoId = widget.editingMemoId ?? _selfCreatedMemoId;
+    if (memoId == null) return const SizedBox.shrink();
+    final imagesAsync = ref.watch(memoImagesProvider(memoId));
+    final images = imagesAsync.valueOrNull ?? const <MemoImage>[];
+    if (images.isEmpty) return const SizedBox.shrink();
+    return Container(
+      height: 84,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: images.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => _buildImageThumb(images[i], images, i),
+      ),
+    );
+  }
+
+  Widget _buildImageThumb(MemoImage img, List<MemoImage> all, int index) {
+    return FutureBuilder<String>(
+      future: ImageStorage.absolutePath(img.filePath),
+      builder: (ctx, snap) {
+        final path = snap.data;
+        return GestureDetector(
+          onTap: path == null
+              ? null
+              : () => _openImageViewer(all, index),
+          onLongPress: () => _confirmDeleteImage(img),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: 72,
+                  height: 72,
+                  color: Colors.grey.shade200,
+                  child: path == null
+                      ? const SizedBox()
+                      : Image.file(
+                          File(path),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const Icon(Icons.broken_image,
+                                  color: Colors.grey),
+                          // gaplessPlayback で再ビルド時のチラつきを抑制
+                          gaplessPlayback: true,
+                        ),
+                ),
+              ),
+              Positioned(
+                top: -6,
+                right: -6,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _confirmDeleteImage(img),
+                  child: Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.black.withValues(alpha: 0.7),
+                    ),
+                    child: const Icon(Icons.close,
+                        size: 14, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 画像ビューアを開く
+  void _openImageViewer(List<MemoImage> images, int initialIndex) {
+    ImageViewer.open(
+      context,
+      images: images,
+      initialIndex: initialIndex,
+    );
+  }
+
   Widget _buildToolbar() {
     return Container(
       constraints: const BoxConstraints(minHeight: 41),
@@ -1850,7 +2020,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             ],
           ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           // 多機能メニュー（エクスポート/HTML化など、タップ動作は後で実装）
           GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -1860,7 +2030,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             child: Icon(CupertinoIcons.ellipsis_circle,
                 size: 20, color: Colors.grey[600]),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           // 背景色変更
           GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -1868,7 +2038,15 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             child: Icon(Icons.palette_outlined,
                 size: 20, color: Colors.grey[600]),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
+          // 画像追加（Phase 10）
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _attachImage,
+            child: Icon(CupertinoIcons.photo,
+                size: 20, color: Colors.grey[600]),
+          ),
+          const SizedBox(width: 12),
           // コピー (アイコンのみ、パレットと同色)
           Builder(builder: (_) {
             final hasRealContent = _contentController.text.isNotEmpty;

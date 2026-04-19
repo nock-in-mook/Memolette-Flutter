@@ -3200,6 +3200,365 @@ class TodoListTagsCompanion extends UpdateCompanion<TodoListTag> {
   }
 }
 
+class $MemoImagesTable extends MemoImages
+    with TableInfo<$MemoImagesTable, MemoImage> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MemoImagesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _memoIdMeta = const VerificationMeta('memoId');
+  @override
+  late final GeneratedColumn<String> memoId = GeneratedColumn<String>(
+    'memo_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES memos (id)',
+    ),
+  );
+  static const VerificationMeta _filePathMeta = const VerificationMeta(
+    'filePath',
+  );
+  @override
+  late final GeneratedColumn<String> filePath = GeneratedColumn<String>(
+    'file_path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    memoId,
+    filePath,
+    sortOrder,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'memo_images';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MemoImage> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('memo_id')) {
+      context.handle(
+        _memoIdMeta,
+        memoId.isAcceptableOrUnknown(data['memo_id']!, _memoIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_memoIdMeta);
+    }
+    if (data.containsKey('file_path')) {
+      context.handle(
+        _filePathMeta,
+        filePath.isAcceptableOrUnknown(data['file_path']!, _filePathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_filePathMeta);
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  MemoImage map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MemoImage(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      memoId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}memo_id'],
+      )!,
+      filePath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_path'],
+      )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MemoImagesTable createAlias(String alias) {
+    return $MemoImagesTable(attachedDatabase, alias);
+  }
+}
+
+class MemoImage extends DataClass implements Insertable<MemoImage> {
+  final String id;
+  final String memoId;
+  final String filePath;
+  final int sortOrder;
+  final DateTime createdAt;
+  const MemoImage({
+    required this.id,
+    required this.memoId,
+    required this.filePath,
+    required this.sortOrder,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['memo_id'] = Variable<String>(memoId);
+    map['file_path'] = Variable<String>(filePath);
+    map['sort_order'] = Variable<int>(sortOrder);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  MemoImagesCompanion toCompanion(bool nullToAbsent) {
+    return MemoImagesCompanion(
+      id: Value(id),
+      memoId: Value(memoId),
+      filePath: Value(filePath),
+      sortOrder: Value(sortOrder),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory MemoImage.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MemoImage(
+      id: serializer.fromJson<String>(json['id']),
+      memoId: serializer.fromJson<String>(json['memoId']),
+      filePath: serializer.fromJson<String>(json['filePath']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'memoId': serializer.toJson<String>(memoId),
+      'filePath': serializer.toJson<String>(filePath),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  MemoImage copyWith({
+    String? id,
+    String? memoId,
+    String? filePath,
+    int? sortOrder,
+    DateTime? createdAt,
+  }) => MemoImage(
+    id: id ?? this.id,
+    memoId: memoId ?? this.memoId,
+    filePath: filePath ?? this.filePath,
+    sortOrder: sortOrder ?? this.sortOrder,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  MemoImage copyWithCompanion(MemoImagesCompanion data) {
+    return MemoImage(
+      id: data.id.present ? data.id.value : this.id,
+      memoId: data.memoId.present ? data.memoId.value : this.memoId,
+      filePath: data.filePath.present ? data.filePath.value : this.filePath,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MemoImage(')
+          ..write('id: $id, ')
+          ..write('memoId: $memoId, ')
+          ..write('filePath: $filePath, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, memoId, filePath, sortOrder, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MemoImage &&
+          other.id == this.id &&
+          other.memoId == this.memoId &&
+          other.filePath == this.filePath &&
+          other.sortOrder == this.sortOrder &&
+          other.createdAt == this.createdAt);
+}
+
+class MemoImagesCompanion extends UpdateCompanion<MemoImage> {
+  final Value<String> id;
+  final Value<String> memoId;
+  final Value<String> filePath;
+  final Value<int> sortOrder;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const MemoImagesCompanion({
+    this.id = const Value.absent(),
+    this.memoId = const Value.absent(),
+    this.filePath = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MemoImagesCompanion.insert({
+    required String id,
+    required String memoId,
+    required String filePath,
+    this.sortOrder = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       memoId = Value(memoId),
+       filePath = Value(filePath);
+  static Insertable<MemoImage> custom({
+    Expression<String>? id,
+    Expression<String>? memoId,
+    Expression<String>? filePath,
+    Expression<int>? sortOrder,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (memoId != null) 'memo_id': memoId,
+      if (filePath != null) 'file_path': filePath,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MemoImagesCompanion copyWith({
+    Value<String>? id,
+    Value<String>? memoId,
+    Value<String>? filePath,
+    Value<int>? sortOrder,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return MemoImagesCompanion(
+      id: id ?? this.id,
+      memoId: memoId ?? this.memoId,
+      filePath: filePath ?? this.filePath,
+      sortOrder: sortOrder ?? this.sortOrder,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (memoId.present) {
+      map['memo_id'] = Variable<String>(memoId.value);
+    }
+    if (filePath.present) {
+      map['file_path'] = Variable<String>(filePath.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MemoImagesCompanion(')
+          ..write('id: $id, ')
+          ..write('memoId: $memoId, ')
+          ..write('filePath: $filePath, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3211,6 +3570,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $MemoTagsTable memoTags = $MemoTagsTable(this);
   late final $TodoItemTagsTable todoItemTags = $TodoItemTagsTable(this);
   late final $TodoListTagsTable todoListTags = $TodoListTagsTable(this);
+  late final $MemoImagesTable memoImages = $MemoImagesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3224,6 +3584,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     memoTags,
     todoItemTags,
     todoListTags,
+    memoImages,
   ];
 }
 
@@ -3278,6 +3639,24 @@ final class $$MemosTableReferences
     ).filter((f) => f.memoId.id.sqlEquals($_itemColumn<String>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_memoTagsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$MemoImagesTable, List<MemoImage>>
+  _memoImagesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.memoImages,
+    aliasName: $_aliasNameGenerator(db.memos.id, db.memoImages.memoId),
+  );
+
+  $$MemoImagesTableProcessedTableManager get memoImagesRefs {
+    final manager = $$MemoImagesTableTableManager(
+      $_db,
+      $_db.memoImages,
+    ).filter((f) => f.memoId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_memoImagesRefsTable($_db));
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -3368,6 +3747,31 @@ class $$MemosTableFilterComposer extends Composer<_$AppDatabase, $MemosTable> {
           }) => $$MemoTagsTableFilterComposer(
             $db: $db,
             $table: $db.memoTags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> memoImagesRefs(
+    Expression<bool> Function($$MemoImagesTableFilterComposer f) f,
+  ) {
+    final $$MemoImagesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.memoImages,
+      getReferencedColumn: (t) => t.memoId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemoImagesTableFilterComposer(
+            $db: $db,
+            $table: $db.memoImages,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -3525,6 +3929,31 @@ class $$MemosTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> memoImagesRefs<T extends Object>(
+    Expression<T> Function($$MemoImagesTableAnnotationComposer a) f,
+  ) {
+    final $$MemoImagesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.memoImages,
+      getReferencedColumn: (t) => t.memoId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemoImagesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.memoImages,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$MemosTableTableManager
@@ -3540,7 +3969,7 @@ class $$MemosTableTableManager
           $$MemosTableUpdateCompanionBuilder,
           (Memo, $$MemosTableReferences),
           Memo,
-          PrefetchHooks Function({bool memoTagsRefs})
+          PrefetchHooks Function({bool memoTagsRefs, bool memoImagesRefs})
         > {
   $$MemosTableTableManager(_$AppDatabase db, $MemosTable table)
     : super(
@@ -3619,28 +4048,55 @@ class $$MemosTableTableManager
                     (e.readTable(table), $$MemosTableReferences(db, table, e)),
               )
               .toList(),
-          prefetchHooksCallback: ({memoTagsRefs = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [if (memoTagsRefs) db.memoTags],
-              addJoins: null,
-              getPrefetchedDataCallback: (items) async {
-                return [
-                  if (memoTagsRefs)
-                    await $_getPrefetchedData<Memo, $MemosTable, MemoTag>(
-                      currentTable: table,
-                      referencedTable: $$MemosTableReferences
-                          ._memoTagsRefsTable(db),
-                      managerFromTypedResult: (p0) =>
-                          $$MemosTableReferences(db, table, p0).memoTagsRefs,
-                      referencedItemsForCurrentItem: (item, referencedItems) =>
-                          referencedItems.where((e) => e.memoId == item.id),
-                      typedResults: items,
-                    ),
-                ];
+          prefetchHooksCallback:
+              ({memoTagsRefs = false, memoImagesRefs = false}) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (memoTagsRefs) db.memoTags,
+                    if (memoImagesRefs) db.memoImages,
+                  ],
+                  addJoins: null,
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (memoTagsRefs)
+                        await $_getPrefetchedData<Memo, $MemosTable, MemoTag>(
+                          currentTable: table,
+                          referencedTable: $$MemosTableReferences
+                              ._memoTagsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$MemosTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).memoTagsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.memoId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (memoImagesRefs)
+                        await $_getPrefetchedData<Memo, $MemosTable, MemoImage>(
+                          currentTable: table,
+                          referencedTable: $$MemosTableReferences
+                              ._memoImagesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$MemosTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).memoImagesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.memoId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
               },
-            );
-          },
         ),
       );
 }
@@ -3657,7 +4113,7 @@ typedef $$MemosTableProcessedTableManager =
       $$MemosTableUpdateCompanionBuilder,
       (Memo, $$MemosTableReferences),
       Memo,
-      PrefetchHooks Function({bool memoTagsRefs})
+      PrefetchHooks Function({bool memoTagsRefs, bool memoImagesRefs})
     >;
 typedef $$TagsTableCreateCompanionBuilder =
     TagsCompanion Function({
@@ -6142,6 +6598,324 @@ typedef $$TodoListTagsTableProcessedTableManager =
       TodoListTag,
       PrefetchHooks Function({bool todoListId, bool tagId})
     >;
+typedef $$MemoImagesTableCreateCompanionBuilder =
+    MemoImagesCompanion Function({
+      required String id,
+      required String memoId,
+      required String filePath,
+      Value<int> sortOrder,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+typedef $$MemoImagesTableUpdateCompanionBuilder =
+    MemoImagesCompanion Function({
+      Value<String> id,
+      Value<String> memoId,
+      Value<String> filePath,
+      Value<int> sortOrder,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+final class $$MemoImagesTableReferences
+    extends BaseReferences<_$AppDatabase, $MemoImagesTable, MemoImage> {
+  $$MemoImagesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $MemosTable _memoIdTable(_$AppDatabase db) => db.memos.createAlias(
+    $_aliasNameGenerator(db.memoImages.memoId, db.memos.id),
+  );
+
+  $$MemosTableProcessedTableManager get memoId {
+    final $_column = $_itemColumn<String>('memo_id')!;
+
+    final manager = $$MemosTableTableManager(
+      $_db,
+      $_db.memos,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_memoIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$MemoImagesTableFilterComposer
+    extends Composer<_$AppDatabase, $MemoImagesTable> {
+  $$MemoImagesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get filePath => $composableBuilder(
+    column: $table.filePath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$MemosTableFilterComposer get memoId {
+    final $$MemosTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.memoId,
+      referencedTable: $db.memos,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemosTableFilterComposer(
+            $db: $db,
+            $table: $db.memos,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$MemoImagesTableOrderingComposer
+    extends Composer<_$AppDatabase, $MemoImagesTable> {
+  $$MemoImagesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get filePath => $composableBuilder(
+    column: $table.filePath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$MemosTableOrderingComposer get memoId {
+    final $$MemosTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.memoId,
+      referencedTable: $db.memos,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemosTableOrderingComposer(
+            $db: $db,
+            $table: $db.memos,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$MemoImagesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $MemoImagesTable> {
+  $$MemoImagesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get filePath =>
+      $composableBuilder(column: $table.filePath, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  $$MemosTableAnnotationComposer get memoId {
+    final $$MemosTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.memoId,
+      referencedTable: $db.memos,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemosTableAnnotationComposer(
+            $db: $db,
+            $table: $db.memos,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$MemoImagesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $MemoImagesTable,
+          MemoImage,
+          $$MemoImagesTableFilterComposer,
+          $$MemoImagesTableOrderingComposer,
+          $$MemoImagesTableAnnotationComposer,
+          $$MemoImagesTableCreateCompanionBuilder,
+          $$MemoImagesTableUpdateCompanionBuilder,
+          (MemoImage, $$MemoImagesTableReferences),
+          MemoImage,
+          PrefetchHooks Function({bool memoId})
+        > {
+  $$MemoImagesTableTableManager(_$AppDatabase db, $MemoImagesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MemoImagesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MemoImagesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MemoImagesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> memoId = const Value.absent(),
+                Value<String> filePath = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MemoImagesCompanion(
+                id: id,
+                memoId: memoId,
+                filePath: filePath,
+                sortOrder: sortOrder,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String memoId,
+                required String filePath,
+                Value<int> sortOrder = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MemoImagesCompanion.insert(
+                id: id,
+                memoId: memoId,
+                filePath: filePath,
+                sortOrder: sortOrder,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$MemoImagesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({memoId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (memoId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.memoId,
+                                referencedTable: $$MemoImagesTableReferences
+                                    ._memoIdTable(db),
+                                referencedColumn: $$MemoImagesTableReferences
+                                    ._memoIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$MemoImagesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $MemoImagesTable,
+      MemoImage,
+      $$MemoImagesTableFilterComposer,
+      $$MemoImagesTableOrderingComposer,
+      $$MemoImagesTableAnnotationComposer,
+      $$MemoImagesTableCreateCompanionBuilder,
+      $$MemoImagesTableUpdateCompanionBuilder,
+      (MemoImage, $$MemoImagesTableReferences),
+      MemoImage,
+      PrefetchHooks Function({bool memoId})
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -6161,4 +6935,6 @@ class $AppDatabaseManager {
       $$TodoItemTagsTableTableManager(_db, _db.todoItemTags);
   $$TodoListTagsTableTableManager get todoListTags =>
       $$TodoListTagsTableTableManager(_db, _db.todoListTags);
+  $$MemoImagesTableTableManager get memoImages =>
+      $$MemoImagesTableTableManager(_db, _db.memoImages);
 }

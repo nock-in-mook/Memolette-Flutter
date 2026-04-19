@@ -108,6 +108,13 @@ final tagsForMemoStreamProvider =
   return db.watchTagsForMemo(memoId);
 });
 
+/// メモに紐づく画像を監視（Phase 10）
+final memoImagesProvider =
+    StreamProvider.family<List<MemoImage>, String>((ref, memoId) {
+  final db = ref.watch(databaseProvider);
+  return db.watchMemoImages(memoId);
+});
+
 // ========================================
 // ToDoリスト関連
 // ========================================
