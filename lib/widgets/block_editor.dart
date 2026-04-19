@@ -32,6 +32,9 @@ class BlockEditor extends ConsumerStatefulWidget {
   final String initialContent;
   final ValueChanged<String> onContentChanged;
   final VoidCallback? onFocusChanged;
+  /// 任意の TextBlock がタップされたとき（readOnly かどうかに関係なく呼ばれる）。
+  /// 親が閲覧モード→編集モード切替に使う。
+  final VoidCallback? onTap;
   final bool isMarkdown;
   final bool readOnly;
 
@@ -41,6 +44,7 @@ class BlockEditor extends ConsumerStatefulWidget {
     required this.initialContent,
     required this.onContentChanged,
     this.onFocusChanged,
+    this.onTap,
     this.isMarkdown = false,
     this.readOnly = false,
   });
@@ -267,10 +271,14 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
     }
     final target = _blocks[idx] as _TextBlock;
     final sel = target.controller.selection;
-    final offset = sel.baseOffset >= 0 ? sel.baseOffset : target.controller.text.length;
+    final offset =
+        sel.baseOffset >= 0 ? sel.baseOffset : target.controller.text.length;
     final text = target.controller.text;
-    final before = text.substring(0, offset.clamp(0, text.length));
-    final after = text.substring(offset.clamp(0, text.length));
+    final clamped = offset.clamp(0, text.length);
+    // ブロック分割 + 画像 Padding で自然に1行分の空きが生まれるため
+    // ここで \n を追加すると視覚的に改行が2つに見える → 追加しない
+    final before = text.substring(0, clamped);
+    final after = text.substring(clamped);
     // 置換: [..., TextBlock(before), ImageBlock(img), TextBlock(after), ...]
     target.controller.removeListener(_onTextChanged);
     target.focusNode.removeListener(_onFocus);
@@ -379,7 +387,9 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
         controller: block.controller,
         focusNode: block.focusNode,
         readOnly: widget.readOnly,
-        onTap: TextMenuDismisser.wrap(() {}),
+        onTap: TextMenuDismisser.wrap(() {
+          widget.onTap?.call();
+        }),
         style: const TextStyle(
           fontSize: 16,
           height: 1.25,
@@ -401,63 +411,64 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
   }
 
   Widget _buildImage(_ImageBlock block) {
+    // 本文に挟まるサムネ。閲覧性重視で 120x120 固定、タップで全画面ビューアへ
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      child: FutureBuilder<String>(
-        future: ImageStorage.absolutePath(block.image.filePath),
-        builder: (ctx, snap) {
-          final path = snap.data;
-          return GestureDetector(
-            onTap: path == null
-                ? null
-                : () => _openViewer(block),
-            onLongPress: () => _confirmDeleteImage(block),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Container(
-                    constraints: const BoxConstraints(
-                      minHeight: 80,
-                      maxHeight: 320,
-                    ),
-                    width: double.infinity,
-                    color: Colors.grey.shade200,
-                    child: path == null
-                        ? const SizedBox()
-                        : Image.file(
-                            File(path),
-                            fit: BoxFit.contain,
-                            gaplessPlayback: true,
-                            errorBuilder: (_, _, _) =>
-                                const Icon(Icons.broken_image,
-                                    color: Colors.grey, size: 48),
-                          ),
-                  ),
-                ),
-                Positioned(
-                  top: -6,
-                  right: -6,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => _confirmDeleteImage(block),
+      padding: const EdgeInsets.fromLTRB(9, 0, 9, 4),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: FutureBuilder<String>(
+          future: ImageStorage.absolutePath(block.image.filePath),
+          builder: (ctx, snap) {
+            final path = snap.data;
+            return GestureDetector(
+              onTap: path == null ? null : () => _openViewer(block),
+              onLongPress: () => _confirmDeleteImage(block),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
                     child: Container(
-                      width: 26,
-                      height: 26,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.black.withValues(alpha: 0.7),
-                      ),
-                      child: const Icon(Icons.close,
-                          size: 16, color: Colors.white),
+                      width: 120,
+                      height: 120,
+                      color: Colors.grey.shade200,
+                      child: path == null
+                          ? const SizedBox()
+                          : Image.file(
+                              File(path),
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                              errorBuilder: (_, _, _) => const Icon(
+                                Icons.broken_image,
+                                color: Colors.grey,
+                                size: 40,
+                              ),
+                            ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          );
-        },
+                  Positioned(
+                    top: -6,
+                    right: -6,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _confirmDeleteImage(block),
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.black.withValues(alpha: 0.7),
+                        ),
+                        child: const Icon(Icons.close,
+                            size: 14, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }

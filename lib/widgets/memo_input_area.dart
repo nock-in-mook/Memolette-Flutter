@@ -476,7 +476,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if (focusTitle) _titleFocusNode.requestFocus();
-        if (focusContent) _contentFocusNode.requestFocus();
+        if (focusContent) {
+          // BlockEditor の先頭 TextBlock にフォーカス
+          _blockEditorKey.currentState?.focusFirst();
+        }
       });
     });
   }
@@ -1766,8 +1769,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
-            // 空白領域タップで末尾 TextBlock にフォーカス
-            if (!_isViewMode) {
+            // 空白領域タップ: 閲覧モードなら編集モードへ、そうでなければ先頭ブロックへフォーカス
+            if (_isViewMode) {
+              _enterEditMode(focusContent: true);
+            } else {
               _blockEditorKey.currentState?.focusFirst();
             }
             if (_rouletteOpen) _closeRoulette();
@@ -1788,6 +1793,13 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 initialContent: _contentController.text,
                 readOnly: _isViewMode,
                 isMarkdown: _isMarkdown,
+                onTap: () {
+                  // TextBlock タップ: 閲覧モードなら編集モード遷移
+                  if (_isViewMode) {
+                    _enterEditMode(focusContent: true);
+                  }
+                  if (_rouletteOpen) _closeRoulette();
+                },
                 onFocusChanged: () {
                   widget.onFocusChanged?.call();
                   if (mounted) setState(() {});
