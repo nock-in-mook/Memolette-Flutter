@@ -4,7 +4,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' hide Column;
-import 'package:uuid/uuid.dart';
 
 import '../db/database.dart';
 import '../providers/database_provider.dart';
@@ -14,8 +13,6 @@ import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
 import '../widgets/trapezoid_tab_shape.dart';
 import 'todo_list_screen.dart';
-
-const _uuid = Uuid();
 
 /// ToDoリスト一覧画面
 /// 本家 TodoListsView 準拠: 単一の緑「TODO」台形タブ + 緑背景の全画面
@@ -529,11 +526,8 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
     );
     if (title == null || title.isEmpty) return;
     final db = ref.read(databaseProvider);
-    final id = _uuid.v4();
-    await db.into(db.todoLists).insert(TodoListsCompanion.insert(
-          id: id,
-          title: Value(title),
-        ));
+    final created = await db.createTodoList(title: title);
+    final id = created.id;
     if (!mounted) return;
     // 即時遷移（スライドアニメなし）
     Navigator.of(context).push(

@@ -4784,6 +4784,7 @@ class _MemoGridView extends StatelessWidget {
                   child: TodoCard(
                     todoList: list,
                     onTap: () {},
+                    gridSize: gridSize,
                     flashLevel: flash,
                   ),
                 ),
@@ -4799,6 +4800,7 @@ class _MemoGridView extends StatelessWidget {
       child: TodoCard(
         todoList: list,
         onTap: () => onTodoTap?.call(list),
+        gridSize: gridSize,
         flashLevel: flash,
       ),
     );

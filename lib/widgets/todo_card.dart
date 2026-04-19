@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../screens/home_screen.dart' show GridSizeOption;
 
 /// メモ一覧グリッドに混在表示するToDoカード
 /// 本家TodoCardView準拠: しおり + タイトル + "ToDo" + 件数
@@ -12,6 +13,7 @@ class TodoCard extends ConsumerWidget {
   final TodoList todoList;
   final VoidCallback onTap;
   final bool isHighlighted;
+  final GridSizeOption gridSize;
   // メモカードと同じ仕組みでオレンジ枠フラッシュさせる
   final double flashLevel;
 
@@ -20,8 +22,40 @@ class TodoCard extends ConsumerWidget {
     required this.todoList,
     required this.onTap,
     this.isHighlighted = false,
+    this.gridSize = GridSizeOption.grid2x3,
     this.flashLevel = 0,
   });
+
+  // メモカードと完全一致のサイズ可変ロジック
+  double get _titleFont => switch (gridSize) {
+        GridSizeOption.grid3x6 => 13,
+        GridSizeOption.grid2x5 => 15,
+        GridSizeOption.grid2x3 => 16,
+        GridSizeOption.grid1x2 => 17,
+        GridSizeOption.grid1flex => 16,
+        GridSizeOption.titleOnly => 14,
+      };
+
+  double get _bodyFont => switch (gridSize) {
+        GridSizeOption.grid3x6 => 13,
+        GridSizeOption.grid2x5 => 14,
+        GridSizeOption.grid2x3 => 14,
+        GridSizeOption.grid1x2 => 15,
+        GridSizeOption.grid1flex => 14,
+        GridSizeOption.titleOnly => 12,
+      };
+
+  double get _cardPadding => switch (gridSize) {
+        GridSizeOption.grid3x6 => 4,
+        GridSizeOption.grid2x5 => 8,
+        GridSizeOption.grid2x3 => 10,
+        GridSizeOption.grid1x2 => 12,
+        GridSizeOption.grid1flex => 10,
+        GridSizeOption.titleOnly => 6,
+      };
+
+  // しおりアイコンはタイトル font に合わせて 2px 程度小さく
+  double get _bookmarkSize => _titleFont - 2;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -43,31 +77,26 @@ class TodoCard extends ConsumerWidget {
           onTap: onTap,
           behavior: HitTestBehavior.opaque,
           child: Container(
-            padding: const EdgeInsets.all(8),
+            padding: EdgeInsets.all(_cardPadding),
             // フラッシュ枠は foregroundDecoration で中身に重ねてレイアウトを変えない
             foregroundDecoration: flashLevel > 0
                 ? BoxDecoration(
                     border: Border.all(
                         color: Colors.orange.withValues(alpha: flashLevel * 0.7),
                         width: 1.5),
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(12),
                   )
                 : null,
             decoration: BoxDecoration(
               color: isHighlighted
                   ? Colors.blue.withValues(alpha: 0.08)
                   : Colors.white,
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.1),
-                  blurRadius: 2,
-                  offset: const Offset(-1, 1),
-                ),
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 2,
-                  offset: const Offset(0, 1),
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
                 ),
               ],
             ),
@@ -75,27 +104,28 @@ class TodoCard extends ConsumerWidget {
               children: [
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     // タイトル行: しおり + タイトル
                     Row(
                       children: [
-                        const Icon(CupertinoIcons.bookmark_fill,
-                            size: 11, color: Colors.orange),
+                        Icon(CupertinoIcons.bookmark_fill,
+                            size: _bookmarkSize, color: Colors.orange),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             todoList.title.isEmpty
-                                ? '(タイトルなし)'
+                                ? '(無題)'
                                 : todoList.title,
                             style: TextStyle(
-                              fontSize: 13,
+                              fontSize: _titleFont,
                               fontWeight: todoList.title.isEmpty
                                   ? FontWeight.w400
-                                  : FontWeight.w600,
-                              fontFamily: 'Hiragino Sans',
+                                  : FontWeight.w700,
                               color: todoList.title.isEmpty
                                   ? Colors.grey.withValues(alpha: 0.5)
-                                  : Colors.black87,
+                                  : const Color(0xFF2D1F50), // 黒寄り紫
+                              height: 1.2,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -103,27 +133,34 @@ class TodoCard extends ConsumerWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 2),
-                    // "ToDo" + 件数
+                    // 仕切り線（メモカード準拠: 0.5px グレー）
+                    Container(
+                      height: 0.5,
+                      margin: const EdgeInsets.only(top: 4, bottom: 3),
+                      color: Colors.grey.withValues(alpha: 0.6),
+                    ),
+                    // "ToDo" + 件数（本文相当）
                     Row(
                       children: [
-                        const Text(
+                        Text(
                           'ToDo',
                           style: TextStyle(
-                            fontSize: 13,
+                            fontSize: _bodyFont,
                             fontWeight: FontWeight.w700,
                             fontFamily: 'Hiragino Sans',
                             color: Colors.green,
+                            height: 1.2,
                           ),
                         ),
                         const SizedBox(width: 6),
                         Text(
                           '$done/$total件',
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: _bodyFont,
                             fontWeight: FontWeight.w500,
                             fontFamily: 'Hiragino Sans',
-                            color: Colors.black.withValues(alpha: 0.5),
+                            color: Colors.black87,
+                            height: 1.2,
                           ),
                         ),
                       ],

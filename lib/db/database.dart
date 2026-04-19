@@ -75,17 +75,47 @@ class AppDatabase extends _$AppDatabase {
   }) async {
     final id = _uuid.v4();
     final now = DateTime.now();
+    final nextOrder = await nextItemSortOrder();
     final companion = MemosCompanion.insert(
       id: id,
       title: Value(title),
       content: Value(content),
       isMarkdown: Value(isMarkdown),
       bgColorIndex: Value(bgColorIndex),
+      manualSortOrder: Value(nextOrder),
       createdAt: Value(now),
       updatedAt: Value(now),
     );
     await into(memos).insert(companion);
     return (await getMemoById(id))!;
+  }
+
+  /// ToDoリスト新規作成（メモと一貫した manualSortOrder を設定）
+  Future<TodoList> createTodoList({String title = ''}) async {
+    final id = _uuid.v4();
+    final nextOrder = await nextItemSortOrder();
+    final companion = TodoListsCompanion.insert(
+      id: id,
+      title: Value(title),
+      manualSortOrder: Value(nextOrder),
+    );
+    await into(todoLists).insert(companion);
+    return (await (select(todoLists)..where((t) => t.id.equals(id)))
+        .getSingle());
+  }
+
+  /// memos と todoLists の manualSortOrder 最大値 + 1 を返す。
+  /// 新規作成・トップ移動の sort order を統一するためのヘルパー。
+  Future<int> nextItemSortOrder() async {
+    final memoMaxRow = await (selectOnly(memos)
+          ..addColumns([memos.manualSortOrder.max()]))
+        .getSingle();
+    final memoMax = memoMaxRow.read(memos.manualSortOrder.max()) ?? 0;
+    final todoMaxRow = await (selectOnly(todoLists)
+          ..addColumns([todoLists.manualSortOrder.max()]))
+        .getSingle();
+    final todoMax = todoMaxRow.read(todoLists.manualSortOrder.max()) ?? 0;
+    return (memoMax > todoMax ? memoMax : todoMax) + 1;
   }
 
   /// 全メモ件数を取得
@@ -154,34 +184,23 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
-  /// メモをトップに移動: 既存最大の manualSortOrder + 1 を設定
+  /// メモをトップに移動: nextItemSortOrder で memos+todoLists 通しの最大+1 を設定
   /// （ソートは isPinned → manualSortOrder → createdAt の優先順）
   Future<void> moveMemoToTop(String id) async {
-    final maxRow = await (selectOnly(memos)
-          ..addColumns([memos.manualSortOrder.max()]))
-        .getSingle();
-    final maxOrder = maxRow.read(memos.manualSortOrder.max()) ?? 0;
+    final next = await nextItemSortOrder();
     await (update(memos)..where((t) => t.id.equals(id))).write(
-      MemosCompanion(manualSortOrder: Value(maxOrder + 1)),
+      MemosCompanion(manualSortOrder: Value(next)),
     );
   }
 
   /// メモ+ToDoリストをまとめてトップに移動。
-  /// memos と todoLists の manualSortOrder の現在の最大値を超えるよう連番を振る。
+  /// nextItemSortOrder を起点に連番を振る（memos と todoLists 通し）。
   Future<void> moveItemsToTop({
     List<String> memoIds = const [],
     List<String> todoListIds = const [],
   }) async {
     if (memoIds.isEmpty && todoListIds.isEmpty) return;
-    final memoMaxRow = await (selectOnly(memos)
-          ..addColumns([memos.manualSortOrder.max()]))
-        .getSingle();
-    final memoMax = memoMaxRow.read(memos.manualSortOrder.max()) ?? 0;
-    final todoMaxRow = await (selectOnly(todoLists)
-          ..addColumns([todoLists.manualSortOrder.max()]))
-        .getSingle();
-    final todoMax = todoMaxRow.read(todoLists.manualSortOrder.max()) ?? 0;
-    final base = memoMax > todoMax ? memoMax : todoMax;
+    final base = (await nextItemSortOrder()) - 1;
     await batch((b) {
       var i = 1;
       for (final id in memoIds) {
