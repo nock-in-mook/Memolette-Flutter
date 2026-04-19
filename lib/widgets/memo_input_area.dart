@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -285,7 +286,23 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     });
   }
 
-  void _updateMdToolbarOverlay() {
+  /// ビルド中に呼ばれた場合は次フレームに遅延。そうでなければ即実行。
+  void _safeDefer(VoidCallback fn) {
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.transientCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) fn();
+      });
+    } else {
+      fn();
+    }
+  }
+
+  void _updateMdToolbarOverlay() => _safeDefer(_updateMdToolbarOverlayImpl);
+
+  void _updateMdToolbarOverlayImpl() {
     final shouldShow = _isMarkdown && _isBlockEditorFocused;
     if (shouldShow && _mdToolbarOverlay == null) {
       _mdToolbarOverlay = OverlayEntry(builder: (ctx) {
@@ -334,7 +351,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   /// 最大化モード + 入力フォーカス中 は、フッターツールバーをキーボード上に
   /// 浮かせて常時操作可能にする（本来のインラインツールバーはキーボード裏に
   /// 回っているので、上に被せるイメージ）
-  void _updateToolbarOverlay() {
+  void _updateToolbarOverlay() => _safeDefer(_updateToolbarOverlayImpl);
+
+  void _updateToolbarOverlayImpl() {
     final shouldShow = widget.isExpanded && _isInputFocused;
     if (shouldShow && _toolbarOverlay == null) {
       _toolbarOverlay = OverlayEntry(builder: (ctx) {
@@ -2101,42 +2120,40 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             const Spacer(),
           ],
           // 確定 (キーボード閉じる) は KeyboardDoneBar の「完了」と重複するため廃止
-          // 非フォーカス + メモ/タイトルあり時のみ 閉じる (クリア) を表示
-          // compact モードでは何も出さない
-          SizedBox(
-            width: compact ? 0 : 72,
-            child: compact
-                ? const SizedBox.shrink()
-                : Align(
-                    alignment: Alignment.centerRight,
-                    child: (!_isInputFocused &&
-                            (_hasMemo || _titleController.text.isNotEmpty))
-                        ? GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: _closeMemo,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: const [
-                                Icon(
-                                  CupertinoIcons.xmark_circle,
-                                  size: 18,
-                                  color: Color(0xFF007AFF),
-                                ),
-                                SizedBox(width: 3),
-                                Text(
-                                  '閉じる',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                    color: Color(0xFF007AFF),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : const SizedBox.shrink(),
+          // 閉じる (クリア) は 非フォーカス + メモ/タイトルあり + 非 compact のときだけ出す
+          // 出さないときは幅も 0 にして Undo/Redo の位置を詰める (compact と同じレイアウト)
+          if (!compact &&
+              !_isInputFocused &&
+              (_hasMemo || _titleController.text.isNotEmpty))
+            SizedBox(
+              width: 72,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _closeMemo,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(
+                        CupertinoIcons.xmark_circle,
+                        size: 18,
+                        color: Color(0xFF007AFF),
+                      ),
+                      SizedBox(width: 3),
+                      Text(
+                        '閉じる',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF007AFF),
+                        ),
+                      ),
+                    ],
                   ),
-          ),
+                ),
+              ),
+            ),
           // 最大化/縮小トグル（右端）
           // アイコン周囲も含めて広めのタップ判定だが、見た目は右端寄せにする
           GestureDetector(
