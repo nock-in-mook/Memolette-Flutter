@@ -896,15 +896,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               error: (_, _) => const SizedBox(),
             ),
           ),
-          // プレビューボタン（MD ON時のみ、入力エリア下端中央）
-          if (_isMarkdown)
-            Positioned(
-              left: 0,
-              right: 10, // AnimatedContainer の右margin と揃える
-              bottom: 50, // フッター41 + 仕切り線1 + 余白8
-              child: Center(child: _buildPreviewButton()),
-            ),
           // ルーレット台形タブは非表示（タグ欄タップで開く）
+          // プレビューボタンはツールバー側に移動（MDトグル直後）
         ],
       ),
     );
@@ -2023,6 +2016,11 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             ],
           ),
           ),
+          // MD ON のときだけプレビューボタンを MD スイッチの右隣に出す
+          if (_isMarkdown) ...[
+            const SizedBox(width: 10),
+            _buildPreviewButton(),
+          ],
           // 多機能・背景色は閲覧時のみ（編集中はツールバーをすっきりさせる）
           if (inViewMode) ...[
             const SizedBox(width: 12),
@@ -2102,73 +2100,41 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             ),
             const Spacer(),
           ],
-          // フォーカス中: 確定 (キーボード閉じるだけ) — 実質文字がある場合のみ有効
-          // 非フォーカス + メモ/タイトルあり: 閉じる (クリア)
-          // 確定 or 閉じる (他のアイコン位置を安定させるため「閉じる」幅で固定)
-          // compact モードでは完了ボタン（KeyboardDoneBar）と重複するため非表示
+          // 確定 (キーボード閉じる) は KeyboardDoneBar の「完了」と重複するため廃止
+          // 非フォーカス + メモ/タイトルあり時のみ 閉じる (クリア) を表示
+          // compact モードでは何も出さない
           SizedBox(
             width: compact ? 0 : 72,
             child: compact
                 ? const SizedBox.shrink()
                 : Align(
                     alignment: Alignment.centerRight,
-                    child: _isInputFocused
-                ? Builder(builder: (_) {
-                    final hasReal = _contentController.text.isNotEmpty ||
-                        _titleController.text.isNotEmpty;
-                    return GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: hasReal ? _confirm : null,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            CupertinoIcons.checkmark_circle,
-                            size: 18,
-                            color: hasReal
-                                ? const Color(0xFF007AFF)
-                                : Colors.grey.shade400,
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            '確定',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                              color: hasReal
-                                  ? const Color(0xFF007AFF)
-                                  : Colors.grey.shade400,
+                    child: (!_isInputFocused &&
+                            (_hasMemo || _titleController.text.isNotEmpty))
+                        ? GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _closeMemo,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(
+                                  CupertinoIcons.xmark_circle,
+                                  size: 18,
+                                  color: Color(0xFF007AFF),
+                                ),
+                                SizedBox(width: 3),
+                                Text(
+                                  '閉じる',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF007AFF),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
-                      ),
-                    );
-                  })
-                : (_hasMemo || _titleController.text.isNotEmpty)
-                    ? GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: _closeMemo,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(
-                              CupertinoIcons.xmark_circle,
-                              size: 18,
-                              color: Color(0xFF007AFF),
-                            ),
-                            SizedBox(width: 3),
-                            Text(
-                              '閉じる',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFF007AFF),
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : const SizedBox.shrink(),
+                          )
+                        : const SizedBox.shrink(),
                   ),
           ),
           // 最大化/縮小トグル（右端）

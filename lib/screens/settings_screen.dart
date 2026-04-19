@@ -10,6 +10,7 @@ import 'icon_lab_screen.dart';
 import 'all_tab_filter_lab_screen.dart';
 import 'maximize_icon_lab_screen.dart';
 import 'settings_icon_lab_screen.dart';
+import 'undo_redo_icon_lab_screen.dart';
 
 /// 設定画面
 class SettingsScreen extends ConsumerWidget {
@@ -62,6 +63,16 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MaximizeIconLabScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.undo),
+            title: const Text('Undo/Redo アイコンラボ'),
+            subtitle: const Text('フッターツールバーのUndo/Redoボタン候補を比較'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                  builder: (_) => const UndoRedoIconLabScreen()),
             ),
           ),
           ListTile(
