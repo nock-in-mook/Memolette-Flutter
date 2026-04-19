@@ -168,6 +168,9 @@ class MemoCard extends ConsumerWidget {
                           File(path),
                           fit: BoxFit.cover,
                           gaplessPlayback: true,
+                          // サムネは小サイズ。3x retina 想定で cacheWidth を
+                          // 実表示の3倍に制限し、フルデコードを避ける
+                          cacheWidth: (_thumbSize * 3).round(),
                           errorBuilder: (_, _, _) => const Icon(
                               Icons.broken_image,
                               color: Colors.grey,

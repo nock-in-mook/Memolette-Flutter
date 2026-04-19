@@ -442,6 +442,8 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
                               File(path),
                               fit: BoxFit.cover,
                               gaplessPlayback: true,
+                              // インラインサムネは 120px 表示。retina 3x で 360px 相当
+                              cacheWidth: 360,
                               errorBuilder: (_, _, _) => const Icon(
                                 Icons.broken_image,
                                 color: Colors.grey,
