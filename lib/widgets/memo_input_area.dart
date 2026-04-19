@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
@@ -12,6 +13,7 @@ import '../constants/design_constants.dart';
 import '../constants/memo_bg_colors.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/image_storage.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
@@ -281,11 +283,15 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   }
 
   void _updateMdToolbarOverlay() {
-    final shouldShow = _isMarkdown && _contentFocusNode.hasFocus;
+    final shouldShow = _isMarkdown && _isBlockEditorFocused;
     if (shouldShow && _mdToolbarOverlay == null) {
       _mdToolbarOverlay = OverlayEntry(builder: (ctx) {
         final bottom = MediaQuery.of(ctx).viewInsets.bottom;
         if (bottom <= 0) return const SizedBox.shrink();
+        // フォーカス中の TextBlock の controller を取得。見つからないときは
+        // ミラー側の _contentController にフォールバック（MD ボタンが無効化される）
+        final focused =
+            _blockEditorKey.currentState?.focusedController ?? _contentController;
         return Positioned(
           left: 0,
           right: 0,
@@ -293,8 +299,11 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           child: Material(
             elevation: 0,
             child: MarkdownToolbar(
-              controller: _contentController,
-              onChanged: _onChanged,
+              controller: focused,
+              onChanged: () {
+                // TextBlock の変更は BlockEditor が _serialize → onContentChanged
+                // で自動反映してくれるので、ここでは明示的な保存は不要
+              },
             ),
           ),
         );
@@ -304,7 +313,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       _mdToolbarOverlay!.remove();
       _mdToolbarOverlay = null;
     } else if (shouldShow && _mdToolbarOverlay != null) {
-      // キーボード高さ変化時にリビルド
+      // キーボード高さ変化 / フォーカス移動 時にリビルド
       _mdToolbarOverlay!.markNeedsBuild();
     }
   }
@@ -1699,7 +1708,26 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   Widget _buildContent() {
     // プレビューモード: マークダウン描画を表示（タップでエディタに戻す）
     if (_isMarkdown && _showMarkdownPreview) {
-      return Flexible(
+      // BlockEditor のマーカー (\uFFFC<id>\uFFFC) を Markdown の画像タグ
+      // ![](memolette:<id>) に置換して flutter_markdown に食わせる。
+      // imageBuilder で memo_images テーブルから実パスを引いて Image.file 描画。
+      final memoIdForImages =
+          widget.editingMemoId ?? _selfCreatedMemoId;
+      final imagesList = memoIdForImages == null
+          ? const <MemoImage>[]
+          : (ref.watch(memoImagesProvider(memoIdForImages)).valueOrNull ??
+              const <MemoImage>[]);
+      final imgPathById = {
+        for (final img in imagesList) img.id: img.filePath,
+      };
+      final raw = _contentController.text;
+      final previewData = raw.isEmpty
+          ? '*タップで編集に戻る*'
+          : raw.replaceAllMapped(
+              RegExp('\uFFFC([^\uFFFC]+)\uFFFC'),
+              (m) => '\n\n![](memolette:${m.group(1)})\n\n',
+            );
+      return Expanded(
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
@@ -1707,31 +1735,69 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             _enterEditMode(focusContent: true);
           },
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(9, 9, 9, 20),
+            // BlockEditor 側は外側 9 + ブロック内 2 = 上 11px から始まるので揃える
+            padding: const EdgeInsets.fromLTRB(9, 11, 9, 20),
             child: MarkdownBody(
-              data: _contentController.text.isEmpty
-                  ? '*タップで編集に戻る*'
-                  : _contentController.text,
+              data: previewData,
+              fitContent: false,
+              imageBuilder: (uri, _, __) {
+                if (uri.scheme == 'memolette') {
+                  final id = uri.path.isNotEmpty ? uri.path : uri.host;
+                  final rel = imgPathById[id];
+                  if (rel == null) return const SizedBox.shrink();
+                  return FutureBuilder<String>(
+                    future: ImageStorage.absolutePath(rel),
+                    builder: (ctx, snap) {
+                      final path = snap.data;
+                      if (path == null) return const SizedBox(height: 120);
+                      return ConstrainedBox(
+                        constraints:
+                            const BoxConstraints(maxHeight: 320),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(
+                            File(path),
+                            fit: BoxFit.contain,
+                            cacheWidth: 720,
+                            gaplessPlayback: true,
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                }
+                return const SizedBox.shrink();
+              },
               selectable: false,
               styleSheet: MarkdownStyleSheet(
+                textAlign: WrapAlignment.start,
+                h1Align: WrapAlignment.start,
+                h2Align: WrapAlignment.start,
+                h3Align: WrapAlignment.start,
+                pPadding: const EdgeInsets.only(bottom: 4),
                 h1: const TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
+                    fontFamily: 'PingFang JP',
                     color: Colors.black87),
                 h2: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
+                    fontFamily: 'PingFang JP',
                     color: Colors.black87),
                 h3: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
+                    fontFamily: 'PingFang JP',
                     color: Colors.black87),
                 p: const TextStyle(
                     fontSize: 16,
-                    height: 1.4,
+                    height: 1.25,
                     fontWeight: FontWeight.w500,
+                    fontFamily: 'PingFang JP',
                     color: Colors.black87),
-                listBullet: const TextStyle(fontSize: 16),
+                listBullet: const TextStyle(
+                    fontSize: 16, fontFamily: 'PingFang JP'),
                 blockquoteDecoration: BoxDecoration(
                   border: Border(
                     left: BorderSide(
@@ -1803,6 +1869,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 onFocusChanged: () {
                   widget.onFocusChanged?.call();
                   if (mounted) setState(() {});
+                  // MD モードならツールバーの表示/非表示と focus 連動 controller を更新
+                  _updateMdToolbarOverlay();
                 },
                 onContentChanged: (content) {
                   if (content == _contentController.text) return;

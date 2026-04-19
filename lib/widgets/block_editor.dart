@@ -73,6 +73,25 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
   bool get hasAnyFocus =>
       _blocks.whereType<_TextBlock>().any((b) => b.focusNode.hasFocus);
 
+  /// 現在（または最後に）フォーカスされている TextBlock の controller。
+  /// マークダウンツールバー等、外部から本文編集を差し込むときに使う。
+  TextEditingController? get focusedController {
+    for (final b in _blocks.whereType<_TextBlock>()) {
+      if (b.focusNode.hasFocus) return b.controller;
+    }
+    if (_lastFocusedTextBlockId != null) {
+      for (final b in _blocks.whereType<_TextBlock>()) {
+        if (b.id == _lastFocusedTextBlockId) return b.controller;
+      }
+    }
+    // 末尾 TextBlock フォールバック
+    _TextBlock? last;
+    for (final b in _blocks) {
+      if (b is _TextBlock) last = b;
+    }
+    return last?.controller;
+  }
+
   /// 先頭の TextBlock にフォーカス
   void focusFirst() {
     final first = _blocks.whereType<_TextBlock>().firstOrNull;
