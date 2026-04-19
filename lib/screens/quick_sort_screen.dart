@@ -684,6 +684,15 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
               child: _buildTagRouletteOverlay(memo),
             ),
           ),
+          // 履歴枠外タップで履歴を閉じるバックドロップ
+          // translucent でルーレット側のタップもブロックしない
+          if (_showTagHistory && _rouletteOpen)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () => setState(() => _showTagHistory = false),
+              ),
+            ),
           // タグ履歴オーバーレイ
           if (_showTagHistory && _rouletteOpen)
             Positioned(
