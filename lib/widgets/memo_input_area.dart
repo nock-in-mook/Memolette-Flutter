@@ -74,7 +74,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   /// 外部から本文の有無を確認するゲッター（ゼロ幅スペースは無視）
   bool get hasContent => _contentController.text.isNotEmpty;
   /// 外部から本文フォーカス状態を確認するゲッター
-  bool get isContentFocused => _contentFocusNode.hasFocus;
+  // BlockEditor 側が本文フォーカスを持つようになったので、それを優先して返す
+  bool get isContentFocused =>
+      (_blockEditorKey.currentState?.hasAnyFocus ?? false) ||
+      _contentFocusNode.hasFocus;
   /// タイトル欄がフォーカス中か
   bool get isTitleFocused => _titleFocusNode.hasFocus;
   /// 外部から入力欄全体のフォーカス状態を確認するゲッター（タイトル or 本文）
@@ -470,11 +473,13 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
         _clearInput(keepMarkdown: _isMarkdown);
       }
     }
-    // 新規作成ボタンからのフォーカス要求
+    // 新規作成ボタンからのフォーカス要求（外部から focusRequest カウンタが変わる）
+    // 注: didUpdateWidget はビルドサイクル内なので、focus は次フレームに遅延させる
     if (widget.focusRequest != oldWidget.focusRequest) {
       _isViewMode = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _contentFocusNode.requestFocus();
+        if (!mounted) return;
+        _blockEditorKey.currentState?.focusFirst();
       });
     }
   }
@@ -509,12 +514,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   void loadMemoAndEdit(Memo memo) {
     loadMemoDirectly(memo);
     setState(() => _isViewMode = false);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _contentFocusNode.requestFocus();
-      });
-    });
+    // 呼び出し元のタップジェスチャーコンテキストが活きている間に requestFocus する
+    // （postFrame に逃がすとキーボードが出ない）
+    _blockEditorKey.currentState?.focusFirst();
   }
 
   void _applyMemoData(Memo memo) {
@@ -1950,11 +1952,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                   if (_rouletteOpen) _closeRoulette();
                 },
                 onFocusChanged: () {
-                  widget.onFocusChanged?.call();
-                  if (mounted) setState(() {});
-                  // MD モードならツールバーの表示/非表示と focus 連動 controller を更新
-                  _updateMdToolbarOverlay();
-                  _updateToolbarOverlay();
+                  // 既存の _onFocusChange に寄せる（空メモの先行作成/自動削除
+                  // ロジックを BlockEditor 側のフォーカス変化でも発火させる）
+                  _onFocusChange();
                 },
                 onContentChanged: (content) {
                   if (content == _contentController.text) return;
