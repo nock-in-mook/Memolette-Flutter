@@ -73,13 +73,13 @@ class MemoCard extends ConsumerWidget {
         GridSizeOption.titleOnly => 6,
       };
 
-  /// サムネ高さ（グリッドサイズ連動）。0 の場合は表示しない
-  double get _thumbHeight => switch (gridSize) {
-        GridSizeOption.grid3x6 => 0, // 小さすぎるのでアイコンのみ
-        GridSizeOption.grid2x5 => 44,
-        GridSizeOption.grid2x3 => 60,
-        GridSizeOption.grid1x2 => 80,
-        GridSizeOption.grid1flex => 80,
+  /// 本文右端の小サムネ一辺サイズ（正方形、グリッドサイズ連動）。0 は非表示
+  double get _thumbSize => switch (gridSize) {
+        GridSizeOption.grid3x6 => 22,
+        GridSizeOption.grid2x5 => 28,
+        GridSizeOption.grid2x3 => 36,
+        GridSizeOption.grid1x2 => 44,
+        GridSizeOption.grid1flex => 44,
         GridSizeOption.titleOnly => 0,
       };
 
@@ -96,59 +96,108 @@ class MemoCard extends ConsumerWidget {
     return result;
   }
 
-  /// カード下部のサムネイル表示（先頭画像 + 2枚以上なら +N バッジ）
-  Widget _buildThumbnail(List<MemoImage> images) {
+  /// 画像マーカーを画像アイコンに置換したインラインスパンを構築。
+  /// 閲覧モードと同じ見た目（テキスト・画像・テキストが縦に並ぶ）になるよう
+  /// 画像アイコンの前後に改行を挿入する（既に改行がある場合は二重にしない）。
+  List<InlineSpan> _buildBodySpans(String content, double fontSize) {
+    final regex = RegExp('\uFFFC[^\uFFFC]+\uFFFC');
+    final spans = <InlineSpan>[];
+    var cursor = 0;
+    bool needsLeadingNewline() {
+      if (spans.isEmpty) return false;
+      final last = spans.last;
+      if (last is TextSpan) {
+        final t = last.text ?? '';
+        if (t.endsWith('\n')) return false;
+      }
+      return true;
+    }
+
+    for (final match in regex.allMatches(content)) {
+      final before = content.substring(cursor, match.start);
+      if (before.isNotEmpty) spans.add(TextSpan(text: before));
+      if (needsLeadingNewline()) spans.add(const TextSpan(text: '\n'));
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 1),
+          child: Icon(
+            Icons.image_outlined,
+            size: fontSize * 0.95,
+            color: Colors.grey[600],
+          ),
+        ),
+      ));
+      cursor = match.end;
+      // 画像アイコンの直後に改行。次の文字が \n ならそれに任せる
+      if (cursor < content.length && content[cursor] != '\n') {
+        spans.add(const TextSpan(text: '\n'));
+      }
+    }
+    final rest = content.substring(cursor);
+    if (rest.isNotEmpty) spans.add(TextSpan(text: rest));
+    return spans;
+  }
+
+  /// 本文右端に置く小サムネ（正方形）+ 2枚以上なら右上に件数バッジ
+  Widget _buildCornerThumb(List<MemoImage> images) {
     final first = images.first;
-    final extra = images.length - 1;
+    final count = images.length;
+    // バッジフォント: サムネが小さいときは控えめに
+    final badgeFont = _thumbSize <= 24 ? 8.0 : 10.0;
+    final badgePadH = _thumbSize <= 24 ? 3.0 : 4.0;
     return FutureBuilder<String>(
       future: ImageStorage.absolutePath(first.filePath),
       builder: (ctx, snap) {
         final path = snap.data;
         return SizedBox(
-          height: _thumbHeight,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: Container(
-                    color: Colors.grey.shade200,
-                    child: path == null
-                        ? const SizedBox()
-                        : Image.file(
-                            File(path),
-                            fit: BoxFit.cover,
-                            gaplessPlayback: true,
-                            errorBuilder: (_, __, ___) =>
-                                const Icon(Icons.broken_image,
-                                    color: Colors.grey),
-                          ),
-                  ),
-                ),
-                if (extra > 0)
-                  Positioned(
-                    right: 4,
-                    bottom: 4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '+$extra',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                          height: 1.0,
+          width: _thumbSize,
+          height: _thumbSize,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: Container(
+                  width: _thumbSize,
+                  height: _thumbSize,
+                  color: Colors.grey.shade200,
+                  child: path == null
+                      ? const SizedBox()
+                      : Image.file(
+                          File(path),
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, _, _) => const Icon(
+                              Icons.broken_image,
+                              color: Colors.grey,
+                              size: 14),
                         ),
+                ),
+              ),
+              if (count >= 2)
+                Positioned(
+                  top: -4,
+                  right: -4,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                        horizontal: badgePadH, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.75),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$count',
+                      style: TextStyle(
+                        fontSize: badgeFont,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        height: 1.0,
                       ),
                     ),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         );
       },
@@ -259,6 +308,8 @@ class MemoCard extends ConsumerWidget {
     // 本家準拠: タイトル空なら "(タイトルなし)" を薄く、本文は常に memo.content
     final hasTitle = memo.title.isNotEmpty;
     final displayTitle = hasTitle ? memo.title : '(無題)';
+    // ブロックエディタの画像マーカー (U+FFFC でID を挟む) は Text.rich で
+    // 画像アイコンとしてインライン描画するので、ここでは生の content を保持
     final displayBody = memo.content;
     // 画像（Phase 10）
     final images =
@@ -343,42 +394,53 @@ class MemoCard extends ConsumerWidget {
                   Flexible(
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        // 利用可能な高さから表示できる行数を動的計算
-                        // 画像サムネが入る場合はその分差し引く
-                        final reserved = (hasImages && _thumbHeight > 0)
-                            ? _thumbHeight + 6
-                            : 0;
-                        final available =
-                            (constraints.maxHeight - reserved)
-                                .clamp(0.0, double.infinity);
                         final lineHeight = _bodyFont * 1.4;
-                        final maxLines = (available / lineHeight)
+                        final maxLines = (constraints.maxHeight / lineHeight)
                             .floor()
                             .clamp(1, _bodyLines == 0 ? 999 : _bodyLines);
-                        return Text(
-                          displayBody,
-                          style: TextStyle(
-                            fontSize: _bodyFont,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.black87,
-                            height: 1.4,
+                        final bodyStyle = TextStyle(
+                          fontSize: _bodyFont,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black87,
+                          height: 1.4,
+                        );
+                        final bodyText = Text.rich(
+                          TextSpan(
+                            style: bodyStyle,
+                            children: _buildBodySpans(displayBody, _bodyFont),
                           ),
                           maxLines: maxLines,
                           overflow: TextOverflow.ellipsis,
                         );
+                        // 画像があるときは本文右端に小サムネ + カウントバッジ
+                        if (hasImages && _thumbSize > 0) {
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: bodyText),
+                              const SizedBox(width: 4),
+                              _buildCornerThumb(images),
+                            ],
+                          );
+                        }
+                        return bodyText;
                       },
                     ),
                   ),
                 ],
-                if (hasImages && _thumbHeight > 0) ...[
-                  const SizedBox(height: 6),
-                  _buildThumbnail(images),
+                // 本文が空でも画像がある場合は右端サムネだけを出す
+                if (displayBody.isEmpty && hasImages && _thumbSize > 0) ...[
+                  const SizedBox(height: 2),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: _buildCornerThumb(images),
+                  ),
                 ],
               ],
             ),
           ),
           // 右上マーク: Pin / Lock / 画像バッジ
-          if (memo.isPinned || memo.isLocked || (hasImages && _thumbHeight == 0))
+          if (memo.isPinned || memo.isLocked || (hasImages && _thumbSize == 0))
             Positioned(
               top: 3,
               right: 3,
@@ -405,7 +467,7 @@ class MemoCard extends ConsumerWidget {
                       ),
                     ),
                   // サムネが出ない小さいグリッド用に、画像付きを示すアイコン
-                  if (hasImages && _thumbHeight == 0)
+                  if (hasImages && _thumbSize == 0)
                     const Icon(
                       Icons.image_outlined,
                       size: 10,

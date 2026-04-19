@@ -110,12 +110,13 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
   }
 
   /// 本文文字列の外部更新（親から置き換えたい場合）
+  /// DB から画像を再ロードするので、別メモに切り替わるケースも正しく復元できる
   void replaceContent(String content) {
     _disposeBlocks();
     _blocks.clear();
-    _blocks.addAll(_parse(content, _knownImagesSnapshot()));
-    _attachListeners();
+    _initialized = false;
     if (mounted) setState(() {});
+    _loadBlocksFromContent(content);
   }
 
   // ========================================
@@ -144,7 +145,10 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
     super.dispose();
   }
 
-  Future<void> _initAsync() async {
+  Future<void> _initAsync() => _loadBlocksFromContent(widget.initialContent);
+
+  /// 指定 content から DB 画像を取得してブロック配列を再構築
+  Future<void> _loadBlocksFromContent(String content) async {
     final db = ref.read(databaseProvider);
     final memoId = widget.memoIdResolver();
     final images =
@@ -152,7 +156,7 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
     if (!mounted) return;
     _blocks
       ..clear()
-      ..addAll(_parse(widget.initialContent, images));
+      ..addAll(_parse(content, images));
     // 本文に参照されていない DB 画像は末尾に追加
     final referenced =
         _blocks.whereType<_ImageBlock>().map((b) => b.image.id).toSet();
