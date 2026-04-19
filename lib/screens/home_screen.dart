@@ -869,11 +869,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               // 選択モードのバーは Transform で上に食い込むので clip しない
               clipBehavior: _isSelectMode ? Clip.none : Clip.hardEdge,
               decoration: const BoxDecoration(),
-              child: _isSelectMode
-                  ? _buildSelectModeBar()
-                  : _isEditingCompact
-                      ? _buildEditingBar()
-                      : _buildFunctionBar(),
+              // 選択モード中は機能バーの「枠サイズ」を維持しつつ中身を透明化し、
+              // 選択モードバーは絶対配置で重ねる（フォルダを押し下げないため）
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Opacity(
+                    opacity: _isSelectMode ? 0 : 1,
+                    child: IgnorePointer(
+                      ignoring: _isSelectMode,
+                      child: _isEditingCompact
+                          ? _buildEditingBar()
+                          : _buildFunctionBar(),
+                    ),
+                  ),
+                  if (_isSelectMode)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 0,
+                      child: _buildSelectModeBar(),
+                    ),
+                ],
+              ),
             ),
             // 4. 親タグタブ（アニメーション付き）
             // 編集コンパクトモード時も非表示（入力中は超シンプルに）
@@ -1270,13 +1288,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   // 編集中専用バー（消しゴムのみ）
   /// 選択モード中のバー（入力欄下、タブ上）: 案内 + 件数を大きな枠付きで表示。
-  /// Transform.translate で上方向にはみ出させ、入力欄に少しかぶせることで
+  /// FractionalTranslation で自身の高さの半分ぶん上にずらし、入力欄に大きく被せて
   /// 「特殊モードに入った」ことを一瞬で伝える。
   Widget _buildSelectModeBar() {
     final isDelete = _selectMode == _SelectMode.delete;
     final accent = isDelete ? Colors.red : const Color(0xFF007AFF);
     return Transform.translate(
-      offset: const Offset(0, -28),
+      offset: const Offset(0, -65),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Container(
@@ -1298,8 +1316,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             children: [
               Text(
                 isDelete
-                    ? '削除するメモ/ToDoを選択してください'
-                    : 'トップに移動するメモ/ToDoを選択してください',
+                    ? '削除するメモを選択してください'
+                    : 'トップに移動するメモを選択してください',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
