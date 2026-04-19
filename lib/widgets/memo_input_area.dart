@@ -14,6 +14,7 @@ import '../constants/memo_bg_colors.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/image_storage.dart';
+import '../utils/keyboard_done_bar.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
@@ -269,6 +270,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
   // マークダウンツールバーのOverlay管理
   OverlayEntry? _mdToolbarOverlay;
+  // 最大化 + キーボード表示中に、フッターツールバーをキーボード上に浮かせる Overlay
+  OverlayEntry? _toolbarOverlay;
 
   // タグ欄フラッシュ (ルーレットでタグ設定した直後に一瞬ハイライト)
   bool _tagFlashActive = false;
@@ -316,6 +319,66 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       // キーボード高さ変化 / フォーカス移動 時にリビルド
       _mdToolbarOverlay!.markNeedsBuild();
     }
+    _syncAccessoryHeight();
+  }
+
+  /// 完了ボタン（KeyboardDoneBar）がカスタムツールバー群の上に出るよう、
+  /// 現在表示中のオーバーレイ合計高さを通知
+  void _syncAccessoryHeight() {
+    // Our toolbar overlay (53px) + MD toolbar (44px) のうち、表示されてる分だけ足す
+    final ourToolbar = (widget.isExpanded && _isInputFocused) ? 53.0 : 0.0;
+    final mdToolbar = (_isMarkdown && _isInputFocused) ? 44.0 : 0.0;
+    KeyboardDoneBar.accessoryHeight.value = ourToolbar + mdToolbar;
+  }
+
+  /// 最大化モード + 入力フォーカス中 は、フッターツールバーをキーボード上に
+  /// 浮かせて常時操作可能にする（本来のインラインツールバーはキーボード裏に
+  /// 回っているので、上に被せるイメージ）
+  void _updateToolbarOverlay() {
+    final shouldShow = widget.isExpanded && _isInputFocused;
+    if (shouldShow && _toolbarOverlay == null) {
+      _toolbarOverlay = OverlayEntry(builder: (ctx) {
+        final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+        if (bottom <= 0) return const SizedBox.shrink();
+        // MDツールバー (高さ 44) が出てるなら更に上へずらす
+        final mdOffset = (_isMarkdown && _isInputFocused) ? 44.0 : 0.0;
+        return Positioned(
+          left: 0,
+          right: 0,
+          bottom: bottom + mdOffset,
+          child: Material(
+            elevation: 0,
+            color: Colors.transparent,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(
+                  top: BorderSide(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    width: 0.5,
+                  ),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: _buildToolbar(compact: true),
+            ),
+          ),
+        );
+      });
+      Overlay.of(context).insert(_toolbarOverlay!);
+    } else if (!shouldShow && _toolbarOverlay != null) {
+      _toolbarOverlay!.remove();
+      _toolbarOverlay = null;
+    } else if (shouldShow && _toolbarOverlay != null) {
+      _toolbarOverlay!.markNeedsBuild();
+    }
+    _syncAccessoryHeight();
   }
 
   @override
@@ -348,6 +411,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       }
       setState(() {});
       _updateMdToolbarOverlay();
+      _updateToolbarOverlay();
       widget.onFocusChanged?.call();
     }
   }
@@ -355,6 +419,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   @override
   void didUpdateWidget(covariant MemoInputArea oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // 最大化トグル時にフッターツールバー Overlay を更新
+    if (oldWidget.isExpanded != widget.isExpanded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _updateToolbarOverlay();
+      });
+    }
     if (widget.editingMemoId != oldWidget.editingMemoId) {
       if (widget.editingMemoId != null) {
         // 自分で作成したメモなら再ロード不要（閲覧モードにしない）
@@ -660,6 +730,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       _showMarkdownPreview = false;
     });
     _updateMdToolbarOverlay();
+    // MDオン/オフで下にMDツールバーが追加/除去されるので、その上のフッター
+    // ツールバー Overlay の位置も再計算
+    _updateToolbarOverlay();
     // 既存メモならDBに反映
     if (widget.editingMemoId != null) {
       ref.read(databaseProvider).updateMemo(
@@ -746,6 +819,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     }
     _mdToolbarOverlay?.remove();
     _mdToolbarOverlay = null;
+    _toolbarOverlay?.remove();
+    _toolbarOverlay = null;
+    KeyboardDoneBar.accessoryHeight.value = 0;
     _tagFlashTimer?.cancel();
     _titleController.dispose();
     _contentController.dispose();
@@ -1871,6 +1947,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                   if (mounted) setState(() {});
                   // MD モードならツールバーの表示/非表示と focus 連動 controller を更新
                   _updateMdToolbarOverlay();
+                  _updateToolbarOverlay();
                 },
                 onContentChanged: (content) {
                   if (content == _contentController.text) return;
@@ -1887,7 +1964,11 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     );
   }
 
-  Widget _buildToolbar() {
+  Widget _buildToolbar({bool compact = false}) {
+    // 「編集中」判定: 実際にフォーカスが入って入力している、または compact (Overlay)
+    // これ以外 (起動直後・閲覧モード・編集を抜けた状態) は閲覧寄りツールバーを出す
+    final isEditing = _isInputFocused || compact;
+    final inViewMode = !isEditing;
     return Container(
       constraints: const BoxConstraints(minHeight: 41),
       padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
@@ -1942,83 +2023,96 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             ],
           ),
           ),
-          const SizedBox(width: 12),
-          // 多機能メニュー（エクスポート/HTML化など、タップ動作は後で実装）
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              // TODO: 多機能メニュー展開
-            },
-            child: Icon(CupertinoIcons.ellipsis_circle,
-                size: 20, color: Colors.grey[600]),
-          ),
-          const SizedBox(width: 12),
-          // 背景色変更
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _showBgColorPicker,
-            child: Icon(Icons.palette_outlined,
-                size: 20, color: Colors.grey[600]),
-          ),
-          const SizedBox(width: 12),
-          // 画像追加（Phase 10）
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _attachImage,
-            child: Icon(CupertinoIcons.photo,
-                size: 20, color: Colors.grey[600]),
-          ),
-          const SizedBox(width: 12),
-          // コピー (アイコンのみ、パレットと同色)
-          Builder(builder: (_) {
-            final hasRealContent = _contentController.text.isNotEmpty;
-            return GestureDetector(
+          // 多機能・背景色は閲覧時のみ（編集中はツールバーをすっきりさせる）
+          if (inViewMode) ...[
+            const SizedBox(width: 12),
+            // 多機能メニュー（エクスポート/HTML化など、タップ動作は後で実装）
+            GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: hasRealContent ? _copyContent : null,
+              onTap: () {
+                // TODO: 多機能メニュー展開
+              },
+              child: Icon(CupertinoIcons.ellipsis_circle,
+                  size: 20, color: Colors.grey[600]),
+            ),
+            const SizedBox(width: 12),
+            // 背景色変更
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _showBgColorPicker,
+              child: Icon(Icons.palette_outlined,
+                  size: 20, color: Colors.grey[600]),
+            ),
+          ],
+          // 画像追加は編集時のみ（閲覧モードでは隠す）
+          if (!inViewMode) ...[
+            const SizedBox(width: 12),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _attachImage,
+              child: Icon(CupertinoIcons.photo,
+                  size: 20, color: Colors.grey[600]),
+            ),
+          ],
+          // コピーは閲覧時のみ
+          if (inViewMode) ...[
+            const SizedBox(width: 12),
+            Builder(builder: (_) {
+              final hasRealContent = _contentController.text.isNotEmpty;
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: hasRealContent ? _copyContent : null,
+                child: Icon(
+                  CupertinoIcons.doc_on_doc,
+                  size: 20,
+                  color: hasRealContent
+                      ? Colors.grey[600]
+                      : Colors.grey.shade400,
+                ),
+              );
+            }),
+          ],
+          const Spacer(),
+          // Undo / Redo は編集時のみ
+          if (!inViewMode) ...[
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _canUndo ? _undo : null,
               child: Icon(
-                CupertinoIcons.doc_on_doc,
-                size: 20,
-                color: hasRealContent
-                    ? Colors.grey[600]
+                Icons.undo,
+                size: 22,
+                weight: 700,
+                color: _canUndo
+                    ? const Color(0xFF007AFF)
                     : Colors.grey.shade400,
               ),
-            );
-          }),
-          const Spacer(),
-          // Undo (Material版: weight 指定で太く)
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _canUndo ? _undo : null,
-            child: Icon(
-              Icons.undo,
-              size: 22,
-              weight: 700,
-              color: _canUndo
-                  ? const Color(0xFF007AFF)
-                  : Colors.grey.shade400,
             ),
-          ),
-          const SizedBox(width: 24),
-          // Redo (Material版: weight 指定で太く)
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _canRedo ? _redo : null,
-            child: Icon(
-              Icons.redo,
-              size: 22,
-              weight: 700,
-              color: _canRedo
-                  ? const Color(0xFF007AFF)
-                  : Colors.grey.shade400,
+            const SizedBox(width: 24),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _canRedo ? _redo : null,
+              child: Icon(
+                Icons.redo,
+                size: 22,
+                weight: 700,
+                color: _canRedo
+                    ? const Color(0xFF007AFF)
+                    : Colors.grey.shade400,
+              ),
             ),
-          ),
-          const Spacer(),
+            const Spacer(),
+          ],
           // フォーカス中: 確定 (キーボード閉じるだけ) — 実質文字がある場合のみ有効
           // 非フォーカス + メモ/タイトルあり: 閉じる (クリア)
           // 確定 or 閉じる (他のアイコン位置を安定させるため「閉じる」幅で固定)
+          // compact モードでは完了ボタン（KeyboardDoneBar）と重複するため非表示
           SizedBox(
-            width: 72,
-            child: _isInputFocused
+            width: compact ? 0 : 72,
+            child: compact
+                ? const SizedBox.shrink()
+                : Align(
+                    alignment: Alignment.centerRight,
+                    child: _isInputFocused
                 ? Builder(builder: (_) {
                     final hasReal = _contentController.text.isNotEmpty ||
                         _titleController.text.isNotEmpty;
@@ -2075,9 +2169,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                         ),
                       )
                     : const SizedBox.shrink(),
+                  ),
           ),
           // 最大化/縮小トグル（右端）
-          // アイコン周囲も含めて広めのタップ判定
+          // アイコン周囲も含めて広めのタップ判定だが、見た目は右端寄せにする
           GestureDetector(
             onTap: () {
               commitIME();
@@ -2087,7 +2182,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             child: SizedBox(
               width: 48,
               height: 40,
-              child: Center(
+              child: Align(
+                alignment: Alignment.centerRight,
                 child: Icon(
                   widget.isExpanded ? Icons.zoom_in_map : Icons.zoom_out_map,
                   size: 24,
