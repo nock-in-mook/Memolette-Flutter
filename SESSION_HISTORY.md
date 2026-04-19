@@ -351,3 +351,38 @@
 - メモカードの flash は `foregroundDecoration` で中身に重ねるため、border 分でレイアウトが縮まない
 - iOS 17.2 シミュレータ (`iPhone 15 Pro Max`) 中心で動かす。iOS 26.3 だと objective_c プラグイン読み込み失敗が頻発
 - flutter run は `< /dev/null` で起動して、変更時は kill → rsync → 再起動の流れに統一
+
+---
+## #19 (2026-04-19)
+
+### 実機インストール安定化
+- objective_c.framework の adhoc 署名問題は単発codesign再署名ではダメ → `flutter clean` で解消
+
+### 複数選択をToDoに統合
+- `moveMemosToTop` → `moveItemsToTop` (memo+todo)
+- ロックは **削除モード時のみ** ブロック
+- `_selectedTodoIds`/`_toggleTodoSelection`/`_resetSelection()` 追加
+- TodoCard にもフラッシュ対応
+- 件数バッジ・グレーアウト判定も memo+todo 合算
+
+### 選択モードバーをフォルダに被せる絶対配置
+- 機能バー枠は Opacity(0)+IgnorePointer で高さ維持、選択モードバーは Positioned で重ねる
+- Transform.translate(0, -65) で入力欄に大きく被せる
+- 文言は「メモを選択してください」に統一
+
+### TodoCard をメモ準拠に
+- 仕切り線追加、gridSize連動の可変 font/padding/しおりサイズ
+- メモと並べたとき完全に揃う
+
+### 新規作成 sortOrder 統一
+- `nextItemSortOrder()` ヘルパーで memos+todoLists 通しの max+1
+- createMemo・createTodoList・moveMemoToTop・moveItemsToTop で使用
+- 「上に移動」したアイテムの下に新規メモが入る問題を解消
+
+### すべてタブのフィルタ刷新
+- ラボ3ピル状を採用（青塗り＋白文字 / 透明＋グレー、テキストのみ）
+- `_MemoCountText` に subFilter 追加でフィルタ連動の件数表示
+- 件数は memo+todo 合算
+
+### 次セッション
+- Phase 10 画像取り込み（image_picker、DBマイグレーション、圧縮、サムネ表示）

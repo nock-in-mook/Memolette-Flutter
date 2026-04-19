@@ -1,77 +1,66 @@
 # 引き継ぎメモ
 
 ## 現在の状況
-- セッション#18 完了
+- セッション#19 完了
 - ブランチ: `feature/todo`
-- 最終コミット: `73f4621` フラッシュアニメ滑らか化 + 複数対応 + タイトル色紫味 + 最大化ボタン拡張
+- 最終コミット: `a88545b` すべてタブのフィルタをラボ3ピル状に + 件数をフィルタ連動 + ToDo合算
 
-## 今回（#18）完了したこと
+## 今回（#19）完了したこと
 
-### 大きな根治系
-- **ダイアログ閉時のキーボード復活バグを根治**: `lib/utils/safe_dialog.dart` の `focusSafe` で全ダイアログ (30箇所) を統一ラップ
-- **トースト通知整備**: SnackBar 撤去、`lib/utils/toast.dart` の自前 `showToast` と `showFrostedAlert` の 2 系統に統一
-- **タグ名重複阻止**: DB の `createTag` で同じ親スコープ内重複を弾く + ダイアログで赤枠＋警告
+### 実機インストールの安定化
+- `objective_c.framework` の adhoc 署名で実機インストール失敗 → `flutter clean` + 再ビルドで解消（過去にも有効）
+- 単発の codesign 再署名は Runner.app 全体ハッシュ不整合で起動直後クラッシュするので避ける（cleanリビルドが最短）
 
-### UI 全般
-- メモ入力欄の枠 / 仕切り線を 0.5px / 黒寄り (RGBO 40,40,40,0.55) に統一
-- メモ枠線をタグカラーで染めるのを廃止（爆速モード含む）
-- ルーレット位置調整: 上端をタイトル下の仕切り線に揃える
-- ルーレットタブを「Tag」テキスト表示、親/子ラベルを「親」「子」に短縮
-- ルーレット親/子のタップ判定境界を視覚と一致
-- ルーレットでタグ設定したらタグバッジをオレンジ縁取りでフラッシュ
-- 「すべて」タブ上部フィルタを「アイコン+チップ塗り」のハイブリッドに（比較ラボ画面付き）
-- メモ一覧タイトル色を黒 → 紫寄り (`Color(0xFF2D1F50)`)
-- 入力欄右下の最大化ボタンのタップ判定を 48x40 に拡張
+### 複数選択モードを ToDo にも統合
+- DB: `moveMemosToTop` → `moveItemsToTop({memoIds, todoListIds})` に統合
+- ロック中は **削除モード時のみ** 操作不可。トップ移動モードでは選択可能
+- `_selectedTodoIds` / `_toggleTodoSelection` / `_resetSelection()` ヘルパー追加
+- TodoCard も `flashLevel` 対応（オレンジ枠フラッシュ）
+- 件数バッジ・グレーアウト判定も memo + todo 合算
 
-### 編集モード周り
-- 編集中の枠外タップで編集を抜ける
-- 選択・並び替えモード中は入力欄・新規作成・検索バー・設定アイコンを IgnorePointer で無効化
-- メモ削除時に入力欄もクリア
-- メモ長押し削除に確認ダイアログ追加
+### 複数選択バーをフォルダに被せる絶対配置
+- 機能バー枠は `Opacity(0)+IgnorePointer` で高さ維持
+- 選択モードバーは `Stack` 内 `Positioned` で重ねる（フォルダが押し下げられない）
+- `Transform.translate(0, -65)` で入力欄に大きく被せる
+- 文言は「メモを選択してください」に統一
 
-### 選択モード UX
-- 「トップに移動」実行ボタンを青縁取りに（赤削除と差別化）
-- メモゼロ件のタグでは選択モード入りボタンをグレーアウト
-- 選択モード中の機能バーに大きな枠付きバッジ（案内 + N件 選択中）を表示。Transform で入力欄に少しかぶせて存在感
-- トップに移動実行後: フォルダ先頭にスクロール + 対象メモを **オレンジ枠でジワッと2回フラッシュ** + トースト
-  - 選択削除 / 単発長押しの「トップ」「ロック」「固定」全てでフラッシュ対応
-  - 複数選択時は対象全部光る (Set 対応)
-  - フラッシュは `foregroundDecoration` で重ね描画してレイアウトを動かさない
+### TodoCard をメモカードに揃える
+- 仕切り線（0.5px グレー）追加
+- gridSize 連動の可変 font/padding（MemoCardと完全一致のロジック）
+- しおりアイコンは title font - 2 で連動
 
-### 「このフォルダにメモ作成」改善
-- 押下時に先にキーボード表示してフォルダを消してからメモ作成（カードチラ見え抑制）
-- 自分で作成したメモも DB から再取得してタグを UI に反映
+### 新規作成時の並び順を上に
+- `nextItemSortOrder()` ヘルパーで memos+todoLists 通しの最大+1 を共通化
+- `createMemo`・`createTodoList`・`moveMemoToTop`・`moveItemsToTop` で使用
+- 「上に移動」したアイテムの下に新規メモが入る問題を解消
 
-### 親タブ周り
-- 末尾の「+」追加タブで作った親タグのフォルダを自動で開く
-- 親タグ削除時、選択中なら左隣（なければ右隣）に切替、タブバースクロール位置を保持
-
-### 設定画面
-- 「すべてフィルタタブラボ」追加（7案比較）
-
-### その他
-- 重複タグ警告: 13px w600 + アイコン + 赤枠
+### すべてタブの上部フィルタを刷新
+- ラボ3「ピル状」採用（青塗り＋白文字 / 透明＋グレー）
+- アイコン廃止、テキストのみで簡潔に
+- 件数表示（`_MemoCountText`）に `subFilter` 追加でフィルタ連動
+- ToDo件数も合算
 
 ## 次のアクション
 
-### 残備忘
-- ROADMAP の「リリース前リマインド」に実機確認するもの3つ記載済
-  - 最大化ボタンのタップ判定
-  - フラッシュアニメーション複数対応
-  - タイトル文字色の紫味の濃さ
-
-### 次セッションでやりたい大きな機能
-- **画像取り込みとサムネ表示**（Phase 10）
+### 次セッションの本命
+- **Phase 10 画像取り込みとサムネ表示**
   - image_picker パッケージ追加
   - DBスキーマに imagePath 等を追加（マイグレーション要）
   - 圧縮+リサイズ（長辺1024px, JPEG 70%, 1枚100-200KB）
   - サムネイル遅延ロード
   - メモカードでの表示
 
+### 残備忘
+- リリース前リマインドの3つ（実機確認）— ROADMAP に記載済み
+  - 最大化ボタンのタップ判定
+  - フラッシュアニメーション複数対応
+  - タイトル文字色の紫味の濃さ
+
 ## 技術メモ
+- **実機ビルド**: rsync → `flutter build ios --release` → `xcrun devicectl device install app`。codesign エラー出たら flutter clean から
+- **シミュレータビルド**: `flutter run -d 95C8A8C5-0972-4BB0-B793-5219096697DF < /dev/null > /tmp/memolette-run.log 2>&1 &` で起動。stdin 閉じてるので hot reload 不可、変更時は kill→rsync→再起動
 - **ビルド回避策**: `/tmp/memolette-run` に rsync してから build（Google Drive で codesign エラー回避）
-- **シミュレータ**: iOS 17.2 の `iPhone 15 Pro Max` (95C8A8C5-0972-4BB0-B793-5219096697DF) を使用中。iOS 26.3 だと objective_c プラグインがロード失敗する問題が時々再発
-- **実機**: iPhone 15 Pro Max (`30A153A2-9507-5499-8B3D-341320DA2AB3`)。release build → `xcrun devicectl device install app` で安定
-- **flutter run のリロード**: `< /dev/null` で起動 → 変更時は kill → rsync → 再起動の流れに統一（fifo 経由はトラブった）
-- **transcript_export.py**: Mac では `python3 "<Mac版のフルパス>" --latest` で実行
-- **flash 仕組み**: `_flashingMemoIds: Set<String>` + `_flashLevel: double` で 2 回フェードイン/アウト。MemoCard 側は `flashLevel * 0.7` の alpha でオレンジ枠を `foregroundDecoration` に描画
+- **シミュレータ**: iOS 17.2 の `iPhone 15 Pro Max` (95C8A8C5-0972-4BB0-B793-5219096697DF) 使用中
+- **実機**: iPhone 15 Pro Max (`30A153A2-9507-5499-8B3D-341320DA2AB3`)
+- **transcript_export.py**: Mac では `python3 "<Mac版のフルパス>" --latest`
+- **sortOrder 設計**: memos と todoLists の manualSortOrder を「通し番号」として扱う。`nextItemSortOrder()` 経由で取得すれば両テーブルで衝突しない
