@@ -13,8 +13,12 @@ class Responsive {
   /// 画面幅ベースの「広いレイアウト」判定。
   /// Split View / Slide Over 中は iPad でも狭くなるので、
   /// スプリットビュー等は isTablet ではなくこちらを主軸に使う。
-  static bool isWide(BuildContext context) =>
-      MediaQuery.of(context).size.width >= 840;
+  /// 「横向き（width > height）」を条件に含める: iPad Pro 13 は縦画面でも
+  /// width=1024 あり、条件なしだと縦画面で誤発動するため。
+  static bool isWide(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    return size.width >= 840 && size.width > size.height;
+  }
 
   /// コンテンツを中央寄せするときの最大幅。
   /// 960 にしているのは、iPhone Pro Max の横幅（430〜440pt）の約2倍で、

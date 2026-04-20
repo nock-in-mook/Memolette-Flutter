@@ -64,11 +64,11 @@
 B（スプリットビュー）で実用価値を出してから C の要素を段階的に追加する方針。
 
 ### Step 0: 事前課題（着手前に潰す）
-- [ ] 横画面回転は**実機で要確認**（シミュレータ固有バグ濃厚。Info.plist/pbxproj/Storyboard すべて制約なし、AppDelegate.application(supportedInterfaceOrientationsFor:) も `.all` で実装済だが、iOS 17.2 / 26.3 の iPad シミュで Flutter が orientation change を受け取らない。実機接続後に検証。シミュでは**動的リサイズ**の代わりに window サイズ変更で代用する）
-- [ ] 最初に決めたい設計判断を確定する
-  - [ ] 縦画面iPadの扱い（iPhone同等の単列 vs サイドバー型）
-  - [ ] スプリットビューの固定 vs 可変（左右幅をドラッグで変更できるか）
-  - [ ] タブレット判定の基準（`shortestSide >= 600` vs 画面幅ベース）
+- [x] 横画面回転は実機で動作確認済（iPad 実機 iOS 26.2.1）。シミュレータは既知バグで回転追従しないため、開発用に Info.plist `UIRequiresFullScreen=true` を一時的に有効化してシミュで回転動作を取り戻している。**Phase 8 完了後に外すこと**（Split View / Slide Over / Stage Manager を復活）
+- [x] 設計判断は確定済
+  - 縦画面 iPad: iPhone 同等の単列レイアウト（Step A 実装済）
+  - スプリットビュー: 横画面のみで固定比率（1:1 + `VerticalDivider`）
+  - タブレット判定: `isTablet = shortestSide >= 600`、`isWide = width >= 840 && width > height`
 
 ### Step A: レスポンシブ基盤（B の土台）
 - [ ] タブレット判定ユーティリティ（`isTablet`, `isWideLayout` helper）

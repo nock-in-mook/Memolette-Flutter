@@ -29,22 +29,27 @@ import 'todo_list_screen.dart';
 import 'todo_lists_screen.dart';
 
 /// グリッドサイズ選択肢（Swift版GridSizeOption準拠 / 旧「全文」を 1×可変 に置き換え）
-/// iPadColumns は iPad 判定時に使う列数。titleOnly のように単純な2倍では
-/// 見栄えが悪いものは個別指定し、画面幅で選択肢と列数を可変にできる。
+/// iPadColumns は iPad縦画面で使う列数、iPadWideColumns は横画面で使う列数。
+/// iPadWideRows は横画面時の「ラベル上の行数」と `_computeMainAxisExtent` の rows に使う。
+/// 可変 (grid1flex) や titleOnly はサイズ計算対象外なので 0。
 enum GridSizeOption {
-  grid3x6('3×6', 3, 6),
-  grid2x5('2×5', 2, 4),
-  grid2x3('2×3', 2, 4),
-  grid1x2('1×2', 1, 2),
+  // (label, columns, iPadColumns, iPadWideColumns, iPadWideRows)
+  grid3x6('3×6', 3, 6, 5, 6),
+  grid2x5('2×5', 2, 4, 4, 5),
+  grid2x3('2×3', 2, 4, 3, 4),
+  grid1x2('1×2', 1, 2, 2, 3),
   // 旧「全文(無制限)」を廃止し、本文 max 15行の 1列可変高さに置き換え
   // iPad でも「長文読みモード」として 1列可変を維持（GridView化すると可変性を失うため）
-  grid1flex('1×可変（20行まで）', 1, 1),
-  titleOnly('タイトルのみ', 2, 2);
+  grid1flex('1×可変（20行まで）', 1, 1, 1, 0),
+  titleOnly('タイトルのみ', 2, 2, 2, 0);
 
   final String label;
   final int columns;
   final int iPadColumns;
-  const GridSizeOption(this.label, this.columns, this.iPadColumns);
+  final int iPadWideColumns;
+  final int iPadWideRows;
+  const GridSizeOption(this.label, this.columns, this.iPadColumns,
+      this.iPadWideColumns, this.iPadWideRows);
 }
 
 /// 「よく見る」フォルダ専用グリッドオプション
@@ -366,7 +371,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// 通常サイズ + 入力欄フォーカス中 + キーボード表示中 → 編集コンパクトモード
   /// キーボードが閉じている場合（iOS側でIME消失等）は編集モード扱いしない
   /// ダイアログ表示中は isInputFocused も viewInsets も外れるため単独条件で維持
+  /// 横画面（isWide）では常に false: 左カラムを維持し、機能バー等も消さないため
   bool get _isEditingCompact {
+    if (Responsive.isWide(context)) return false;
     if (_isInputExpanded || _isMemoListExpanded) return false;
     if (_isDialogOverEditing) return true;
     return (_inputAreaKey.currentState?.isInputFocused ?? false) &&
@@ -496,7 +503,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       });
     }
 
-    return Scaffold(
+    return CallbackShortcuts(
+      bindings: _buildShortcutBindings(),
+      child: Focus(
+        autofocus: true,
+        // 入力欄側にフォーカスが奪われても BubbleDown で拾わせるため debugLabel 付き
+        debugLabel: 'HomeShortcutsFocus',
+        child: Scaffold(
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: false, // キーボードでオーバーフローしないように
       // 入力欄以外の任意の場所をタップしたらキーボード+コンテキストメニューを閉じる
@@ -520,7 +533,76 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ],
         ),
       )),
+        ),
+      ),
     );
+  }
+
+  // ========================================
+  // キーボードショートカット（Step C 前半）
+  // ========================================
+
+  /// ⌘N / ⌘F / ⌘1-9 / ⌘Return / Esc / ⌘Z / ⇧⌘Z のバインディングを生成
+  Map<ShortcutActivator, VoidCallback> _buildShortcutBindings() {
+    return <ShortcutActivator, VoidCallback>{
+      // ⌘N: 新規メモ作成
+      const SingleActivator(LogicalKeyboardKey.keyN, meta: true):
+          _createNewMemo,
+      // ⌘F: 検索バーにフォーカス
+      const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () {
+        _searchFocusNode.requestFocus();
+      },
+      // ⌘1〜⌘9: _tabOrder の index（0-8）のタブに切替
+      for (int i = 0; i < 9; i++)
+        SingleActivator(_digitKey(i + 1), meta: true): () =>
+            _selectTabByOrderIndex(i),
+      // ⌘Return: 入力確定・編集モード離脱（キーボード閉じる）
+      const SingleActivator(LogicalKeyboardKey.enter, meta: true): () {
+        FocusManager.instance.primaryFocus?.unfocus();
+      },
+      // Esc: フォーカス解除
+      const SingleActivator(LogicalKeyboardKey.escape): () {
+        FocusManager.instance.primaryFocus?.unfocus();
+      },
+      // ⌘Z: Undo（アプリ独自のスナップショット Undo）
+      const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): () {
+        _inputAreaKey.currentState?.triggerUndo();
+      },
+      // ⇧⌘Z: Redo
+      const SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true):
+          () {
+        _inputAreaKey.currentState?.triggerRedo();
+      },
+    };
+  }
+
+  LogicalKeyboardKey _digitKey(int n) {
+    return switch (n) {
+      1 => LogicalKeyboardKey.digit1,
+      2 => LogicalKeyboardKey.digit2,
+      3 => LogicalKeyboardKey.digit3,
+      4 => LogicalKeyboardKey.digit4,
+      5 => LogicalKeyboardKey.digit5,
+      6 => LogicalKeyboardKey.digit6,
+      7 => LogicalKeyboardKey.digit7,
+      8 => LogicalKeyboardKey.digit8,
+      9 => LogicalKeyboardKey.digit9,
+      _ => LogicalKeyboardKey.digit0,
+    };
+  }
+
+  /// _tabOrder の index 番目のタブに切替（index が範囲外なら何もしない）
+  void _selectTabByOrderIndex(int index) {
+    final order = _tabOrder;
+    if (order == null || index < 0 || index >= order.length) return;
+    final key = order[index];
+    if (key == _selectedTabKey) return;
+    setState(() {
+      _slideFromRight = true;
+      _selectedTabKey = key;
+      _selectedChildTagId = null;
+      _childDrawerOpen = false;
+    });
   }
 
   /// IMEコミット＋縮小
@@ -771,333 +853,449 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Widget _buildMainContent(List<Tag> parentTags,
       AsyncValue<List<Tag>> parentTagsAsync, Color currentColor) {
     return Padding(
-        // SafeAreaを使わず手動で上部パディング制御。
-        // 下部はフォルダ色をホームインジケータ下まで延ばすため、ここではpaddingしない
-        // 横向き等で viewPadding.top が 4 未満になると負値エラーになるので non-negative にクランプ
-        padding: EdgeInsets.only(
-          top: (MediaQuery.of(context).viewPadding.top - 4)
-              .clamp(0.0, double.infinity),
+      // SafeAreaを使わず手動で上部パディング制御。
+      // 下部はフォルダ色をホームインジケータ下まで延ばすため、ここではpaddingしない
+      // 横向き等で viewPadding.top が 4 未満になると負値エラーになるので non-negative にクランプ
+      padding: EdgeInsets.only(
+        top: (MediaQuery.of(context).viewPadding.top - 4)
+            .clamp(0.0, double.infinity),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return GestureDetector(
+            onTap: () {
+              // ルーレット展開中なら閉じる
+              if (_inputAreaKey.currentState?.isRouletteOpen ?? false) {
+                _inputAreaKey.currentState?.closeRoulette();
+              }
+              // 編集中の枠外タップで編集を抜ける
+              // _isEditingCompact は viewInsets.bottom>0 が条件のため、
+              // フローティングキーボード時 (viewInsets.bottom=0) は false になってしまう。
+              // isInputFocused 単独で判定して、キーボード種別に関わらず抜けるようにする。
+              if (_inputAreaKey.currentState?.isInputFocused ?? false) {
+                FocusScope.of(context).unfocus();
+              }
+            },
+            behavior: HitTestBehavior.translucent,
+            child: Responsive.isWide(context)
+                ? _buildWideLayout(
+                    constraints, parentTags, parentTagsAsync, currentColor)
+                : _buildNarrowLayout(
+                    constraints, parentTags, parentTagsAsync, currentColor),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 入力エリア「以外」のタップで現在のフォーカスを解除する Listener ラッパ。
+  /// Listener は子の GestureDetector を阻害せず、PointerDown を横取りしない。
+  /// これで メモタップ・タブ切替・爆速/ToDo 遷移など、遷移前に一律でキーボードを閉じる。
+  Widget _wrapUnfocusOnTap(Widget child) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) {
+        if (_inputAreaKey.currentState?.isInputFocused ?? false) {
+          FocusManager.instance.primaryFocus?.unfocus();
+        }
+      },
+      child: child,
+    );
+  }
+
+  /// 縦画面 / 狭幅（iPhone / iPad 縦 / Split View 時の iPad 等）のレイアウト。
+  /// 上から: 検索バー / 入力エリア / 機能バー / タブ / フォルダ本体（Expanded）。
+  Widget _buildNarrowLayout(
+      BoxConstraints constraints,
+      List<Tag> parentTags,
+      AsyncValue<List<Tag>> parentTagsAsync,
+      Color currentColor) {
+    return Column(
+      children: [
+        // 1. 検索バー / 入力欄最大化中はミニバー（入力エリア以外 → unfocus 対象）
+        _wrapUnfocusOnTap(_buildSearchBarSection()),
+        // 2. メモ入力エリア（高さをアニメーション）
+        _buildInputAreaSection(constraints, parentTags),
+        // 3. 機能バー or 編集中バー（入力エリア以外 → unfocus 対象）
+        _wrapUnfocusOnTap(_buildFunctionBarSection()),
+        // 4. 親タグタブ（入力エリア以外 → unfocus 対象）
+        _wrapUnfocusOnTap(_buildTabContainerSection(parentTagsAsync)),
+        // 5. フォルダ本体（入力エリア以外 → unfocus 対象）
+        // 入力欄最大化中 / 検索バーフォーカス中＋クエリ空 は非表示
+        if (!_isInputExpanded && !(_isSearchFocused && !_isSearchActive))
+          Expanded(
+            child: _wrapUnfocusOnTap(_buildFolderBodySection(
+                currentColor, parentTags, parentTagsAsync)),
+          ),
+      ],
+    );
+  }
+
+  /// 横画面 / 幅広（iPad 横画面 / 幅 >= 840）のスプリットビューレイアウト。
+  /// 左: 検索 + 機能バー + タブ + フォルダ本体（メモ一覧側）
+  /// 右: 入力エリア（書く・読む側）
+  Widget _buildWideLayout(
+      BoxConstraints constraints,
+      List<Tag> parentTags,
+      AsyncValue<List<Tag>> parentTagsAsync,
+      Color currentColor) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // 左カラム: メモ一覧側
+        // 左カラム全体を _wrapUnfocusOnTap で囲み、ここがタップされたら
+        // 右カラム (入力エリア) のフォーカスを外す。これで「フッターは編集モード
+        // のままキーボードだけ消える」状態不整合を防ぐ。
+        Expanded(
+          child: _wrapUnfocusOnTap(
+            Column(
+              children: [
+                _buildSearchBarSection(),
+                _buildFunctionBarSection(),
+                _buildTabContainerSection(parentTagsAsync),
+                // 検索バーフォーカス中＋クエリ空 のみ非表示（入力最大化は横では使わない想定）
+                if (!(_isSearchFocused && !_isSearchActive))
+                  Expanded(
+                    child: _buildFolderBodySection(
+                        currentColor, parentTags, parentTagsAsync),
+                  ),
+              ],
+            ),
+          ),
         ),
-        child: LayoutBuilder(
-          builder: (context, constraints) => GestureDetector(
-          onTap: () {
-            // ルーレット展開中なら閉じる
-            if (_inputAreaKey.currentState?.isRouletteOpen ?? false) {
-              _inputAreaKey.currentState?.closeRoulette();
+        // 区切り線
+        const VerticalDivider(width: 1, thickness: 1),
+        // 右カラム: 入力エリア（Home Indicator 下に余白を確保）
+        Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewPadding.bottom + 8,
+            ),
+            child: _buildInputAreaSection(constraints, parentTags),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ========================================
+  // _buildMainContent の子要素（Step B: isWide 分岐のため抽出）
+  // ========================================
+
+  /// 要素1: 検索バー or 入力最大化中のミニバー
+  Widget _buildSearchBarSection() {
+    return IgnorePointer(
+      ignoring: _isSelectMode || _isReorderMode,
+      child: AnimatedContainer(
+        duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
+        curve: Curves.easeInOut,
+        height: null,
+        clipBehavior: Clip.hardEdge,
+        decoration: const BoxDecoration(),
+        child:
+            _isInputExpanded ? _buildExpandedTopBar() : _buildSearchBar(),
+      ),
+    );
+  }
+
+  /// 要素2: メモ入力エリア
+  /// [constraints] は親 LayoutBuilder のもの。縦画面での高さ計算に使用。
+  /// 横画面（isWide）時は呼び出し側で Expanded に包み、ここでは高さ無指定にする。
+  Widget _buildInputAreaSection(
+      BoxConstraints constraints, List<Tag> parentTags) {
+    final isWide = Responsive.isWide(context);
+    return IgnorePointer(
+      ignoring: _isSelectMode || _isReorderMode,
+      child: AnimatedContainer(
+        duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
+        curve: Curves.easeInOut,
+        height: isWide
+            ? null // 横画面では親 Expanded が高さを決める
+            : _isMemoListExpanded
+                ? 0
+                : _isInputExpanded
+                    ? (constraints.maxHeight - 44) * 0.92
+                    : Responsive.isTablet(context)
+                        ? (constraints.maxHeight * 0.5 - 120)
+                            .clamp(316.0, double.infinity)
+                        : 316,
+        clipBehavior: Clip.hardEdge,
+        decoration: const BoxDecoration(),
+        child: MemoInputArea(
+          key: _inputAreaKey,
+          editingMemoId: _editingMemoId,
+          onMemoCreated: (id) async {
+            _clearSearchIfActive();
+            // 「このフォルダにメモ作成」経由なら現在タブのタグを付与
+            if (_pendingAttachCurrentFolderTags) {
+              _pendingAttachCurrentFolderTags = false;
+              final parentId = _currentParentTagId(parentTags);
+              final db = ref.read(databaseProvider);
+              if (parentId != null) {
+                await db.addTagToMemo(id, parentId);
+              }
+              if (_selectedChildTagId != null) {
+                await db.addTagToMemo(id, _selectedChildTagId!);
+              }
             }
-            // 編集中の枠外タップで編集を抜ける
-            if (_isEditingCompact) {
-              FocusScope.of(context).unfocus();
+            if (mounted) setState(() => _editingMemoId = id);
+          },
+          onClosed: () {
+            if (_isInputExpanded && _openedFromMemoList) {
+              // パターンA: フォルダ最大化→メモ開いた → フォルダ最大化に戻る
+              _suppressAnimation = true;
+              setState(() {
+                _editingMemoId = null;
+                _isInputExpanded = false;
+                _isMemoListExpanded = true;
+                _openedFromMemoList = false;
+              });
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _suppressAnimation = false;
+              });
+            } else if (_isInputExpanded) {
+              // パターンB: 手動最大化 → 通常ビューに戻る
+              setState(() {
+                _editingMemoId = null;
+                _isInputExpanded = false;
+              });
+            } else {
+              setState(() => _editingMemoId = null);
             }
           },
-          behavior: HitTestBehavior.translucent,
-          child: Column(
-          children: [
-            // 1. 検索バー / 入力欄最大化中はミニバー
-            // フォルダ最大化中も検索バーは残す（+ボタンは入力欄最大化を開く動作に切替）
-            // 選択モード / 並び替えモード中は検索・+・設定も無効化
-            IgnorePointer(
-              ignoring: _isSelectMode || _isReorderMode,
-              child: AnimatedContainer(
-                duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
-                curve: Curves.easeInOut,
-                height: null,
-                clipBehavior: Clip.hardEdge,
-                decoration: const BoxDecoration(),
-                child: _isInputExpanded
-                    ? _buildExpandedTopBar()
-                    : _buildSearchBar(),
-              ),
-            ),
-            // 2. メモ入力エリア（高さをアニメーション）
-            // 選択モード / 並び替えモード中は入力欄ごと操作不可
-            IgnorePointer(
-              ignoring: _isSelectMode || _isReorderMode,
-              child: AnimatedContainer(
-              duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
-              curve: Curves.easeInOut,
-              height: _isMemoListExpanded
-                  ? 0
-                  : _isInputExpanded
-                      ? (constraints.maxHeight - 44) * 0.92
-                      : Responsive.isTablet(context)
-                          ? (constraints.maxHeight * 0.5 - 120)
-                              .clamp(316.0, double.infinity)
-                          : 316,
-              clipBehavior: Clip.hardEdge,
-              decoration: const BoxDecoration(),
-              child: MemoInputArea(
-                key: _inputAreaKey,
-                editingMemoId: _editingMemoId,
-                onMemoCreated: (id) async {
-                  _clearSearchIfActive();
-                  // 「このフォルダにメモ作成」経由なら現在タブのタグを付与
-                  if (_pendingAttachCurrentFolderTags) {
-                    _pendingAttachCurrentFolderTags = false;
-                    final parentId = _currentParentTagId(parentTags);
-                    final db = ref.read(databaseProvider);
-                    if (parentId != null) {
-                      await db.addTagToMemo(id, parentId);
-                    }
-                    if (_selectedChildTagId != null) {
-                      await db.addTagToMemo(id, _selectedChildTagId!);
-                    }
-                  }
-                  if (mounted) setState(() => _editingMemoId = id);
-                },
-                onClosed: () {
-                  if (_isInputExpanded && _openedFromMemoList) {
-                    // パターンA: フォルダ最大化→メモ開いた → フォルダ最大化に戻る
-                    _suppressAnimation = true;
-                    setState(() {
-                      _editingMemoId = null;
-                      _isInputExpanded = false;
-                      _isMemoListExpanded = true;
-                      _openedFromMemoList = false;
-                    });
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      _suppressAnimation = false;
-                    });
-                  } else if (_isInputExpanded) {
-                    // パターンB: 手動最大化 → 通常ビューに戻る
-                    setState(() {
-                      _editingMemoId = null;
-                      _isInputExpanded = false;
-                    });
-                  } else {
-                    setState(() => _editingMemoId = null);
-                  }
-                },
-                selectedParentTagId: _currentParentTagId(parentTags),
-                selectedChildTagId: _selectedChildTagId,
-                focusRequest: _focusInputTrigger,
-                isExpanded: _isInputExpanded,
-                onToggleExpanded: () =>
-                    setState(() => _isInputExpanded = !_isInputExpanded),
-                onTagHistoryChanged: () => setState(() {}),
-                onFocusChanged: () => setState(() {}),
-                onDialogOpenChanged: (open) =>
-                    setState(() => _isDialogOverEditing = open),
-                onContentChanged: () => setState(() {}),
-              ),
-            ),
-            ),
-            // 最大化/縮小は入力欄フッター右端のトグルに統一（ここは空）
-            // 3. 機能バー or 編集中バー（アニメーション付きで表示/非表示）
-            // 編集コンパクト中は専用の編集中バー（消しゴム + 最大化）に切り替え
-            // 検索バーフォーカス中＋クエリ空も非表示（検索結果が出るまで）
-            AnimatedContainer(
-              duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
-              curve: Curves.easeInOut,
-              height: (_isInputExpanded || _isMemoListExpanded || _isInFolderSearch || (_isSearchFocused && !_isSearchActive)) ? 0 : null,
-              // 選択モードのバーは Transform で上に食い込むので clip しない
-              clipBehavior: _isSelectMode ? Clip.none : Clip.hardEdge,
-              decoration: const BoxDecoration(),
-              // 選択モード中は機能バーの「枠サイズ」を維持しつつ中身を透明化し、
-              // 選択モードバーは絶対配置で重ねる（フォルダを押し下げないため）
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Opacity(
-                    opacity: _isSelectMode ? 0 : 1,
-                    child: IgnorePointer(
-                      ignoring: _isSelectMode,
-                      child: _isEditingCompact
-                          ? _buildEditingBar()
-                          : _buildFunctionBar(),
-                    ),
-                  ),
-                  if (_isSelectMode)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      top: 0,
-                      child: _buildSelectModeBar(),
-                    ),
-                ],
-              ),
-            ),
-            // 4. 親タグタブ（アニメーション付き）
-            // 編集コンパクトモード時も非表示（入力中は超シンプルに）
-            // 検索バーフォーカス中＋クエリ空のときも非表示（検索結果が出るまで）
-            AnimatedContainer(
-              duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
-              curve: Curves.easeInOut,
-              height: (_isInputExpanded || _isEditingCompact || (_isSearchFocused && !_isSearchActive)) ? 0 : null,
-              clipBehavior: Clip.hardEdge,
-              decoration: const BoxDecoration(),
-              child: _buildTabSection(parentTagsAsync),
-            ),
-            // 5〜8. フォルダ本体（タブと一体化したカラー領域）
-            // 下部ボタン類（ゴミ箱・上へ移動・メモ作成・グリッド数）はフォルダ内フロート
-            // 入力欄最大化中 / 検索バーフォーカス中＋クエリ空 は非表示
-            if (!_isInputExpanded && !(_isSearchFocused && !_isSearchActive))
+          selectedParentTagId: _currentParentTagId(parentTags),
+          selectedChildTagId: _selectedChildTagId,
+          focusRequest: _focusInputTrigger,
+          // 横画面では常に最大化扱い: キーボード上ツールバー表示、内部レイアウトを親サイズ追従に
+          isExpanded: isWide || _isInputExpanded,
+          // 横画面では最大化/縮小トグル自体を無効化（ボタン非表示にもつながる）
+          onToggleExpanded: isWide
+              ? null
+              : () =>
+                  setState(() => _isInputExpanded = !_isInputExpanded),
+          onTagHistoryChanged: () => setState(() {}),
+          onFocusChanged: () => setState(() {}),
+          onDialogOpenChanged: (open) =>
+              setState(() => _isDialogOverEditing = open),
+          onContentChanged: () => setState(() {}),
+        ),
+      ),
+    );
+  }
 
-            Expanded(
-              child: Container(
-                color: (_isSearchActive || _isInFolderSearch)
-                    ? const Color(0xFFE0E8F0) // 検索モード用の薄水色
-                    : currentColor,
-                child: Stack(
-                  // 閉じるボタンを上方向にはみ出させるためクリップ無効
-                  clipBehavior: Clip.none,
-                  children: [
-                    // 検索中: 検索結果ビュー
-                    // 通常: 件数バー + メモグリッド（ドロワー展開時はその分下にスライド）
-                    if (_isSearchActive)
-                      _SearchResultsView(
-                        query: _searchQuery,
-                        onTapMemo: _openMemo,
-                        onLongPressMemo: (m) => _showMemoActions(m),
-                        highlightedMemoId: _highlightedMemoId,
-                      )
-                    else if (_isInFolderSearch)
-                      _FolderSearchView(
-                        parentTagId: _folderSearchTagId!,
-                        controller: _folderSearchController,
-                        query: _folderSearchQuery,
-                        onQueryChanged: (v) =>
-                            setState(() => _folderSearchQuery = v.trim()),
-                        onTapMemo: _openMemo,
-                        onLongPressMemo: (m) => _showMemoActions(m),
-                        highlightedMemoId: _highlightedMemoId,
-                      )
-                    else
-                      // 左右スワイプでタブ切替（選択モード/並び替え中は無効）
-                      GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onHorizontalDragEnd:
-                            (_isSelectMode || _isReorderMode)
-                                ? null
-                                : _onSwipeEnd,
-                        child: AnimatedBuilder(
-                          animation: _drawerCtrl,
-                          builder: (context, child) {
-                            final t = _drawerCtrl.value.clamp(0.0, 1.0);
-                            return Padding(
-                              padding: EdgeInsets.only(top: 43 * t),
-                              child: child,
-                            );
-                          },
-                          // タブ切替時にスライドイン (フリック時のみ。タップ時は即時)
-                          child: ClipRect(
-                            child: AnimatedSwitcher(
-                              duration: Duration(milliseconds: _tabAnimMs),
-                              switchInCurve: Curves.easeOutCubic,
-                              switchOutCurve: Curves.easeInCubic,
-                              transitionBuilder: (child, animation) {
-                                final isCurrent =
-                                    (child.key as ValueKey?)?.value ==
-                                        _selectedTabKey;
-                                if (isCurrent) {
-                                  return SlideTransition(
-                                    position: animation.drive(Tween(
-                                      begin: Offset(
-                                          _slideFromRight ? 1 : -1, 0),
-                                      end: Offset.zero,
-                                    )),
-                                    child: child,
-                                  );
-                                }
-                                return FadeTransition(
-                                    opacity: animation, child: child);
-                              },
-                              child: KeyedSubtree(
-                                key: ValueKey(_selectedTabKey),
-                                child: Column(
-                                  children: [
-                                    if (!_isEditingCompact) ...[
-                                      // 「すべて」タブは件数+サブフィルタを1行で、それ以外は件数バー
-                                      if (_isAllTab)
-                                        _buildAllTabSubFilterBar()
-                                      else
-                                        _buildCountBar(parentTags),
-                                      Expanded(
-                                        child: parentTagsAsync.when(
-                                          data: (tags) => _buildMemoGrid(tags),
-                                          loading: () => const Center(
-                                              child: CircularProgressIndicator()),
-                                          error: (e, _) => Center(
-                                              child: Text('エラー: $e')),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
+  /// 要素3: 機能バー（編集中/通常/選択モードで切替）
+  /// 横画面では常時表示（爆速整理・ToDo等を消さない）
+  Widget _buildFunctionBarSection() {
+    final isWide = Responsive.isWide(context);
+    return AnimatedContainer(
+      duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
+      curve: Curves.easeInOut,
+      height: isWide
+          ? null
+          : (_isInputExpanded ||
+                  _isMemoListExpanded ||
+                  _isInFolderSearch ||
+                  (_isSearchFocused && !_isSearchActive))
+              ? 0
+              : null,
+      // 選択モードのバーは Transform で上に食い込むので clip しない
+      clipBehavior: _isSelectMode ? Clip.none : Clip.hardEdge,
+      decoration: const BoxDecoration(),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Opacity(
+            opacity: _isSelectMode ? 0 : 1,
+            child: IgnorePointer(
+              ignoring: _isSelectMode,
+              child: _isEditingCompact
+                  ? _buildEditingBar()
+                  : _buildFunctionBar(),
+            ),
+          ),
+          if (_isSelectMode)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: _buildSelectModeBar(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 要素4: 親タグタブのアニメーションラッパ
+  Widget _buildTabContainerSection(AsyncValue<List<Tag>> parentTagsAsync) {
+    return AnimatedContainer(
+      duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
+      curve: Curves.easeInOut,
+      height: (_isInputExpanded ||
+              _isEditingCompact ||
+              (_isSearchFocused && !_isSearchActive))
+          ? 0
+          : null,
+      clipBehavior: Clip.hardEdge,
+      decoration: const BoxDecoration(),
+      child: _buildTabSection(parentTagsAsync),
+    );
+  }
+
+  /// 要素5: フォルダ本体（タブと一体化したカラー領域）
+  /// Expanded は呼び出し側で付ける。縦: Column の Expanded、横: Row の Expanded。
+  Widget _buildFolderBodySection(
+      Color currentColor,
+      List<Tag> parentTags,
+      AsyncValue<List<Tag>> parentTagsAsync) {
+    return Container(
+      color: (_isSearchActive || _isInFolderSearch)
+          ? const Color(0xFFE0E8F0) // 検索モード用の薄水色
+          : currentColor,
+      child: Stack(
+        // 閉じるボタンを上方向にはみ出させるためクリップ無効
+        clipBehavior: Clip.none,
+        children: [
+          // 検索中: 検索結果ビュー / 通常: 件数バー + メモグリッド
+          if (_isSearchActive)
+            _SearchResultsView(
+              query: _searchQuery,
+              onTapMemo: _openMemo,
+              onLongPressMemo: (m) => _showMemoActions(m),
+              highlightedMemoId: _highlightedMemoId,
+            )
+          else if (_isInFolderSearch)
+            _FolderSearchView(
+              parentTagId: _folderSearchTagId!,
+              controller: _folderSearchController,
+              query: _folderSearchQuery,
+              onQueryChanged: (v) =>
+                  setState(() => _folderSearchQuery = v.trim()),
+              onTapMemo: _openMemo,
+              onLongPressMemo: (m) => _showMemoActions(m),
+              highlightedMemoId: _highlightedMemoId,
+            )
+          else
+            // 左右スワイプでタブ切替（選択モード/並び替え中は無効）
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragEnd:
+                  (_isSelectMode || _isReorderMode) ? null : _onSwipeEnd,
+              child: AnimatedBuilder(
+                animation: _drawerCtrl,
+                builder: (context, child) {
+                  final t = _drawerCtrl.value.clamp(0.0, 1.0);
+                  return Padding(
+                    padding: EdgeInsets.only(top: 43 * t),
+                    child: child,
+                  );
+                },
+                // タブ切替時にスライドイン (フリック時のみ。タップ時は即時)
+                child: ClipRect(
+                  child: AnimatedSwitcher(
+                    duration: Duration(milliseconds: _tabAnimMs),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      final isCurrent =
+                          (child.key as ValueKey?)?.value == _selectedTabKey;
+                      if (isCurrent) {
+                        return SlideTransition(
+                          position: animation.drive(Tween(
+                            begin: Offset(_slideFromRight ? 1 : -1, 0),
+                            end: Offset.zero,
+                          )),
+                          child: child,
+                        );
+                      }
+                      return FadeTransition(
+                          opacity: animation, child: child);
+                    },
+                    child: KeyedSubtree(
+                      key: ValueKey(_selectedTabKey),
+                      child: Column(
+                        children: [
+                          if (!_isEditingCompact) ...[
+                            // 「すべて」タブは件数+サブフィルタを1行で、それ以外は件数バー
+                            if (_isAllTab)
+                              _buildAllTabSubFilterBar()
+                            else
+                              _buildCountBar(parentTags),
+                            Expanded(
+                              child: parentTagsAsync.when(
+                                data: (tags) => _buildMemoGrid(tags),
+                                loading: () => const Center(
+                                    child: CircularProgressIndicator()),
+                                error: (e, _) =>
+                                    Center(child: Text('エラー: $e')),
                               ),
                             ),
-                          ),
-                        ),
+                          ],
+                        ],
                       ),
-                    // 子タグドロワー（フォルダ右上、検索中・フォルダ内検索中・編集中は非表示）
-                    if (!_isSearchActive &&
-                        !_isInFolderSearch &&
-                        !_isEditingCompact &&
-                        _currentParentTagId(parentTags) != null)
-                      Positioned(
-                        top: 7,
-                        right: 0,
-                        child: _ChildTagDrawer(
-                          parentTagId: _currentParentTagId(parentTags)!,
-                          controller: _drawerCtrl,
-                          selectedChildId: _selectedChildTagId,
-                          onToggle: () {
-                            final next = !_childDrawerOpen;
-                            setState(() => _childDrawerOpen = next);
-                            _animateDrawer(next);
-                          },
-                          onSelectChild: (id) =>
-                              setState(() => _selectedChildTagId = id),
-                          onAddChild: () => _addChildTag(
-                              _currentParentTagId(parentTags)!),
-                        ),
-                      ),
-                    // タグ履歴オーバーレイ（ルーレット展開中のみ）
-                    if (_inputAreaKey.currentState?.showTagHistory ?? false)
-                      Positioned(
-                        right: 8,
-                        top: -110,
-                        child: _buildTagHistoryList(),
-                      ),
-                    // 並び替え中: フォルダ本体に説明 + ボタン
-                    if (_isReorderMode)
-                      Positioned.fill(
-                        child: _buildReorderOverlay(),
-                      ),
-                    // フロートする下部ボタン群（検索中・並び替え中・フォルダ内検索中・編集コンパクトモードは非表示）
-                    if (!_isReorderMode &&
-                        !_isSearchActive &&
-                        !_isInFolderSearch &&
-                        !_isEditingCompact)
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom:
-                            MediaQuery.of(context).viewPadding.bottom + 8,
-                        child: _buildFloatingBottomBar(parentTags),
-                      ),
-                    // 親タグフォルダ表示中のみ虫眼鏡ボタン (グリッドボタンの上に浮かぶ)
-                    if (!_isReorderMode &&
-                        !_isSearchActive &&
-                        !_isInFolderSearch &&
-                        !_isSelectMode &&
-                        !_isEditingCompact &&
-                        _currentParentTagId(parentTags) != null)
-                      Positioned(
-                        right: 12,
-                        bottom: MediaQuery.of(context).viewPadding.bottom +
-                            8 +
-                            48 +
-                            6,
-                        child: _buildFolderSearchButton(parentTags),
-                      ),
-                  ],
+                    ),
+                  ),
                 ),
               ),
             ),
-          ],
-        ),
-        ),
+          // 子タグドロワー（フォルダ右上、検索中・フォルダ内検索中・編集中は非表示）
+          if (!_isSearchActive &&
+              !_isInFolderSearch &&
+              !_isEditingCompact &&
+              _currentParentTagId(parentTags) != null)
+            Positioned(
+              top: 7,
+              right: 0,
+              child: _ChildTagDrawer(
+                parentTagId: _currentParentTagId(parentTags)!,
+                controller: _drawerCtrl,
+                selectedChildId: _selectedChildTagId,
+                onToggle: () {
+                  final next = !_childDrawerOpen;
+                  setState(() => _childDrawerOpen = next);
+                  _animateDrawer(next);
+                },
+                onSelectChild: (id) =>
+                    setState(() => _selectedChildTagId = id),
+                onAddChild: () =>
+                    _addChildTag(_currentParentTagId(parentTags)!),
+              ),
+            ),
+          // タグ履歴オーバーレイ（ルーレット展開中のみ）
+          if (_inputAreaKey.currentState?.showTagHistory ?? false)
+            Positioned(
+              right: 8,
+              top: -110,
+              child: _buildTagHistoryList(),
+            ),
+          // 並び替え中: フォルダ本体に説明 + ボタン
+          if (_isReorderMode)
+            Positioned.fill(
+              child: _buildReorderOverlay(),
+            ),
+          // フロートする下部ボタン群（検索中・並び替え中・フォルダ内検索中・編集コンパクトモードは非表示）
+          if (!_isReorderMode &&
+              !_isSearchActive &&
+              !_isInFolderSearch &&
+              !_isEditingCompact)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: MediaQuery.of(context).viewPadding.bottom + 8,
+              child: _buildFloatingBottomBar(parentTags),
+            ),
+          // 親タグフォルダ表示中のみ虫眼鏡ボタン (グリッドボタンの上に浮かぶ)
+          if (!_isReorderMode &&
+              !_isSearchActive &&
+              !_isInFolderSearch &&
+              !_isSelectMode &&
+              !_isEditingCompact &&
+              _currentParentTagId(parentTags) != null)
+            Positioned(
+              right: 12,
+              bottom: MediaQuery.of(context).viewPadding.bottom + 8 + 48 + 6,
+              child: _buildFolderSearchButton(parentTags),
+            ),
+        ],
       ),
     );
   }
@@ -1292,19 +1490,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           const Spacer(),
           // 中央: 上シェブロン（フォルダ引き上げ）
           // タップで最大化、上下スワイプでもフォルダタブと同じ挙動
-          GestureDetector(
-            onTap: () => setState(() => _isMemoListExpanded = true),
-            onVerticalDragEnd: _handleVerticalSwipe,
-            behavior: HitTestBehavior.opaque,
-            child: const SizedBox(
-              width: 56,
-              height: 44,
-              child: Center(child: _ChevronIcon(up: true)),
+          // 横画面ではフォルダ最大化の概念が不要なので非表示
+          if (!Responsive.isWide(context)) ...[
+            GestureDetector(
+              onTap: () => setState(() => _isMemoListExpanded = true),
+              onVerticalDragEnd: _handleVerticalSwipe,
+              behavior: HitTestBehavior.opaque,
+              child: const SizedBox(
+                width: 56,
+                height: 44,
+                child: Center(child: _ChevronIcon(up: true)),
+              ),
             ),
-          ),
-          const Spacer(),
-          // 右のスペーサー（左右バランス用: 爆速22+間隔12+ToDo22=56pt）
-          const SizedBox(width: 56),
+            const Spacer(),
+            // 右のスペーサー（左右バランス用: 爆速22+間隔12+ToDo22=56pt）
+            const SizedBox(width: 56),
+          ],
         ],
       ),
     );
@@ -1317,11 +1518,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Widget _buildSelectModeBar() {
     final isDelete = _selectMode == _SelectMode.delete;
     final accent = isDelete ? Colors.red : const Color(0xFF007AFF);
-    return Transform.translate(
-      offset: const Offset(0, -65),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Container(
+    final isWide = Responsive.isWide(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 横画面 (スプリットビュー) は幅 70% 中央寄せ。
+        // 位置は「画面上端 〜 タブ上端」の中央に選択バーの中心が来るよう計算する。
+        //   機能バー上端 Y ≒ viewPadding.top + 検索バー高さ(概算36)
+        //   選択バー中心を funcBarTop / 2 に置きたいので、
+        //   Transform Y = funcBarTop/2 - funcBarTop - selectBarHalf
+        //              = -funcBarTop/2 - selectBarHalf
+        // 縦画面 (iPhone / iPad 縦) は従来どおり幅フル + 機能バー上に食い込む配置。
+        final horizontalPadding =
+            isWide ? constraints.maxWidth * 0.15 : 16.0;
+        final double yOffset;
+        if (isWide) {
+          // 画面座標系で:
+          //   画面上端 Y = 0
+          //   機能バー上端 Y = viewPadding.top + 検索バー高さ (funcBarTop)
+          //   タブ上端 Y = funcBarTop + 機能バー高さ (tabTop)
+          // 選択バーの中心を 画面上端 〜 タブ上端 の中央 (tabTop / 2) に置きたい。
+          // 選択バーは機能バー上端 (Transform の原点) から移動させるので:
+          //   yOffset = tabTop/2 - funcBarTop - 選択バー高さ/2
+          final viewPadTop = MediaQuery.of(context).viewPadding.top;
+          const searchBarH = 36.0;
+          const functionBarH = 40.0;
+          const selectBarHalf = 32.0;
+          final funcBarTop = viewPadTop + searchBarH;
+          final tabTop = funcBarTop + functionBarH;
+          yOffset = tabTop / 2 - funcBarTop - selectBarHalf;
+        } else {
+          yOffset = -65.0;
+        }
+        return Transform.translate(
+          offset: Offset(0, yOffset),
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+            child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -1361,8 +1593,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
             ],
           ),
-        ),
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -2335,10 +2569,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// - 通常時: 列数×行数（iPad は列数倍化）
   /// - 最大化時: その選択肢を採用した場合の実行数で「cols×N」
   String _gridLabelFor(GridSizeOption opt) {
-    // iPad 用列数は enum の iPadColumns を参照
-    final cols =
-        Responsive.isTablet(context) ? opt.iPadColumns : opt.columns;
+    // iPad横画面 > iPad縦画面 > iPhone の順で列数を決定
+    final isWide = Responsive.isWide(context);
+    final isTablet = Responsive.isTablet(context);
+    final cols = isWide
+        ? opt.iPadWideColumns
+        : isTablet
+            ? opt.iPadColumns
+            : opt.columns;
     String baseLabel() {
+      // 横画面は enum 側の iPadWideRows を使う（行数も縦画面と異なるため）
+      if (isWide && opt.iPadWideRows > 0) {
+        return '$cols×${opt.iPadWideRows}';
+      }
       return switch (opt) {
         GridSizeOption.titleOnly => 'タイトルのみ',
         GridSizeOption.grid1flex => '$cols×可変（20行まで）',
@@ -2356,13 +2599,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final normalH = _normalFolderHeight;
     final expandedH = _expandedFolderHeight;
     if (normalH == null || expandedH == null) return baseLabel();
-    final baseRows = switch (opt) {
-      GridSizeOption.grid3x6 => 6,
-      GridSizeOption.grid2x5 => 5,
-      GridSizeOption.grid2x3 => 3,
-      GridSizeOption.grid1x2 => 2,
-      _ => 0,
-    };
+    final baseRows = isWide && opt.iPadWideRows > 0
+        ? opt.iPadWideRows
+        : switch (opt) {
+            GridSizeOption.grid3x6 => 6,
+            GridSizeOption.grid2x5 => 5,
+            GridSizeOption.grid2x3 => 3,
+            GridSizeOption.grid1x2 => 2,
+            _ => 0,
+          };
     if (baseRows == 0) return baseLabel();
     const spacing = 8.0;
     const peek = 0.2;
@@ -4757,14 +5002,18 @@ class _MemoGridView extends StatelessWidget {
 
   /// 1行の高さを availableHeight から計算（Swift版cardHeight準拠）
   /// rows行を完全表示 + 次の行を peek=0.2 だけチラ見せ
-  double _computeMainAxisExtent(double availableHeight) {
-    final rows = switch (gridSize) {
-      GridSizeOption.grid3x6 => 6,
-      GridSizeOption.grid2x5 => 5,
-      GridSizeOption.grid2x3 => 3,
-      GridSizeOption.grid1x2 => 2,
-      _ => 0,
-    };
+  /// 横画面時は enum 側の iPadWideRows を優先する
+  double _computeMainAxisExtent(BuildContext context, double availableHeight) {
+    final isWide = Responsive.isWide(context);
+    final rows = isWide && gridSize.iPadWideRows > 0
+        ? gridSize.iPadWideRows
+        : switch (gridSize) {
+            GridSizeOption.grid3x6 => 6,
+            GridSizeOption.grid2x5 => 5,
+            GridSizeOption.grid2x3 => 3,
+            GridSizeOption.grid1x2 => 2,
+            _ => 0,
+          };
     if (rows == 0) return 100; // fallback
     const spacing = 8.0;
     const peek = 0.2;
@@ -4939,12 +5188,16 @@ class _MemoGridView extends StatelessWidget {
               }
               // 通常: rows×cols でフォルダ高さに合わせて自動計算。
               final mainExtent = _computeMainAxisExtent(
+                context,
                 cardHeightReference ?? constraints.maxHeight,
               );
               // iPad 用列数は enum 側で個別定義（titleOnly など倍化以外のケース有）
-              final columns = Responsive.isTablet(context)
-                  ? gridSize.iPadColumns
-                  : gridSize.columns;
+              // 横画面では iPadWideColumns 優先
+              final columns = Responsive.isWide(context)
+                  ? gridSize.iPadWideColumns
+                  : Responsive.isTablet(context)
+                      ? gridSize.iPadColumns
+                      : gridSize.columns;
               return GridView.builder(
                 controller: scrollController,
                 padding: EdgeInsets.only(bottom: bottomPad),
@@ -4987,13 +5240,14 @@ class _GridSizeMenuOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 本家normalOptions: [3×6, 2×5, 2×3, 1×2, 1(全文), タイトルのみ]
-    // iPad は列数を倍化するが、grid1x2 (2×2) は他の選択肢と重複して冗長な
-    // ため除外。grid1flex は「2×可変」として有用なので残す。
-    final options = Responsive.isTablet(context)
+    // iPad縦画面: grid1x2 (2×2) は他の選択肢と重複して冗長なため除外。
+    // iPad横画面: grid1x2 は「2×3」として独立した価値があるので含める。
+    final options = (Responsive.isTablet(context) &&
+            !Responsive.isWide(context))
         ? GridSizeOption.values
             .where((o) => o != GridSizeOption.grid1x2)
             .toList()
-        : GridSizeOption.values;
+        : GridSizeOption.values.toList();
 
     const menuWidth = 220.0;
     // 行数: 見出し + N 項目

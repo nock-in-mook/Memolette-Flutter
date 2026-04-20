@@ -16,6 +16,7 @@ import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/image_storage.dart';
 import '../utils/keyboard_done_bar.dart';
+import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
@@ -82,6 +83,14 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   bool get isTitleFocused => _titleFocusNode.hasFocus;
   /// 外部から入力欄全体のフォーカス状態を確認するゲッター（タイトル or 本文）
   bool get isInputFocused => _isInputFocused;
+  /// 外部から Undo を実行（⌘Z ショートカット用）
+  Future<void> triggerUndo() => _undo();
+  /// 外部から Redo を実行（⇧⌘Z ショートカット用）
+  Future<void> triggerRedo() => _redo();
+  /// 外部から Undo 可能か判定
+  bool get canUndo => _canUndo;
+  /// 外部から Redo 可能か判定
+  bool get canRedo => _canRedo;
   /// 本文欄にフォーカスを強制要求（最大化タップでフォーカスが外れたときの復元用）
   void refocusContent() => _contentFocusNode.requestFocus();
   /// タイトル欄にフォーカスを強制要求
@@ -2140,13 +2149,18 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     // これ以外 (起動直後・閲覧モード・編集を抜けた状態) は閲覧寄りツールバーを出す
     final isEditing = _isInputFocused || compact;
     final inViewMode = !isEditing;
+    final isTablet = Responsive.isTablet(context);
+    // iPad は左右 2 グループに分けて配置、アイコン間隔も 1.5 倍に広げる。
+    // iPhone は従来のまま左から詰めて並べる（本来の位置）。
+    double sp(double base) => isTablet ? base * 1.5 : base;
     return Container(
       constraints: const BoxConstraints(minHeight: 36),
       padding: const EdgeInsets.fromLTRB(10, 3, 10, 3),
       child: Row(
         children: [
-          // 全体を右寄せ。左利き対応時はこの Spacer を末尾に移す
-          const Spacer(),
+          // ========================================
+          // 左グループ: ゴミ箱 / MD / プレビュー
+          // ========================================
           Builder(builder: (_) {
             final hasReal = _contentController.text.isNotEmpty ||
                 _titleController.text.isNotEmpty;
@@ -2159,7 +2173,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                       : Colors.grey.shade300),
             );
           }),
-          const SizedBox(width: 14),
+          SizedBox(width: sp(14)),
           // MD (縦並び: 上ラベル + 下スイッチ)
           // Column全体をタップ領域にして、テキスト部分タップでもトグル動作
           GestureDetector(
@@ -2198,13 +2212,24 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           ),
           // MD ON のときだけプレビューボタンを MD スイッチの右隣に出す
           if (_isMarkdown) ...[
-            const SizedBox(width: 10),
+            SizedBox(width: sp(10)),
             _buildPreviewButton(),
           ],
-          // 多機能・背景色は閲覧時のみ（編集中はツールバーをすっきりさせる）
+
+          // ========================================
+          // 左右分離（iPad のみ Spacer で右グループを右寄せ）
+          // iPhone は詰めて並べるので Spacer は入れない
+          // ========================================
+          if (isTablet) const Spacer(),
+
+          // ========================================
+          // 右グループ: 閲覧時は 多機能/背景色/コピー、編集時は 画像追加 + Undo/Redo
+          // ========================================
+          // 多機能・背景色・コピーは閲覧時のみ
           if (inViewMode) ...[
-            const SizedBox(width: 12),
-            // 多機能メニュー（エクスポート/HTML化など、タップ動作は後で実装）
+            // iPhone は左グループから続くので元の間隔、iPad は Spacer の後なので 0
+            if (!isTablet) const SizedBox(width: 12),
+            // 多機能メニュー
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () {
@@ -2213,7 +2238,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               child: Icon(CupertinoIcons.ellipsis_circle,
                   size: 20, color: Colors.grey[600]),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: sp(12)),
             // 背景色変更
             GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -2221,20 +2246,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               child: Icon(Icons.palette_outlined,
                   size: 20, color: Colors.grey[600]),
             ),
-          ],
-          // 画像追加は編集時のみ（閲覧モードでは隠す）
-          if (!inViewMode) ...[
-            const SizedBox(width: 12),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _attachImage,
-              child: Icon(CupertinoIcons.photo,
-                  size: 20, color: Colors.grey[600]),
-            ),
-          ],
-          // コピーは閲覧時のみ
-          if (inViewMode) ...[
-            const SizedBox(width: 12),
+            SizedBox(width: sp(12)),
+            // コピー
             Builder(builder: (_) {
               final hasRealContent = _contentController.text.isNotEmpty;
               return GestureDetector(
@@ -2250,9 +2263,19 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               );
             }),
           ],
-          // Undo / Redo は編集時のみ（右寄せ配置の一部として並ぶ）
+          // 画像追加は編集時のみ
           if (!inViewMode) ...[
-            const SizedBox(width: 16),
+            if (!isTablet) const SizedBox(width: 12),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _attachImage,
+              child: Icon(CupertinoIcons.photo,
+                  size: 20, color: Colors.grey[600]),
+            ),
+          ],
+          // Undo / Redo は編集時のみ。iPad は左右に大きめの余白で独立感を出す
+          if (!inViewMode) ...[
+            SizedBox(width: isTablet ? 32 : 16),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _canUndo ? _undo : null,
@@ -2265,7 +2288,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                     : Colors.grey.shade400,
               ),
             ),
-            const SizedBox(width: 24),
+            SizedBox(width: isTablet ? 36 : 24),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _canRedo ? _redo : null,
@@ -2278,63 +2301,65 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                     : Colors.grey.shade400,
               ),
             ),
+            // iPad は Undo/Redo の右にも余白を足して「独立した塊」感を出す
+            if (isTablet) const SizedBox(width: 16),
           ],
           // 確定 (キーボード閉じる) は KeyboardDoneBar の「完了」と重複するため廃止
           // 閉じる (クリア) は 非フォーカス + メモ/タイトルあり + 非 compact のときだけ出す
-          // 出さないときは幅も 0 にして Undo/Redo の位置を詰める (compact と同じレイアウト)
+          // コピーとの間も、最大化ボタンとの間と対称になるよう余白を確保する
           if (!compact &&
               !_isInputFocused &&
-              (_hasMemo || _titleController.text.isNotEmpty))
-            SizedBox(
-              width: 72,
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _closeMemo,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Icon(
-                        CupertinoIcons.xmark_circle,
-                        size: 18,
-                        color: Color(0xFF007AFF),
-                      ),
-                      SizedBox(width: 3),
-                      Text(
-                        '閉じる',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF007AFF),
-                        ),
-                      ),
-                    ],
+              (_hasMemo || _titleController.text.isNotEmpty)) ...[
+            SizedBox(width: isTablet ? 16 : 12),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _closeMemo,
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    CupertinoIcons.xmark_circle,
+                    size: 18,
+                    color: Color(0xFF007AFF),
+                  ),
+                  SizedBox(width: 3),
+                  Text(
+                    '閉じる',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF007AFF),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // 最大化/縮小トグル（右端、少し雰囲気が違う機能なので iPad は左余白を大きめに）
+          // アイコン周囲も含めて広めのタップ判定だが、見た目は右端寄せにする
+          // onToggleExpanded が null（例: iPad 横画面）の場合はボタン自体を非表示
+          if (widget.onToggleExpanded != null) ...[
+            if (isTablet) const SizedBox(width: 16),
+            GestureDetector(
+              onTap: () {
+                commitIME();
+                widget.onToggleExpanded?.call();
+              },
+              behavior: HitTestBehavior.opaque,
+              child: SizedBox(
+                width: 34,
+                height: 40,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Icon(
+                    widget.isExpanded ? Icons.zoom_in_map : Icons.zoom_out_map,
+                    size: 24,
+                    color: Colors.black87,
                   ),
                 ),
               ),
             ),
-          // 最大化/縮小トグル（右端）
-          // アイコン周囲も含めて広めのタップ判定だが、見た目は右端寄せにする
-          GestureDetector(
-            onTap: () {
-              commitIME();
-              widget.onToggleExpanded?.call();
-            },
-            behavior: HitTestBehavior.opaque,
-            child: SizedBox(
-              width: 34,
-              height: 40,
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Icon(
-                  widget.isExpanded ? Icons.zoom_in_map : Icons.zoom_out_map,
-                  size: 24,
-                  color: Colors.black87,
-                ),
-              ),
-            ),
-          ),
+          ],
         ],
       ),
     );

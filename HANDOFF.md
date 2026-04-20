@@ -1,5 +1,31 @@
 # 引き継ぎメモ
 
+## ★ 後で動作確認するタスク（セッション#22で実装済・未検証）
+
+### Mac キーボードをシミュに繋いで（I/O → Keyboard → Connect Hardware Keyboard）確認
+- [ ] `⌘N` 新規メモ作成
+- [ ] `⌘F` 検索バーにフォーカス
+- [ ] `⌘1` 〜 `⌘9` タブ切替（`_tabOrder[i]` の index 番目）
+- [ ] `⌘Return` 入力確定（フォーカス解除）
+- [ ] `Esc` フォーカス解除
+- [ ] `⌘Z` Undo（`_inputAreaKey.currentState?.triggerUndo()` 経由）
+- [ ] `⇧⌘Z` Redo
+
+### iPhone 実機 / iPhone シミュで確認（セッション#22 の変更が iPad にしか入ってない）
+- [ ] iPhone のツールバー配置が **均等（iPad 以外）に戻ってる** — iPad だけ右寄せになっているか
+- [ ] iPad 縦画面（特に iPad Pro 13: 1024×1366）で **スプリットが誤発動しない** — `isWide = width >= 840 && width > height` に変更済
+
+### Step C 後半 実装（次セッション以降）
+- [ ] `⌘B` 太字（MDモード時のみ、focused TextEditingController に `**` ラップ）
+- [ ] `⌘I` 斜体（同じく `*` ラップ）
+- [ ] MemoInputArea に `triggerInsertMd(String wrapper)` 的な public メソッド追加が必要
+- [ ] `MarkdownToolbar._wrapSelection` のロジックを State 側に移植 or 流用
+
+### Phase 8 完了時に外すこと
+- [ ] **Info.plist `UIRequiresFullScreen`** — iPad マルチタスキング（Split View / Slide Over / Stage Manager）を復活させる。開発用にシミュ回転を効かせるために一時的に true にしている
+
+---
+
 ## 現在の状況
 - セッション#21 完了
 - ブランチ: `main`

@@ -9,6 +9,7 @@ import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../screens/home_screen.dart' show GridSizeOption;
 import '../utils/image_storage.dart';
+import '../utils/responsive.dart';
 
 /// メモカード（グリッド表示用）
 /// 長押し時のメニューは外側で CupertinoContextMenu でラップして実現する
@@ -55,14 +56,20 @@ class MemoCard extends ConsumerWidget {
       };
 
   // bodyLines: 0 = 無制限。grid1flex は本家にはないFlutter版の可変モードで最大20行
-  int get _bodyLines => switch (gridSize) {
-        GridSizeOption.grid3x6 => 1,
-        GridSizeOption.grid2x5 => 3,
-        GridSizeOption.grid2x3 => 5,
-        GridSizeOption.grid1x2 => 4,
-        GridSizeOption.grid1flex => 20,
-        GridSizeOption.titleOnly => 0,
-      };
+  // 実際の表示行数は LayoutBuilder が constraints.maxHeight から算出し、この値は
+  // その「上限 cap」としてのみ機能する。iPad ではカード高さが大きいので cap を緩める。
+  int _bodyLinesFor(BuildContext context) {
+    final isWide = Responsive.isWide(context);
+    final isTablet = Responsive.isTablet(context);
+    return switch (gridSize) {
+      GridSizeOption.grid3x6 => isWide ? 4 : (isTablet ? 3 : 1),
+      GridSizeOption.grid2x5 => isTablet ? 5 : 3,
+      GridSizeOption.grid2x3 => isTablet ? 8 : 5,
+      GridSizeOption.grid1x2 => isTablet ? 6 : 4,
+      GridSizeOption.grid1flex => 20,
+      GridSizeOption.titleOnly => 0,
+    };
+  }
 
   double get _cardPadding => switch (gridSize) {
         GridSizeOption.grid3x6 => 4,
@@ -400,7 +407,8 @@ class MemoCard extends ConsumerWidget {
                         final lineHeight = _bodyFont * 1.4;
                         // grid1flex のように高さが無限になるケースで
                         // Infinity.floor() が投げられるのを防ぐ
-                        final cap = _bodyLines == 0 ? 999 : _bodyLines;
+                        final rawCap = _bodyLinesFor(context);
+                        final cap = rawCap == 0 ? 999 : rawCap;
                         final maxLines = constraints.maxHeight.isFinite
                             ? (constraints.maxHeight / lineHeight)
                                 .floor()

@@ -26,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- 【開発用】iPadシミュの回転追従のため true にしている。
+	     Phase 8 完了後に削除してマルチタスキング（Split View/Slide Over）を復活させる。 -->
+	<key>UIRequiresFullScreen</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
