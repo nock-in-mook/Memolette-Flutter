@@ -1,66 +1,98 @@
 # 引き継ぎメモ
 
 ## 現在の状況
-- セッション#19 完了
-- ブランチ: `feature/todo`
-- 最終コミット: `a88545b` すべてタブのフィルタをラボ3ピル状に + 件数をフィルタ連動 + ToDo合算
+- セッション#20 完了
+- ブランチ: `main`（feature/block-editor をマージ済）
+- 最終コミット: `9a57433` Merge feature/block-editor: Phase 10 ブロックエディタ採用 + MD関連の仕上げ
 
-## 今回（#19）完了したこと
+## 今回（#20）完了したこと
 
-### 実機インストールの安定化
-- `objective_c.framework` の adhoc 署名で実機インストール失敗 → `flutter clean` + 再ビルドで解消（過去にも有効）
-- 単発の codesign 再署名は Runner.app 全体ハッシュ不整合で起動直後クラッシュするので避ける（cleanリビルドが最短）
+### Phase 10: 画像取り込み + サムネ表示（採用版はブロックエディタ）
+- image_picker / flutter_image_compress 導入、iOS権限追記
+- DBスキーマ v3: MemoImages テーブル（1メモ:複数画像）
+- 画像保存ユーティリティ（長辺1024px/JPEG 70%）
+- Documents パスキャッシュ、Image.file cacheWidth 最適化
+- 50メモ × 1〜3画像のダミー seeder（Canvas 生成）
 
-### 複数選択モードを ToDo にも統合
-- DB: `moveMemosToTop` → `moveItemsToTop({memoIds, todoListIds})` に統合
-- ロック中は **削除モード時のみ** 操作不可。トップ移動モードでは選択可能
-- `_selectedTodoIds` / `_toggleTodoSelection` / `_resetSelection()` ヘルパー追加
-- TodoCard も `flashLevel` 対応（オレンジ枠フラッシュ）
-- 件数バッジ・グレーアウト判定も memo + todo 合算
+### ブロックエディタ（実験 → 採用）
+- `lib/widgets/block_editor.dart` 新規。本文を TextBlock/ImageBlock 配列で管理
+- U+FFFC マーカーで画像IDを content に埋め込み、BlockEditor が parse/serialize
+- 画像のインライン挿入: カーソル位置で TextBlock を分割 + 間に ImageBlock
+- サムネは 120x120 インライン、メモカードは右端 22〜44px + 件数バッジ
+- フルスクリーン画像ビューア（InteractiveViewer + PageView）
 
-### 複数選択バーをフォルダに被せる絶対配置
-- 機能バー枠は `Opacity(0)+IgnorePointer` で高さ維持
-- 選択モードバーは `Stack` 内 `Positioned` で重ねる（フォルダが押し下げられない）
-- `Transform.translate(0, -65)` で入力欄に大きく被せる
-- 文言は「メモを選択してください」に統一
+### メモカード
+- 画像マーカーを画像アイコンでインライン描画 + 前後自動改行
+- 右端小サムネ（グリッド連動）+ 2枚以上なら件数バッジ
+- タイトルのみ/3x6 は photo アイコンだけ
+- UUID マーカーがカード本文に漏れる問題を修正
 
-### TodoCard をメモカードに揃える
-- 仕切り線（0.5px グレー）追加
-- gridSize 連動の可変 font/padding（MemoCardと完全一致のロジック）
-- しおりアイコンは title font - 2 で連動
+### MDモード × BlockEditor 統合
+- MDツールバーをフォーカス中 TextBlock controller に接続
+- MarkdownTextController を TextBlock に採用（Bear 風インライン装飾）
+- MDプレビュー: マーカー → `![](memolette:id)` 置換 + imageBuilder で実画像描画
+- プレビュー → 編集の1タップ化（BlockEditor 常時マウント + Stack）
+- プレビュー入る前のカーソル位置を保存、編集復帰時に復元
+- 閲覧中→プレビュー→戻る場合はキーボード出さず閲覧継続
+- プレビューのチェックボックスをタップでトグル可能
+- MDプレビューのフォント/余白/左寄せを BlockEditor 側に揃える
+- プレビュー ↔ 編集 の左右フリック切替（向き問わずトグル）
+- MDオン時トーストに操作案内を追記
+- MDプレビューで本文ゼロ時は薄いプレースホルダー表示
 
-### 新規作成時の並び順を上に
-- `nextItemSortOrder()` ヘルパーで memos+todoLists 通しの最大+1 を共通化
-- `createMemo`・`createTodoList`・`moveMemoToTop`・`moveItemsToTop` で使用
-- 「上に移動」したアイテムの下に新規メモが入る問題を解消
+### Undo/Redo 改善
+- atomic な text+selection セットで MDモード時の「カーソル飛び」を解消
+- 共通 prefix/suffix で変化位置に追従するカーソル調整ロジック
+- 画像マーカーの並びが同じならブロック破棄せず TextBlock.text だけ更新
+  （フォーカス維持 = キーボードが閉じない）
+- 画像の Undo/Redo は論理削除方式を試したが挙動不安定で一旦ペンド
 
-### すべてタブの上部フィルタを刷新
-- ラボ3「ピル状」採用（青塗り＋白文字 / 透明＋グレー）
-- アイコン廃止、テキストのみで簡潔に
-- 件数表示（`_MemoCountText`）に `subFilter` 追加でフィルタ連動
-- ToDo件数も合算
+### フッターツールバー刷新
+- フォーカスで「編集/閲覧」レイアウトを分岐
+  - 閲覧: 🗑 / MD / ⋯ / 🎨 / 📄 / 閉じる / Max
+  - 編集: 🗑 / MD / 🖼 / Undo / Redo / Max
+  - コンパクト(最大化): 🗑 / MD / 🖼 / Undo / Redo / Max
+- 最大化 + フォーカス中にフッターを Overlay でキーボード直上に浮かせる
+- KeyboardDoneBar に accessoryHeight ValueNotifier を追加、完了ボタンが
+  カスタムツールバー群の上に出るよう押し上げ
+- プレビューボタンを MD スイッチ右隣に移動、角丸を 14→6 に
+- 確定ボタン廃止（完了ボタンと重複）、閉じるボタンは非フォーカス時のみ
+- Max / 閉じる を SizedBox 内で右寄せ、Max SizedBox 幅 48→34
+- 設定に「Undo/Redo アイコンラボ」追加
+
+### バグ修正・UX微調整
+- ビルド中 Overlay mutation で落ちる crash を _safeDefer で回避
+- 閲覧モードで本文タップ1回目無反応を postFrame 撤去で修正
+- 本文右下余白タップで focusLast（先頭ではなく末尾）
+- TextBlock タップ時のカーソル位置は TextField native 任せ
+- 「すべて」タブの件数表示を SizedBox(60) で幅固定（桁変わってもボタン不動）
+- タブタップ時のスクロールを「画面外だけ最小スクロール」に変更
+- 爆速モードのタグ履歴を枠外タップで閉じる
+- 空メモ先行作成/自動削除が BlockEditor のフォーカス変化でも発火するよう
+- UI微調整多数（padding、色、角丸など）
+
+### 動作確認
+- シミュレータ・実機ともにインストール OK
 
 ## 次のアクション
 
-### 次セッションの本命
-- **Phase 10 画像取り込みとサムネ表示**
-  - image_picker パッケージ追加
-  - DBスキーマに imagePath 等を追加（マイグレーション要）
-  - 圧縮+リサイズ（長辺1024px, JPEG 70%, 1枚100-200KB）
-  - サムネイル遅延ロード
-  - メモカードでの表示
+### 大型案件（次セッションの候補）
+- **Phase 8 同期**（Firebase / iCloud ↔ SQLite）
+- **Phase 11 AI機能**（タグ付け・要約）
+- **Phase 12 テーマ・ダークモード**
+- **Phase 13 リリース準備**（多言語、アイコン、サブスク）
+- **Phase 9 Android対応**
 
-### 残備忘
-- リリース前リマインドの3つ（実機確認）— ROADMAP に記載済み
-  - 最大化ボタンのタップ判定
-  - フラッシュアニメーション複数対応
-  - タイトル文字色の紫味の濃さ
+### 保留中
+- **画像 Undo/Redo**: 論理削除方式を試したが挙動不安定でペンド
+- **リリース前実機確認 3点**: 最大化ボタンのタップ判定・フラッシュアニメ・タイトル紫味
 
 ## 技術メモ
-- **実機ビルド**: rsync → `flutter build ios --release` → `xcrun devicectl device install app`。codesign エラー出たら flutter clean から
-- **シミュレータビルド**: `flutter run -d 95C8A8C5-0972-4BB0-B793-5219096697DF < /dev/null > /tmp/memolette-run.log 2>&1 &` で起動。stdin 閉じてるので hot reload 不可、変更時は kill→rsync→再起動
 - **ビルド回避策**: `/tmp/memolette-run` に rsync してから build（Google Drive で codesign エラー回避）
-- **シミュレータ**: iOS 17.2 の `iPhone 15 Pro Max` (95C8A8C5-0972-4BB0-B793-5219096697DF) 使用中
-- **実機**: iPhone 15 Pro Max (`30A153A2-9507-5499-8B3D-341320DA2AB3`)
+- **シミュレータ**: iOS 17.2 の iPhone 15 Pro Max (95C8A8C5-0972-4BB0-B793-5219096697DF)
+- **実機**: iPhone 15 Pro Max (30A153A2-9507-5499-8B3D-341320DA2AB3)
+- **実機ビルド**: rsync → `flutter build ios --release` → `xcrun devicectl device install app`。codesign エラー出たら flutter clean から
+- **flutter run 後に release build すると sim の objective_c.framework が壊れる** → `flutter clean` + 再ビルドで復活
 - **transcript_export.py**: Mac では `python3 "<Mac版のフルパス>" --latest`
-- **sortOrder 設計**: memos と todoLists の manualSortOrder を「通し番号」として扱う。`nextItemSortOrder()` 経由で取得すれば両テーブルで衝突しない
+- **BlockEditor の content マーカー**: `\uFFFC{imageId}\uFFFC`（U+FFFC Object Replacement Character）
+- **画像保存先**: `Documents/memo_images/{uuid}.jpg`（相対パスで DB に保存）
