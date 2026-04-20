@@ -773,8 +773,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return Padding(
         // SafeAreaを使わず手動で上部パディング制御。
         // 下部はフォルダ色をホームインジケータ下まで延ばすため、ここではpaddingしない
+        // 横向き等で viewPadding.top が 4 未満になると負値エラーになるので non-negative にクランプ
         padding: EdgeInsets.only(
-          top: MediaQuery.of(context).viewPadding.top - 4,
+          top: (MediaQuery.of(context).viewPadding.top - 4)
+              .clamp(0.0, double.infinity),
         ),
         child: LayoutBuilder(
           builder: (context, constraints) => GestureDetector(
