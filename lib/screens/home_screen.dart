@@ -34,7 +34,7 @@ enum GridSizeOption {
   grid2x3('2×3', 2),
   grid1x2('1×2', 1),
   // 旧「全文(無制限)」を廃止し、本文 max 15行の 1列可変高さに置き換え
-  grid1flex('1×可変', 1),
+  grid1flex('1×可変（20行まで）', 1),
   titleOnly('タイトルのみ', 2);
 
   final String label;
@@ -2149,10 +2149,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   // ラボ3「ピル状」: 選択中だけ青塗りピル、非選択は透明テキスト
+  // ValueKey で親の再ビルド越しに AnimatedContainer の状態を保存し、
+  // メモ一覧更新時のチラつきを防ぐ
   Widget _buildAllTabSubFilterChip(_AllTabSubFilter filter) {
     final selected = _allTabSubFilter == filter;
     const accent = Color(0xFF007AFF);
     return GestureDetector(
+      key: ValueKey('sub_filter_chip_${filter.name}'),
       behavior: HitTestBehavior.opaque,
       onTap: () => setState(() => _allTabSubFilter = filter),
       child: AnimatedContainer(

@@ -54,13 +54,13 @@ class MemoCard extends ConsumerWidget {
         GridSizeOption.titleOnly => 12,
       };
 
-  // bodyLines: 0 = 無制限。grid1flex は本家にはないFlutter版の可変モードで最大15行
+  // bodyLines: 0 = 無制限。grid1flex は本家にはないFlutter版の可変モードで最大20行
   int get _bodyLines => switch (gridSize) {
         GridSizeOption.grid3x6 => 1,
         GridSizeOption.grid2x5 => 3,
         GridSizeOption.grid2x3 => 5,
         GridSizeOption.grid1x2 => 4,
-        GridSizeOption.grid1flex => 15,
+        GridSizeOption.grid1flex => 20,
         GridSizeOption.titleOnly => 0,
       };
 
@@ -398,9 +398,14 @@ class MemoCard extends ConsumerWidget {
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         final lineHeight = _bodyFont * 1.4;
-                        final maxLines = (constraints.maxHeight / lineHeight)
-                            .floor()
-                            .clamp(1, _bodyLines == 0 ? 999 : _bodyLines);
+                        // grid1flex のように高さが無限になるケースで
+                        // Infinity.floor() が投げられるのを防ぐ
+                        final cap = _bodyLines == 0 ? 999 : _bodyLines;
+                        final maxLines = constraints.maxHeight.isFinite
+                            ? (constraints.maxHeight / lineHeight)
+                                .floor()
+                                .clamp(1, cap)
+                            : cap;
                         final bodyStyle = TextStyle(
                           fontSize: _bodyFont,
                           fontWeight: FontWeight.w500,
