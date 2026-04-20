@@ -82,15 +82,12 @@
 ## 次のアクション
 
 ### 大型案件（次セッションの候補）
-- **Phase 8 同期**（Firebase / iCloud ↔ SQLite）
-- **Phase 11 AI機能**（タグ付け・要約）
-- **Phase 12 テーマ・ダークモード**
-- **Phase 13 リリース準備**（多言語、アイコン、サブスク）
-- **Phase 9 Android対応**
-
-### 保留中
-- **画像 Undo/Redo**: 論理削除方式を試したが挙動不安定でペンド
-- **リリース前実機確認 3点**: 最大化ボタンのタップ判定・フラッシュアニメ・タイトル紫味
+- **Phase 8 iPad対応**（★優先。ユーザーが iPad しか所持していないため、同期テストの前提）
+- **Phase 9 同期**（Firebase / iCloud ↔ SQLite）
+- **Phase 12 AI機能**（タグ付け・要約）
+- **Phase 13 テーマ・ダークモード**
+- **Phase 14 リリース準備**（多言語、アイコン、サブスク）
+- **Phase 10 Android対応**
 
 ## 技術メモ
 - **ビルド回避策**: `/tmp/memolette-run` に rsync してから build（Google Drive で codesign エラー回避）
