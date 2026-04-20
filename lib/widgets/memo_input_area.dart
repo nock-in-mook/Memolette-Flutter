@@ -2145,6 +2145,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       padding: const EdgeInsets.fromLTRB(10, 3, 10, 3),
       child: Row(
         children: [
+          // 全体を右寄せ。左利き対応時はこの Spacer を末尾に移す
+          const Spacer(),
           Builder(builder: (_) {
             final hasReal = _contentController.text.isNotEmpty ||
                 _titleController.text.isNotEmpty;
@@ -2248,9 +2250,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               );
             }),
           ],
-          const Spacer(),
-          // Undo / Redo は編集時のみ
+          // Undo / Redo は編集時のみ（右寄せ配置の一部として並ぶ）
           if (!inViewMode) ...[
+            const SizedBox(width: 16),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _canUndo ? _undo : null,
@@ -2276,7 +2278,6 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                     : Colors.grey.shade400,
               ),
             ),
-            const Spacer(),
           ],
           // 確定 (キーボード閉じる) は KeyboardDoneBar の「完了」と重複するため廃止
           // 閉じる (クリア) は 非フォーカス + メモ/タイトルあり + 非 compact のときだけ出す

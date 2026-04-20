@@ -64,7 +64,7 @@
 B（スプリットビュー）で実用価値を出してから C の要素を段階的に追加する方針。
 
 ### Step 0: 事前課題（着手前に潰す）
-- [ ] 横画面への回転が効かない（シミュレータを回すとスクショは回るが、アプリが追従しない。Flutter/SceneDelegate/シミュ設定のどこかが原因、要調査）
+- [ ] 横画面回転は**実機で要確認**（シミュレータ固有バグ濃厚。Info.plist/pbxproj/Storyboard すべて制約なし、AppDelegate.application(supportedInterfaceOrientationsFor:) も `.all` で実装済だが、iOS 17.2 / 26.3 の iPad シミュで Flutter が orientation change を受け取らない。実機接続後に検証。シミュでは**動的リサイズ**の代わりに window サイズ変更で代用する）
 - [ ] 最初に決めたい設計判断を確定する
   - [ ] 縦画面iPadの扱い（iPhone同等の単列 vs サイドバー型）
   - [ ] スプリットビューの固定 vs 可変（左右幅をドラッグで変更できるか）

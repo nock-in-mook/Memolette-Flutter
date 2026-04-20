@@ -13,6 +13,7 @@ import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/keyboard_done_bar.dart';
+import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
@@ -28,18 +29,22 @@ import 'todo_list_screen.dart';
 import 'todo_lists_screen.dart';
 
 /// グリッドサイズ選択肢（Swift版GridSizeOption準拠 / 旧「全文」を 1×可変 に置き換え）
+/// iPadColumns は iPad 判定時に使う列数。titleOnly のように単純な2倍では
+/// 見栄えが悪いものは個別指定し、画面幅で選択肢と列数を可変にできる。
 enum GridSizeOption {
-  grid3x6('3×6', 3),
-  grid2x5('2×5', 2),
-  grid2x3('2×3', 2),
-  grid1x2('1×2', 1),
+  grid3x6('3×6', 3, 6),
+  grid2x5('2×5', 2, 4),
+  grid2x3('2×3', 2, 4),
+  grid1x2('1×2', 1, 2),
   // 旧「全文(無制限)」を廃止し、本文 max 15行の 1列可変高さに置き換え
-  grid1flex('1×可変（20行まで）', 1),
-  titleOnly('タイトルのみ', 2);
+  // iPad でも「長文読みモード」として 1列可変を維持（GridView化すると可変性を失うため）
+  grid1flex('1×可変（20行まで）', 1, 1),
+  titleOnly('タイトルのみ', 2, 2);
 
   final String label;
   final int columns;
-  const GridSizeOption(this.label, this.columns);
+  final int iPadColumns;
+  const GridSizeOption(this.label, this.columns, this.iPadColumns);
 }
 
 /// 「よく見る」フォルダ専用グリッドオプション
@@ -813,7 +818,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   ? 0
                   : _isInputExpanded
                       ? (constraints.maxHeight - 44) * 0.92
-                      : 316,
+                      : Responsive.isTablet(context)
+                          ? (constraints.maxHeight * 0.5 - 120)
+                              .clamp(316.0, double.infinity)
+                          : 316,
               clipBehavior: Clip.hardEdge,
               decoration: const BoxDecoration(),
               child: MemoInputArea(
@@ -2134,12 +2142,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  for (final filter in _AllTabSubFilter.values)
-                    _buildAllTabSubFilterChip(filter),
-                ],
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 600),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      for (final filter in _AllTabSubFilter.values)
+                        _buildAllTabSubFilterChip(filter),
+                    ],
+                  ),
+                ),
               ),
             ),
           ],
@@ -2317,16 +2330,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   /// 任意の GridSizeOption について、現在の状態に応じたラベルを返す。
-  /// - 通常時: opt.label をそのまま返す
-  /// - 最大化時: その選択肢を採用した場合の実行数で「cols×N」を返す
+  /// - 通常時: 列数×行数（iPad は列数倍化）
+  /// - 最大化時: その選択肢を採用した場合の実行数で「cols×N」
   String _gridLabelFor(GridSizeOption opt) {
-    if (!_isMemoListExpanded) return opt.label;
+    // iPad 用列数は enum の iPadColumns を参照
+    final cols =
+        Responsive.isTablet(context) ? opt.iPadColumns : opt.columns;
+    String baseLabel() {
+      return switch (opt) {
+        GridSizeOption.titleOnly => 'タイトルのみ',
+        GridSizeOption.grid1flex => '$cols×可変（20行まで）',
+        GridSizeOption.grid3x6 => '$cols×6',
+        GridSizeOption.grid2x5 => '$cols×5',
+        GridSizeOption.grid2x3 => '$cols×3',
+        GridSizeOption.grid1x2 => '$cols×2',
+      };
+    }
+
+    if (!_isMemoListExpanded) return baseLabel();
     if (opt == GridSizeOption.titleOnly || opt == GridSizeOption.grid1flex) {
-      return opt.label;
+      return baseLabel();
     }
     final normalH = _normalFolderHeight;
     final expandedH = _expandedFolderHeight;
-    if (normalH == null || expandedH == null) return opt.label;
+    if (normalH == null || expandedH == null) return baseLabel();
     final baseRows = switch (opt) {
       GridSizeOption.grid3x6 => 6,
       GridSizeOption.grid2x5 => 5,
@@ -2334,14 +2361,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       GridSizeOption.grid1x2 => 2,
       _ => 0,
     };
-    if (baseRows == 0) return opt.label;
+    if (baseRows == 0) return baseLabel();
     const spacing = 8.0;
     const peek = 0.2;
     final cardH = (normalH - spacing * (baseRows + peek)) / (baseRows + peek);
-    if (cardH <= 0) return opt.label;
+    if (cardH <= 0) return baseLabel();
     final fitRows = ((expandedH + spacing) / (cardH + spacing)).floor();
     final rows = fitRows < baseRows ? baseRows : fitRows;
-    return '${opt.columns}×$rows';
+    return '$cols×$rows';
   }
 
   /// ボトムバーのグリッドサイズボタン用ラベル（現在選択中の表示）
@@ -2672,7 +2699,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           return _GridSizeMenuOverlay(
             current: _gridSize,
             buttonRect: btnRect,
-            labelOverrides: _isMemoListExpanded
+            // 最大化時は動的「cols×N」、iPad はラベルが enum と異なるので上書き
+            labelOverrides: (_isMemoListExpanded ||
+                    Responsive.isTablet(context))
                 ? {
                     for (final o in GridSizeOption.values)
                       o: _gridLabelFor(o),
@@ -4862,8 +4891,23 @@ class _MemoGridView extends StatelessWidget {
             builder: (context, constraints) {
               // フロート式ボトムバーに被らないよう下端にスクロール余白を確保
               const bottomPad = 120.0;
-              // タイトルのみ: 1列リスト風（コンパクト）
+              // タイトルのみ: iPhone は 1列リスト、iPad は 2列グリッド（コンパクト）
               if (gridSize == GridSizeOption.titleOnly) {
+                if (Responsive.isTablet(context)) {
+                  return GridView.builder(
+                    controller: scrollController,
+                    padding: EdgeInsets.only(bottom: bottomPad),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 8,
+                      mainAxisSpacing: 2,
+                      mainAxisExtent: 32,
+                    ),
+                    itemCount: merged.length,
+                    itemBuilder: (_, i) => _buildGridItem(merged[i]),
+                  );
+                }
                 return ListView.separated(
                   controller: scrollController,
                   padding: const EdgeInsets.only(bottom: bottomPad),
@@ -4895,11 +4939,15 @@ class _MemoGridView extends StatelessWidget {
               final mainExtent = _computeMainAxisExtent(
                 cardHeightReference ?? constraints.maxHeight,
               );
+              // iPad 用列数は enum 側で個別定義（titleOnly など倍化以外のケース有）
+              final columns = Responsive.isTablet(context)
+                  ? gridSize.iPadColumns
+                  : gridSize.columns;
               return GridView.builder(
                 controller: scrollController,
                 padding: EdgeInsets.only(bottom: bottomPad),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: gridSize.columns,
+                  crossAxisCount: columns,
                   crossAxisSpacing: 8,
                   mainAxisSpacing: 8,
                   mainAxisExtent: mainExtent,
@@ -4937,11 +4985,16 @@ class _GridSizeMenuOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 本家normalOptions: [3×6, 2×5, 2×3, 1×2, 1(全文), タイトルのみ]
-    // 本家Menuはこの順で上から並べる
-    const options = GridSizeOption.values;
+    // iPad は列数を倍化するが、grid1x2 (2×2) は他の選択肢と重複して冗長な
+    // ため除外。grid1flex は「2×可変」として有用なので残す。
+    final options = Responsive.isTablet(context)
+        ? GridSizeOption.values
+            .where((o) => o != GridSizeOption.grid1x2)
+            .toList()
+        : GridSizeOption.values;
 
     const menuWidth = 220.0;
-    // 行数: 見出し + 6項目
+    // 行数: 見出し + N 項目
     const rowHeight = 46.0;
     const headerHeight = 32.0;
     final menuHeight = headerHeight + rowHeight * options.length + 8;
