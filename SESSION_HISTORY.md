@@ -401,3 +401,24 @@
 - 既知の問題: 履歴ポップアップ枠外タップ閉じ / すべてタブ件数桁のずれ / 閲覧1回目タップ無反応 などまとめて修正
 - Documents パスキャッシュ + cacheWidth など画像表示の最適化
 - ダミー画像付きメモ50件の seeder を追加 (Canvas で PNG 生成)
+
+---
+## #21 (2026-04-20) iPad対応 Phase 8 Step A
+
+- Responsive ヘルパ新規（isTablet/isWide/contentMaxWidth）
+- GridSizeOption に iPadColumns 追加。iPad は列数を個別指定（6×6 / 4×5 / 4×3 / 2×可変 / タイトルのみ2列）
+- titleOnly は iPad で 2列 GridView 化、grid1flex は iPhone/iPad 共に 1列（長文読みモード）
+- グリッドメニューは iPad時に grid1x2 除外、ラベルは iPadColumns 基準に上書き
+- 入力欄の縦幅を iPad 時は画面の約半分（constraints.maxHeight × 0.5）
+- サブフィルタ（すべて/よく見る/最近/タグなし）を中央寄せ + max 600px
+- 入力欄下ツールバーを右寄せに統一（UNDO/REDO 含む。左利き対応の土台）
+- AppDelegate.application(supportedInterfaceOrientationsFor:) を `.all` で明示実装（実機用）
+- iPhone は portrait-only に固定（Info.plist から landscape 除外）
+- viewPadding.top - 4 が負値になるケースで Padding アサーション失敗→クラッシュする問題を non-negative clamp で修正
+- iPad 実機（のっくりのiPad / iOS 26.2.1）で動作確認、横画面も動く（Step B の下準備）
+- Step B (スプリットビュー) は既存 Column が巨大なためリファクタ必要、次セッションで丁寧に設計
+
+### 次セッション
+- Phase 8 Step B: iPad 横画面スプリットビュー（左: 一覧 / 右: 入力）
+- `_buildMainContent` の 5要素を private method に切り出し → isWide時に Row 構成で組み直す
+- Step C（⌘ショートカット、D&D、サイドバー）は Step B 後
