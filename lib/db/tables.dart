@@ -119,3 +119,18 @@ class TodoListTags extends Table {
   @override
   Set<Column> get primaryKey => {todoListId, tagId};
 }
+
+// ========================================
+// メモ画像テーブル（1メモに複数画像、順序管理）
+// filePath は Documents ディレクトリからの相対パス (例: memo_images/abc.jpg)
+// ========================================
+class MemoImages extends Table {
+  TextColumn get id => text()();
+  TextColumn get memoId => text().references(Memos, #id)();
+  TextColumn get filePath => text()();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}

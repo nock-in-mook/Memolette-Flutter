@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
+import '../utils/image_storage.dart';
 import 'tables.dart';
 
 part 'database.g.dart';
@@ -21,6 +22,7 @@ const _uuid = Uuid();
   MemoTags,
   TodoItemTags,
   TodoListTags,
+  MemoImages,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
@@ -29,7 +31,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -38,6 +40,10 @@ class AppDatabase extends _$AppDatabase {
           if (from < 2) {
             // メモ背景色カラム追加
             await m.addColumn(memos, memos.bgColorIndex);
+          }
+          if (from < 3) {
+            // メモ画像テーブル追加（Phase 10）
+            await m.createTable(memoImages);
           }
         },
       );
@@ -155,12 +161,22 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
-  /// メモを削除（memo_tags もカスケード削除）
+  /// メモを削除（memo_tags / memo_images もカスケード削除、画像ファイルも削除）
   Future<void> deleteMemo(String id) async {
+    // 先にファイルパスを取得（トランザクション外でファイル削除するため）
+    final imgs = await (select(memoImages)
+          ..where((t) => t.memoId.equals(id)))
+        .get();
     await transaction(() async {
       await (delete(memoTags)..where((t) => t.memoId.equals(id))).go();
+      await (delete(memoImages)..where((t) => t.memoId.equals(id))).go();
       await (delete(memos)..where((t) => t.id.equals(id))).go();
     });
+    for (final img in imgs) {
+      try {
+        await ImageStorage.deleteFile(img.filePath);
+      } catch (_) {}
+    }
   }
 
   /// タイトル・本文が空のメモをまとめて削除（起動時セーフティネット）
@@ -175,13 +191,22 @@ class AppDatabase extends _$AppDatabase {
     return emptyIds.length;
   }
 
-  /// 複数メモをまとめて削除（memo_tags もカスケード削除）
+  /// 複数メモをまとめて削除（memo_tags / memo_images もカスケード削除、画像ファイルも削除）
   Future<void> deleteMemos(List<String> ids) async {
     if (ids.isEmpty) return;
+    final imgs = await (select(memoImages)
+          ..where((t) => t.memoId.isIn(ids)))
+        .get();
     await transaction(() async {
       await (delete(memoTags)..where((t) => t.memoId.isIn(ids))).go();
+      await (delete(memoImages)..where((t) => t.memoId.isIn(ids))).go();
       await (delete(memos)..where((t) => t.id.isIn(ids))).go();
     });
+    for (final img in imgs) {
+      try {
+        await ImageStorage.deleteFile(img.filePath);
+      } catch (_) {}
+    }
   }
 
   /// メモをトップに移動: nextItemSortOrder で memos+todoLists 通しの最大+1 を設定
@@ -232,6 +257,65 @@ class AppDatabase extends _$AppDatabase {
         lastViewedAt: Value(DateTime.now()),
       ),
     );
+  }
+
+  // ========================================
+  // メモ画像 CRUD（Phase 10）
+  // ========================================
+
+  /// 特定メモの画像をsortOrder順で購読
+  Stream<List<MemoImage>> watchMemoImages(String memoId) {
+    return (select(memoImages)
+          ..where((t) => t.memoId.equals(memoId))
+          ..orderBy([
+            (t) => OrderingTerm.asc(t.sortOrder),
+            (t) => OrderingTerm.asc(t.createdAt),
+          ]))
+        .watch();
+  }
+
+  /// 特定メモの画像を取得
+  Future<List<MemoImage>> getMemoImages(String memoId) {
+    return (select(memoImages)
+          ..where((t) => t.memoId.equals(memoId))
+          ..orderBy([
+            (t) => OrderingTerm.asc(t.sortOrder),
+            (t) => OrderingTerm.asc(t.createdAt),
+          ]))
+        .get();
+  }
+
+  /// 画像追加（sortOrder は末尾）
+  Future<MemoImage> addMemoImage({
+    required String memoId,
+    required String filePath,
+  }) async {
+    final id = _uuid.v4();
+    final maxRow = await (selectOnly(memoImages)
+          ..addColumns([memoImages.sortOrder.max()])
+          ..where(memoImages.memoId.equals(memoId)))
+        .getSingle();
+    final nextOrder = (maxRow.read(memoImages.sortOrder.max()) ?? -1) + 1;
+    final companion = MemoImagesCompanion.insert(
+      id: id,
+      memoId: memoId,
+      filePath: filePath,
+      sortOrder: Value(nextOrder),
+    );
+    await into(memoImages).insert(companion);
+    return (await (select(memoImages)..where((t) => t.id.equals(id)))
+        .getSingle());
+  }
+
+  /// 画像を1件削除（実ファイルも削除）
+  Future<void> deleteMemoImage(String id) async {
+    final row = await (select(memoImages)..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    if (row == null) return;
+    await (delete(memoImages)..where((t) => t.id.equals(id))).go();
+    try {
+      await ImageStorage.deleteFile(row.filePath);
+    } catch (_) {}
   }
 
   // ========================================

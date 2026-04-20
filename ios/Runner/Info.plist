@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>メモに画像を添付するためにフォトライブラリへのアクセスを許可してください。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>メモに写真を撮って添付するためにカメラへのアクセスを許可してください。</string>
 </dict>
 </plist>

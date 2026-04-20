@@ -13,12 +13,16 @@ void showToast(
   BuildContext context,
   String message, {
   Duration duration = const Duration(milliseconds: 1500),
+  /// 画面高に対する上からの比率 (0.0〜1.0)。省略時は 0.38（やや上寄り中央）
+  double topFraction = 0.38,
+  /// 背景色。省略時はすりガラス黒
+  Color? backgroundColor,
 }) {
   final overlay = Overlay.of(context);
   late OverlayEntry entry;
   entry = OverlayEntry(builder: (ctx) {
     return Positioned(
-      top: MediaQuery.of(ctx).size.height * 0.38,
+      top: MediaQuery.of(ctx).size.height * topFraction,
       left: 40,
       right: 40,
       child: IgnorePointer(
@@ -39,7 +43,8 @@ void showToast(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 20, vertical: 12),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.72),
+                      color: backgroundColor ??
+                          Colors.black.withValues(alpha: 0.72),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Text(

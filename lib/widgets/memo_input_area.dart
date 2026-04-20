@@ -1,19 +1,25 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../constants/design_constants.dart';
 import '../constants/memo_bg_colors.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/image_storage.dart';
+import '../utils/keyboard_done_bar.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
+import 'block_editor.dart';
 import 'frosted_alert_dialog.dart';
 import 'markdown_text_controller.dart';
 import 'markdown_toolbar.dart';
@@ -68,7 +74,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   /// 外部から本文の有無を確認するゲッター（ゼロ幅スペースは無視）
   bool get hasContent => _contentController.text.isNotEmpty;
   /// 外部から本文フォーカス状態を確認するゲッター
-  bool get isContentFocused => _contentFocusNode.hasFocus;
+  // BlockEditor 側が本文フォーカスを持つようになったので、それを優先して返す
+  bool get isContentFocused =>
+      (_blockEditorKey.currentState?.hasAnyFocus ?? false) ||
+      _contentFocusNode.hasFocus;
   /// タイトル欄がフォーカス中か
   bool get isTitleFocused => _titleFocusNode.hasFocus;
   /// 外部から入力欄全体のフォーカス状態を確認するゲッター（タイトル or 本文）
@@ -112,8 +121,16 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   final _titleFocusNode = FocusNode();
   final _contentFocusNode = FocusNode();
   final _contentScrollController = ScrollController();
+  // Phase 10++ ブロックエディタ実験: 本文を TextField+画像 Strip ではなく BlockEditor で描画
+  final GlobalKey<BlockEditorState> _blockEditorKey =
+      GlobalKey<BlockEditorState>();
+  /// BlockEditor 内の任意の TextField にフォーカスがあるか
+  bool get _isBlockEditorFocused =>
+      _blockEditorKey.currentState?.hasAnyFocus ?? false;
   bool get _isInputFocused =>
-      _titleFocusNode.hasFocus || _contentFocusNode.hasFocus;
+      _titleFocusNode.hasFocus ||
+      _contentFocusNode.hasFocus ||
+      _isBlockEditorFocused;
   List<Tag> _attachedTags = [];
   bool _hasMemo = false;
   bool _rouletteOpen = false;
@@ -257,6 +274,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
   // マークダウンツールバーのOverlay管理
   OverlayEntry? _mdToolbarOverlay;
+  // 最大化 + キーボード表示中に、フッターツールバーをキーボード上に浮かせる Overlay
+  OverlayEntry? _toolbarOverlay;
 
   // タグ欄フラッシュ (ルーレットでタグ設定した直後に一瞬ハイライト)
   bool _tagFlashActive = false;
@@ -270,12 +289,32 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     });
   }
 
-  void _updateMdToolbarOverlay() {
-    final shouldShow = _isMarkdown && _contentFocusNode.hasFocus;
+  /// ビルド中に呼ばれた場合は次フレームに遅延。そうでなければ即実行。
+  void _safeDefer(VoidCallback fn) {
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.transientCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) fn();
+      });
+    } else {
+      fn();
+    }
+  }
+
+  void _updateMdToolbarOverlay() => _safeDefer(_updateMdToolbarOverlayImpl);
+
+  void _updateMdToolbarOverlayImpl() {
+    final shouldShow = _isMarkdown && _isBlockEditorFocused;
     if (shouldShow && _mdToolbarOverlay == null) {
       _mdToolbarOverlay = OverlayEntry(builder: (ctx) {
         final bottom = MediaQuery.of(ctx).viewInsets.bottom;
         if (bottom <= 0) return const SizedBox.shrink();
+        // フォーカス中の TextBlock の controller を取得。見つからないときは
+        // ミラー側の _contentController にフォールバック（MD ボタンが無効化される）
+        final focused =
+            _blockEditorKey.currentState?.focusedController ?? _contentController;
         return Positioned(
           left: 0,
           right: 0,
@@ -283,8 +322,11 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           child: Material(
             elevation: 0,
             child: MarkdownToolbar(
-              controller: _contentController,
-              onChanged: _onChanged,
+              controller: focused,
+              onChanged: () {
+                // TextBlock の変更は BlockEditor が _serialize → onContentChanged
+                // で自動反映してくれるので、ここでは明示的な保存は不要
+              },
             ),
           ),
         );
@@ -294,9 +336,71 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       _mdToolbarOverlay!.remove();
       _mdToolbarOverlay = null;
     } else if (shouldShow && _mdToolbarOverlay != null) {
-      // キーボード高さ変化時にリビルド
+      // キーボード高さ変化 / フォーカス移動 時にリビルド
       _mdToolbarOverlay!.markNeedsBuild();
     }
+    _syncAccessoryHeight();
+  }
+
+  /// 完了ボタン（KeyboardDoneBar）がカスタムツールバー群の上に出るよう、
+  /// 現在表示中のオーバーレイ合計高さを通知
+  void _syncAccessoryHeight() {
+    // Our toolbar overlay (46px) + MD toolbar (44px) のうち、表示されてる分だけ足す
+    final ourToolbar = (widget.isExpanded && _isInputFocused) ? 46.0 : 0.0;
+    final mdToolbar = (_isMarkdown && _isInputFocused) ? 44.0 : 0.0;
+    KeyboardDoneBar.accessoryHeight.value = ourToolbar + mdToolbar;
+  }
+
+  /// 最大化モード + 入力フォーカス中 は、フッターツールバーをキーボード上に
+  /// 浮かせて常時操作可能にする（本来のインラインツールバーはキーボード裏に
+  /// 回っているので、上に被せるイメージ）
+  void _updateToolbarOverlay() => _safeDefer(_updateToolbarOverlayImpl);
+
+  void _updateToolbarOverlayImpl() {
+    final shouldShow = widget.isExpanded && _isInputFocused;
+    if (shouldShow && _toolbarOverlay == null) {
+      _toolbarOverlay = OverlayEntry(builder: (ctx) {
+        final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+        if (bottom <= 0) return const SizedBox.shrink();
+        // MDツールバー (高さ 44) が出てるなら更に上へずらす
+        final mdOffset = (_isMarkdown && _isInputFocused) ? 44.0 : 0.0;
+        return Positioned(
+          left: 0,
+          right: 0,
+          bottom: bottom + mdOffset,
+          child: Material(
+            elevation: 0,
+            color: Colors.transparent,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(
+                  top: BorderSide(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    width: 0.5,
+                  ),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: _buildToolbar(compact: true),
+            ),
+          ),
+        );
+      });
+      Overlay.of(context).insert(_toolbarOverlay!);
+    } else if (!shouldShow && _toolbarOverlay != null) {
+      _toolbarOverlay!.remove();
+      _toolbarOverlay = null;
+    } else if (shouldShow && _toolbarOverlay != null) {
+      _toolbarOverlay!.markNeedsBuild();
+    }
+    _syncAccessoryHeight();
   }
 
   @override
@@ -329,6 +433,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       }
       setState(() {});
       _updateMdToolbarOverlay();
+      _updateToolbarOverlay();
       widget.onFocusChanged?.call();
     }
   }
@@ -336,6 +441,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   @override
   void didUpdateWidget(covariant MemoInputArea oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // 最大化トグル時にフッターツールバー Overlay を更新
+    if (oldWidget.isExpanded != widget.isExpanded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _updateToolbarOverlay();
+      });
+    }
     if (widget.editingMemoId != oldWidget.editingMemoId) {
       if (widget.editingMemoId != null) {
         // 自分で作成したメモなら再ロード不要（閲覧モードにしない）
@@ -362,11 +473,13 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
         _clearInput(keepMarkdown: _isMarkdown);
       }
     }
-    // 新規作成ボタンからのフォーカス要求
+    // 新規作成ボタンからのフォーカス要求（外部から focusRequest カウンタが変わる）
+    // 注: didUpdateWidget はビルドサイクル内なので、focus は次フレームに遅延させる
     if (widget.focusRequest != oldWidget.focusRequest) {
       _isViewMode = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _contentFocusNode.requestFocus();
+        if (!mounted) return;
+        _blockEditorKey.currentState?.focusFirst();
       });
     }
   }
@@ -401,12 +514,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   void loadMemoAndEdit(Memo memo) {
     loadMemoDirectly(memo);
     setState(() => _isViewMode = false);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _contentFocusNode.requestFocus();
-      });
-    });
+    // 呼び出し元のタップジェスチャーコンテキストが活きている間に requestFocus する
+    // （postFrame に逃がすとキーボードが出ない）
+    _blockEditorKey.currentState?.focusFirst();
   }
 
   void _applyMemoData(Memo memo) {
@@ -461,14 +571,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   // readOnly=false が反映された後のフレームで走るため、2フレーム待つ
   void _enterEditMode({bool focusContent = true, bool focusTitle = false}) {
     setState(() => _isViewMode = false);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        if (focusTitle) _titleFocusNode.requestFocus();
-        if (focusContent) _contentFocusNode.requestFocus();
-      });
-    });
+    // postFrame に逃がすと iOS のタップジェスチャーコンテキストが切れて
+    // キーボードが出ない（1回目のタップ無反応）。即時 requestFocus する。
+    if (focusTitle) _titleFocusNode.requestFocus();
+    if (focusContent) {
+      _blockEditorKey.currentState?.focusFirst();
+    }
   }
 
   /// 入力内容を即座に保存
@@ -514,6 +622,45 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   String? _selfCreatedMemoId;
   // loadMemoDirectlyで直接ロード済み → didUpdateWidgetでの_loadMemoをスキップ
   bool _directLoadApplied = false;
+
+  /// 画像を紐付ける先のメモID。必要なら新規作成する。
+  /// _preCreateEmptyMemo と同等の処理を行い、作成済みメモがあればそれを返す。
+  Future<String?> _ensureMemoId() async {
+    if (widget.editingMemoId != null) return widget.editingMemoId;
+    if (_selfCreatedMemoId != null) return _selfCreatedMemoId;
+    await _preCreateEmptyMemo();
+    return _selfCreatedMemoId;
+  }
+
+  /// 画像ソースを選ぶすりガラスダイアログ → BlockEditor に挿入を委譲
+  /// (Phase 10++ ブロックエディタ実験: 画像はカーソル位置にインライン挿入される)
+  Future<void> _attachImage() async {
+    // キーボードは閉じない方針: 閉じると最後にフォーカスされたブロック情報が
+    // 消えるかもしれないので、そのまま picker を起動する。picker側で一時的に閉じる。
+    if (!mounted) return;
+    ImageSource? source;
+    await showFrostedAlert(
+      context: context,
+      title: '画像を追加',
+      message: '取り込み元を選んでください',
+      actions: [
+        FrostedAlertAction(
+          label: 'カメラ',
+          onPressed: () => source = ImageSource.camera,
+        ),
+        FrostedAlertAction(
+          label: 'ライブラリ',
+          isDefault: true,
+          onPressed: () => source = ImageSource.gallery,
+        ),
+      ],
+    );
+    if (source == null || !mounted) return;
+    // メモがまだ無ければ先に作成（memoIdResolver が非空を返すように）
+    final memoId = await _ensureMemoId();
+    if (memoId == null || !mounted) return;
+    await _blockEditorKey.currentState?.insertImageFromPicker(source!);
+  }
 
   /// フォーカス取得時に空メモを先行作成
   /// 以降の入力はすべてupdateMemoで処理されるため、rebuildが発生せず
@@ -599,6 +746,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       _showMarkdownPreview = false;
     });
     _updateMdToolbarOverlay();
+    // MDオン/オフで下にMDツールバーが追加/除去されるので、その上のフッター
+    // ツールバー Overlay の位置も再計算
+    _updateToolbarOverlay();
     // 既存メモならDBに反映
     if (widget.editingMemoId != null) {
       ref.read(databaseProvider).updateMemo(
@@ -608,8 +758,16 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     }
     // トースト表示
     if (mounted) {
-      showToast(context, value ? 'マークダウンモード オン' : 'マークダウンモード オフ',
-          duration: const Duration(milliseconds: 1200));
+      if (value) {
+        showToast(
+          context,
+          'マークダウンモード オン\nボタンまたは左右フリックでプレビュー切替',
+          duration: const Duration(milliseconds: 2400),
+        );
+      } else {
+        showToast(context, 'マークダウンモード オフ',
+            duration: const Duration(milliseconds: 1200));
+      }
     }
   }
 
@@ -685,6 +843,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     }
     _mdToolbarOverlay?.remove();
     _mdToolbarOverlay = null;
+    _toolbarOverlay?.remove();
+    _toolbarOverlay = null;
+    KeyboardDoneBar.accessoryHeight.value = 0;
     _tagFlashTimer?.cancel();
     _titleController.dispose();
     _contentController.dispose();
@@ -759,15 +920,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               error: (_, _) => const SizedBox(),
             ),
           ),
-          // プレビューボタン（MD ON時のみ、入力エリア下端中央）
-          if (_isMarkdown)
-            Positioned(
-              left: 0,
-              right: 10, // AnimatedContainer の右margin と揃える
-              bottom: 50, // フッター41 + 仕切り線1 + 余白8
-              child: Center(child: _buildPreviewButton()),
-            ),
           // ルーレット台形タブは非表示（タグ欄タップで開く）
+          // プレビューボタンはツールバー側に移動（MDトグル直後）
         ],
       ),
     );
@@ -775,28 +929,31 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
   Widget _buildPreviewButton() {
     final isOn = _showMarkdownPreview;
-    final color = isOn ? Colors.orange : Colors.grey.shade500;
+    final accent = Colors.orange;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
-        if (!_showMarkdownPreview) {
-          FocusScope.of(context).unfocus();
+        if (_showMarkdownPreview) {
+          _exitPreview();
+        } else {
+          _enterPreview();
         }
-        setState(() => _showMarkdownPreview = !_showMarkdownPreview);
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color, width: 1),
-          color: Colors.white,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+              color: isOn ? accent : Colors.grey.shade500, width: 1),
+          // ON時はオレンジ塗りつぶしで目立たせる
+          color: isOn ? accent : Colors.white,
         ),
         child: Text(
           'プレビュー',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.bold,
-            color: color,
+            color: isOn ? Colors.white : Colors.grey.shade500,
           ),
         ),
       ),
@@ -1644,42 +1801,219 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     leadingDistribution: TextLeadingDistribution.even,
   );
 
-  Widget _buildContent() {
-    // プレビューモード: マークダウン描画を表示（タップでエディタに戻す）
-    if (_isMarkdown && _showMarkdownPreview) {
-      return Flexible(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () {
-            setState(() => _showMarkdownPreview = false);
-            _enterEditMode(focusContent: true);
-          },
+  /// プレビュータップ時の Y 座標（ローカル）を記録しておき、編集戻り時に
+  /// ソース文字オフセットへマッピングするのに使う
+  double _lastPreviewTapY = 0;
+
+  /// プレビューに入る直前のカーソル位置（シリアライズ本文の文字 offset）
+  /// 編集→プレビュー→編集 と戻った際にカーソルを元の位置に復元する用途
+  int? _savedSourceOffsetBeforePreview;
+
+  /// プレビューに切り替え（カーソル位置を保存 + キーボード閉じ）
+  void _enterPreview() {
+    if (!_isMarkdown) return;
+    _savedSourceOffsetBeforePreview =
+        _blockEditorKey.currentState?.currentSourceOffset;
+    FocusScope.of(context).unfocus();
+    setState(() => _showMarkdownPreview = true);
+  }
+
+  /// プレビューを抜ける。カーソル復元のロジック:
+  /// - fallbackOffset（プレビュー本文タップから渡される）が優先。明示的な
+  ///   「ここを編集したい」意思とみなす
+  /// - なければ保存済みカーソル（プレビュー入る前に編集中だった場合）
+  /// - どちらもなければ閲覧モードのまま（フォーカスしない／キーボード出ない）
+  void _exitPreview({int? fallbackOffset}) {
+    final targetOffset = fallbackOffset ?? _savedSourceOffsetBeforePreview;
+    _savedSourceOffsetBeforePreview = null;
+    setState(() {
+      _showMarkdownPreview = false;
+      if (targetOffset != null) _isViewMode = false;
+    });
+    if (targetOffset != null) {
+      _blockEditorKey.currentState?.focusAtSourceOffset(targetOffset);
+    }
+  }
+
+  /// プレビュー Y 座標をおおまかな行 index に落とし、ソースの文字 offset を返す
+  /// - 見出し・画像・ブロック間隔までは正確に扱わず、プレーンテキスト想定で概算
+  int _sourceOffsetFromPreviewY(double tapY) {
+    const lineHeight = 20.0;
+    const topPadding = 11.0;
+    final lineIndex = ((tapY - topPadding) / lineHeight).floor();
+    if (lineIndex <= 0) return 0;
+    final text = _contentController.text;
+    final lines = text.split('\n');
+    if (lineIndex >= lines.length) return text.length;
+    var offset = 0;
+    for (var i = 0; i < lineIndex; i++) {
+      offset += lines[i].length + 1; // +1 for '\n'
+    }
+    return offset;
+  }
+
+  /// プレビュー中の N 番目のチェックボックス ([ ] / [x]) を本文側でトグル
+  void _togglePreviewCheckbox(int index) {
+    final text = _contentController.text;
+    var count = 0;
+    final buf = StringBuffer();
+    var i = 0;
+    while (i < text.length) {
+      if (i + 3 <= text.length &&
+          text[i] == '[' &&
+          (text[i + 1] == ' ' || text[i + 1] == 'x' || text[i + 1] == 'X') &&
+          text[i + 2] == ']') {
+        if (count == index) {
+          buf.write('[');
+          buf.write(text[i + 1] == ' ' ? 'x' : ' ');
+          buf.write(']');
+        } else {
+          buf.write(text.substring(i, i + 3));
+        }
+        count++;
+        i += 3;
+      } else {
+        buf.write(text[i]);
+        i++;
+      }
+    }
+    final result = buf.toString();
+    if (result == text) return;
+    _contentController.text = result;
+    _onChanged();
+  }
+
+  /// プレビュー描画部分（Stack で BlockEditor の上に重ねる）。
+  /// BlockEditor は裏でマウント継続しているので、タップで即 focusFirst できる。
+  Widget _buildPreviewOverlay() {
+    final memoIdForImages = widget.editingMemoId ?? _selfCreatedMemoId;
+    final imagesList = memoIdForImages == null
+        ? const <MemoImage>[]
+        : (ref.watch(memoImagesProvider(memoIdForImages)).valueOrNull ??
+            const <MemoImage>[]);
+    final imgPathById = {
+      for (final img in imagesList) img.id: img.filePath,
+    };
+    final raw = _contentController.text;
+    // 本文が空: MarkdownBody ではなく薄いプレースホルダーを直接出す
+    final isEmpty = raw.isEmpty;
+    final previewData = isEmpty
+        ? ''
+        : raw.replaceAllMapped(
+            RegExp('\uFFFC([^\uFFFC]+)\uFFFC'),
+            (m) => '\n\n![](memolette:${m.group(1)})\n\n',
+          );
+    return Positioned.fill(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (details) {
+          _lastPreviewTapY = details.localPosition.dy;
+        },
+        onTap: () {
+          // 保存済みカーソルがあればそこに戻す、なければタップ位置から近似
+          _exitPreview(
+            fallbackOffset: _sourceOffsetFromPreviewY(_lastPreviewTapY),
+          );
+        },
+        child: Container(
+          color: Colors.white,
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(9, 9, 9, 20),
-            child: MarkdownBody(
-              data: _contentController.text.isEmpty
-                  ? '*タップで編集に戻る*'
-                  : _contentController.text,
+            // BlockEditor 側は外側 9 + ブロック内 2 = 上 11px から始まるので揃える
+            padding: const EdgeInsets.fromLTRB(9, 11, 9, 20),
+            child: isEmpty
+                ? Text(
+                    'プレビュー中（タップで編集に戻る）',
+                    style: TextStyle(
+                      fontSize: 16,
+                      height: 1.25,
+                      fontFamily: 'PingFang JP',
+                      color: Colors.grey.withValues(alpha: 0.4),
+                    ),
+                  )
+                : Builder(builder: (ctx) {
+              // MarkdownBody 1回の build に対してチェックボックスの通し番号をカウントし、
+              // タップしたら同じ順番の [ ] / [x] を _contentController 側でトグルする
+              var checkboxIdx = 0;
+              return MarkdownBody(
+              data: previewData,
+              fitContent: false,
+              checkboxBuilder: (checked) {
+                final idx = checkboxIdx++;
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _togglePreviewCheckbox(idx),
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 2),
+                    child: Icon(
+                      checked
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                      size: 18,
+                      color: checked
+                          ? const Color(0xFF007AFF)
+                          : Colors.grey[600],
+                    ),
+                  ),
+                );
+              },
+              imageBuilder: (uri, _, __) {
+                if (uri.scheme == 'memolette') {
+                  final id = uri.path.isNotEmpty ? uri.path : uri.host;
+                  final rel = imgPathById[id];
+                  if (rel == null) return const SizedBox.shrink();
+                  return FutureBuilder<String>(
+                    future: ImageStorage.absolutePath(rel),
+                    builder: (ctx, snap) {
+                      final path = snap.data;
+                      if (path == null) return const SizedBox(height: 120);
+                      return ConstrainedBox(
+                        constraints:
+                            const BoxConstraints(maxHeight: 320),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(
+                            File(path),
+                            fit: BoxFit.contain,
+                            cacheWidth: 720,
+                            gaplessPlayback: true,
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                }
+                return const SizedBox.shrink();
+              },
               selectable: false,
               styleSheet: MarkdownStyleSheet(
+                textAlign: WrapAlignment.start,
+                h1Align: WrapAlignment.start,
+                h2Align: WrapAlignment.start,
+                h3Align: WrapAlignment.start,
+                pPadding: const EdgeInsets.only(bottom: 4),
                 h1: const TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
+                    fontFamily: 'PingFang JP',
                     color: Colors.black87),
                 h2: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
+                    fontFamily: 'PingFang JP',
                     color: Colors.black87),
                 h3: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
+                    fontFamily: 'PingFang JP',
                     color: Colors.black87),
                 p: const TextStyle(
                     fontSize: 16,
-                    height: 1.4,
+                    height: 1.25,
                     fontWeight: FontWeight.w500,
+                    fontFamily: 'PingFang JP',
                     color: Colors.black87),
-                listBullet: const TextStyle(fontSize: 16),
+                listBullet: const TextStyle(
+                    fontSize: 16, fontFamily: 'PingFang JP'),
                 blockquoteDecoration: BoxDecoration(
                   border: Border(
                     left: BorderSide(
@@ -1699,106 +2033,116 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                   borderRadius: BorderRadius.circular(4),
                 ),
               ),
-            ),
+            );
+            }),
           ),
         ),
-      );
-    }
+      ),
+    );
+  }
 
-    // エディタモード
-    // ToDoリストと同じパターン: 外側にScrollable、TextFieldはexpandsなし
-    // 最大化時のみ、キーボード分の余白を確保してカーソルがキーボード上に来るよう
-    // スクロールさせる。縮小時(316固定)は枠が小さいので、キーボード対策が強すぎると
-    // テキストが上に吹き飛ぶ → 縮小時は固定値のみ使う。
-    final kb = MediaQuery.of(context).viewInsets.bottom;
-    final cursorBottomBuffer =
-        widget.isExpanded && kb > 0 ? kb - 10 : 20;
-    // viewInsetsの変化をコンテンツ領域に伝播させない
-    // （キーボード開閉アニメ中の毎フレームrebuildによるガタつきを防止）
-    // カーソル追従はscrollPaddingで十分対応できる
+  Widget _buildContent() {
+    // BlockEditor は常時マウント。プレビューモードは Stack で上に重ねる
+    // （こうすることでプレビュータップから1タップで編集に戻れて focus も立つ）
+    // 左右フリックで preview ↔ edit を切り替える（MDモード時のみ）
     return Flexible(
-      child: MediaQuery(
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragEnd: _onBodyHorizontalDragEnd,
+        child: Stack(
+          children: [
+            _buildEditArea(),
+            if (_isMarkdown && _showMarkdownPreview) _buildPreviewOverlay(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 本文欄の左右フリック: 一定以上の横速度で preview ↔ edit をトグル。
+  /// 閾値は遅めのスワイプで text selection と競合しないよう高めに設定。
+  /// 方向は問わない（どちらにフリックしてもトグル）
+  void _onBodyHorizontalDragEnd(DragEndDetails details) {
+    if (!_isMarkdown) return;
+    final v = (details.primaryVelocity ?? 0).abs();
+    if (v < 700) return;
+    if (_showMarkdownPreview) {
+      _exitPreview();
+    } else {
+      _enterPreview();
+    }
+  }
+
+  Widget _buildEditArea() {
+    return MediaQuery(
         data: MediaQuery.of(context).copyWith(viewInsets: EdgeInsets.zero),
         child: LayoutBuilder(builder: (context, constraints) {
-        // Overlay更新（キーボード高さ変化に対応）
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _updateMdToolbarOverlay();
         });
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
+            // 本文欄の下に広がる余白タップ: 末尾ブロックにフォーカス。
+            // 閲覧モードなら編集モードに移行 + 即 focusLast でキーボード。
             if (_isViewMode) {
-              _enterEditMode(focusContent: true);
-            } else {
-              _contentFocusNode.requestFocus();
+              setState(() => _isViewMode = false);
             }
+            _blockEditorKey.currentState?.focusLast();
             if (_rouletteOpen) _closeRoulette();
           },
           child: SingleChildScrollView(
             controller: _contentScrollController,
-            padding: EdgeInsets.fromLTRB(9, 9, 9,
+            padding: EdgeInsets.fromLTRB(0, 9, 0,
                 widget.isExpanded && !_isViewMode ? 400 : 100),
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 minHeight: (constraints.maxHeight - 100)
                     .clamp(0.0, double.infinity),
               ),
-              child: TextField(
-                controller: _contentController,
-                focusNode: _contentFocusNode,
-                onChanged: (_) => _onChanged(),
+              child: BlockEditor(
+                key: _blockEditorKey,
+                memoIdResolver: () =>
+                    widget.editingMemoId ?? _selfCreatedMemoId ?? '',
+                initialContent: _contentController.text,
                 readOnly: _isViewMode,
-                onTap: TextMenuDismisser.wrap(() {
+                isMarkdown: _isMarkdown,
+                onTap: () {
+                  // TextBlock タップ: 閲覧モードなら編集モード遷移するだけ。
+                  // カーソル位置は TextField の native なタップ処理に任せる
+                  // （タップした位置に素直にカーソルが立つ）
                   if (_isViewMode) {
-                    _enterEditMode(focusContent: true);
+                    setState(() => _isViewMode = false);
                   }
                   if (_rouletteOpen) _closeRoulette();
-                }),
-                inputFormatters: [
-                  _LimitWithToastFormatter(
-                    maxLength: _maxContentLength,
-                    onLimit: _showLimitReached,
-                  ),
-                ],
-                style: const TextStyle(
-                  fontSize: 16,
-                  height: 1.25,
-                  fontWeight: FontWeight.w500,
-                  fontFamily: 'PingFang JP',
-                  color: Colors.black87,
-                ),
-                decoration: InputDecoration(
-                  // フォーカス時はプレースホルダー非表示（空で抜けたら再表示）
-                  hintText: _contentFocusNode.hasFocus
-                      ? null
-                      : _isMarkdown
-                          ? 'タップでマークダウン編集...'
-                          : 'メモを入力...',
-                  border: InputBorder.none,
-                  hintStyle:
-                      TextStyle(color: Colors.grey.withValues(alpha: 0.4)),
-                  isDense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
-                contextMenuBuilder: TextMenuDismisser.builder,
-                maxLines: null,
-                textAlignVertical: TextAlignVertical.top,
-                keyboardType: TextInputType.multiline,
-                scrollPadding:
-                    EdgeInsets.only(bottom: cursorBottomBuffer.toDouble()),
+                },
+                onFocusChanged: () {
+                  // 既存の _onFocusChange に寄せる（空メモの先行作成/自動削除
+                  // ロジックを BlockEditor 側のフォーカス変化でも発火させる）
+                  _onFocusChange();
+                },
+                onContentChanged: (content) {
+                  if (content == _contentController.text) return;
+                  // TextEditingValue.value 経由で selection を潰さないように
+                  _contentController.text = content;
+                  _onChanged();
+                },
               ),
             ),
           ),
         );
       }),
-      ),
     );
   }
 
-  Widget _buildToolbar() {
+  Widget _buildToolbar({bool compact = false}) {
+    // 「編集中」判定: 実際にフォーカスが入って入力している、または compact (Overlay)
+    // これ以外 (起動直後・閲覧モード・編集を抜けた状態) は閲覧寄りツールバーを出す
+    final isEditing = _isInputFocused || compact;
+    final inViewMode = !isEditing;
     return Container(
-      constraints: const BoxConstraints(minHeight: 41),
-      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+      constraints: const BoxConstraints(minHeight: 36),
+      padding: const EdgeInsets.fromLTRB(10, 3, 10, 3),
       child: Row(
         children: [
           Builder(builder: (_) {
@@ -1850,134 +2194,127 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             ],
           ),
           ),
-          const SizedBox(width: 14),
-          // 多機能メニュー（エクスポート/HTML化など、タップ動作は後で実装）
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              // TODO: 多機能メニュー展開
-            },
-            child: Icon(CupertinoIcons.ellipsis_circle,
-                size: 20, color: Colors.grey[600]),
-          ),
-          const SizedBox(width: 14),
-          // 背景色変更
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _showBgColorPicker,
-            child: Icon(Icons.palette_outlined,
-                size: 20, color: Colors.grey[600]),
-          ),
-          const SizedBox(width: 14),
-          // コピー (アイコンのみ、パレットと同色)
-          Builder(builder: (_) {
-            final hasRealContent = _contentController.text.isNotEmpty;
-            return GestureDetector(
+          // MD ON のときだけプレビューボタンを MD スイッチの右隣に出す
+          if (_isMarkdown) ...[
+            const SizedBox(width: 10),
+            _buildPreviewButton(),
+          ],
+          // 多機能・背景色は閲覧時のみ（編集中はツールバーをすっきりさせる）
+          if (inViewMode) ...[
+            const SizedBox(width: 12),
+            // 多機能メニュー（エクスポート/HTML化など、タップ動作は後で実装）
+            GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: hasRealContent ? _copyContent : null,
+              onTap: () {
+                // TODO: 多機能メニュー展開
+              },
+              child: Icon(CupertinoIcons.ellipsis_circle,
+                  size: 20, color: Colors.grey[600]),
+            ),
+            const SizedBox(width: 12),
+            // 背景色変更
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _showBgColorPicker,
+              child: Icon(Icons.palette_outlined,
+                  size: 20, color: Colors.grey[600]),
+            ),
+          ],
+          // 画像追加は編集時のみ（閲覧モードでは隠す）
+          if (!inViewMode) ...[
+            const SizedBox(width: 12),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _attachImage,
+              child: Icon(CupertinoIcons.photo,
+                  size: 20, color: Colors.grey[600]),
+            ),
+          ],
+          // コピーは閲覧時のみ
+          if (inViewMode) ...[
+            const SizedBox(width: 12),
+            Builder(builder: (_) {
+              final hasRealContent = _contentController.text.isNotEmpty;
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: hasRealContent ? _copyContent : null,
+                child: Icon(
+                  CupertinoIcons.doc_on_doc,
+                  size: 20,
+                  color: hasRealContent
+                      ? Colors.grey[600]
+                      : Colors.grey.shade400,
+                ),
+              );
+            }),
+          ],
+          const Spacer(),
+          // Undo / Redo は編集時のみ
+          if (!inViewMode) ...[
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _canUndo ? _undo : null,
               child: Icon(
-                CupertinoIcons.doc_on_doc,
-                size: 20,
-                color: hasRealContent
-                    ? Colors.grey[600]
+                Icons.undo,
+                size: 22,
+                weight: 700,
+                color: _canUndo
+                    ? const Color(0xFF007AFF)
                     : Colors.grey.shade400,
               ),
-            );
-          }),
-          const Spacer(),
-          // Undo (Material版: weight 指定で太く)
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _canUndo ? _undo : null,
-            child: Icon(
-              Icons.undo,
-              size: 22,
-              weight: 700,
-              color: _canUndo
-                  ? const Color(0xFF007AFF)
-                  : Colors.grey.shade400,
             ),
-          ),
-          const SizedBox(width: 24),
-          // Redo (Material版: weight 指定で太く)
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _canRedo ? _redo : null,
-            child: Icon(
-              Icons.redo,
-              size: 22,
-              weight: 700,
-              color: _canRedo
-                  ? const Color(0xFF007AFF)
-                  : Colors.grey.shade400,
+            const SizedBox(width: 24),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _canRedo ? _redo : null,
+              child: Icon(
+                Icons.redo,
+                size: 22,
+                weight: 700,
+                color: _canRedo
+                    ? const Color(0xFF007AFF)
+                    : Colors.grey.shade400,
+              ),
             ),
-          ),
-          const Spacer(),
-          // フォーカス中: 確定 (キーボード閉じるだけ) — 実質文字がある場合のみ有効
-          // 非フォーカス + メモ/タイトルあり: 閉じる (クリア)
-          // 確定 or 閉じる (他のアイコン位置を安定させるため「閉じる」幅で固定)
-          SizedBox(
-            width: 72,
-            child: _isInputFocused
-                ? Builder(builder: (_) {
-                    final hasReal = _contentController.text.isNotEmpty ||
-                        _titleController.text.isNotEmpty;
-                    return GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: hasReal ? _confirm : null,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            CupertinoIcons.checkmark_circle,
-                            size: 18,
-                            color: hasReal
-                                ? const Color(0xFF007AFF)
-                                : Colors.grey.shade400,
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            '確定',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                              color: hasReal
-                                  ? const Color(0xFF007AFF)
-                                  : Colors.grey.shade400,
-                            ),
-                          ),
-                        ],
+            const Spacer(),
+          ],
+          // 確定 (キーボード閉じる) は KeyboardDoneBar の「完了」と重複するため廃止
+          // 閉じる (クリア) は 非フォーカス + メモ/タイトルあり + 非 compact のときだけ出す
+          // 出さないときは幅も 0 にして Undo/Redo の位置を詰める (compact と同じレイアウト)
+          if (!compact &&
+              !_isInputFocused &&
+              (_hasMemo || _titleController.text.isNotEmpty))
+            SizedBox(
+              width: 72,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _closeMemo,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(
+                        CupertinoIcons.xmark_circle,
+                        size: 18,
+                        color: Color(0xFF007AFF),
                       ),
-                    );
-                  })
-                : (_hasMemo || _titleController.text.isNotEmpty)
-                    ? GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: _closeMemo,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(
-                              CupertinoIcons.xmark_circle,
-                              size: 18,
-                              color: Color(0xFF007AFF),
-                            ),
-                            SizedBox(width: 3),
-                            Text(
-                              '閉じる',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFF007AFF),
-                              ),
-                            ),
-                          ],
+                      SizedBox(width: 3),
+                      Text(
+                        '閉じる',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF007AFF),
                         ),
-                      )
-                    : const SizedBox.shrink(),
-          ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           // 最大化/縮小トグル（右端）
-          // アイコン周囲も含めて広めのタップ判定
+          // アイコン周囲も含めて広めのタップ判定だが、見た目は右端寄せにする
           GestureDetector(
             onTap: () {
               commitIME();
@@ -1985,9 +2322,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             },
             behavior: HitTestBehavior.opaque,
             child: SizedBox(
-              width: 48,
+              width: 34,
               height: 40,
-              child: Center(
+              child: Align(
+                alignment: Alignment.centerRight,
                 child: Icon(
                   widget.isExpanded ? Icons.zoom_in_map : Icons.zoom_out_map,
                   size: 24,
