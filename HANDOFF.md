@@ -11,9 +11,10 @@
 - [ ] `⌘Z` Undo（`_inputAreaKey.currentState?.triggerUndo()` 経由）
 - [ ] `⇧⌘Z` Redo
 
-### iPhone 実機 / iPhone シミュで確認（セッション#22 の変更が iPad にしか入ってない）
-- [ ] iPhone のツールバー配置が **均等（iPad 以外）に戻ってる** — iPad だけ右寄せになっているか
-- [ ] iPad 縦画面（特に iPad Pro 13: 1024×1366）で **スプリットが誤発動しない** — `isWide = width >= 840 && width > height` に変更済
+### iPhone 実機 / iPhone シミュで確認（#22 の変更は iPad シミュ中心）
+- [ ] iPhone のツールバー配置が均等（iPad 以外）に戻ってる
+- [ ] iPad 縦画面（特に iPad Pro 13: 1024×1366）でスプリットが誤発動しない — `isWide = width >= 840 && width > height` で対策済
+- [ ] iPhone 実機に新ビルドを入れ直す
 
 ### Step C 後半 実装（次セッション以降）
 - [ ] `⌘B` 太字（MDモード時のみ、focused TextEditingController に `**` ラップ）
@@ -27,108 +28,78 @@
 ---
 
 ## 現在の状況
-- セッション#21 完了
+- セッション#22 完了（2026-04-21）
 - ブランチ: `main`
-- 最終コミット: `b6625cf` iPhone portrait-only + viewPadding クラッシュ対策
-- iPad 実機（のっくりのiPad / iOS 26.2.1）で動作確認済み
+- 最終コミット: `e8067b7` Phase 8 Step B (iPad スプリットビュー) + Step C 前半 + 細部調整
+- iPad Pro 13 シミュ + iPad 実機（#21）で動作確認済み
 
-## 今回（#21）完了したこと
+## #22 で完了したこと
 
-### Phase 8 Step A: iPad レスポンシブ対応の土台
+### Phase 8 Step B: iPad 横画面スプリットビュー
+- `_buildMainContent` を `isWide` 分岐で `Row` (左:一覧 / 右:入力) に組み替え
+- 検索バー / 入力エリア / 機能バー / タブ / フォルダ本体を private メソッドへ抽出
+- 横画面では 最大化/縮小・シェブロン非表示、機能バー常時表示、下端余白、キーボード上ツールバー有効
+- 縦横共通の構造を `_buildNarrowLayout` / `_buildWideLayout` に分離
 
-#### 新規モジュール
-- `lib/utils/responsive.dart` — `Responsive.isTablet(context)` / `Responsive.isWide(context)` / `contentMaxWidth`
-  - isTablet: shortestSide >= 600
-  - isWide: width >= 840（Split View で狭くなる iPad も考慮）
+### 横画面用グリッド
+- `enum GridSizeOption` に `iPadWideColumns` / `iPadWideRows` を追加
+- ラベルとメニュー選択肢を横画面用に（`5×6` / `4×5` / `3×4` / `2×3` / `1×可変` / `タイトルのみ`）
+- iPad カードの本文表示行数を緩和（`_bodyLinesFor(context)` で動的化、LayoutBuilder 実寸で計算）
+- `Responsive.isWide` に `width > height` 条件を追加（iPad Pro 13 縦画面で誤発動しない）
 
-#### enum GridSizeOption 拡張
-- `iPadColumns` フィールド追加。iPad時は個別の列数を使う
-  - grid3x6 → 6列、grid2x5 → 4列、grid2x3 → 4列、grid1x2 → 2列、grid1flex → 1列（維持）、titleOnly → 2列
-- ラベル生成も `_gridLabelFor` で iPad時は iPadColumns 基準に（「6×6」「4×5」等）
-- グリッドメニューの選択肢: iPad時は grid1x2 を除外（2×2が他と冗長なので）
-- labelOverrides を iPad時も常時埋める（旧版では最大化時のみ）
+### Step C 前半: ⌘ショートカット 7種
+- `⌘N` / `⌘F` / `⌘1-9` / `⌘Return` / `Esc` / `⌘Z` / `⇧⌘Z`
+- `MemoInputArea` に `triggerUndo` / `triggerRedo` 公開
+- `build` を `CallbackShortcuts + Focus` でラップ
 
-#### レイアウト調整
-- 入力欄の縦幅: iPad時は `constraints.maxHeight * 0.5 - 120`（画面半分弱）
-- メモグリッド: iPad時は列数倍化（crossAxisCount = iPadColumns）
-- titleOnly: iPad時のみ 2列 GridView に切り替え（iPhone は ListView 維持）
-- サブフィルタ（すべて/よく見る/最近/タグなし）: `Center + ConstrainedBox(maxWidth: 600)` で中央寄せ
+### フッター・レイアウト微調整
+- iPad のみ左グループ (ゴミ箱/MD/プレビュー) と右グループを Spacer で分離
+- アイコン間隔 1.5 倍、Undo/Redo と最大化ボタンの左右余白強化
+- 「閉じる」とコピー/最大化の距離を対称に
+- iPhone は元の配置を維持
 
-#### ツールバー右寄せ（memo_input_area.dart）
-- `_buildToolbar` の Row 先頭に Spacer を追加、間の Spacer 2箇所を調整
-- 左利き対応時は先頭 Spacer を末尾に移すだけでOK
-- 編集/閲覧/compact の全モードで統一
+### 状態不整合の修正
+- 枠外タップの unfocus 条件を `isInputFocused` 単独に（フローティングキーボード時も抜ける）
+- 入力エリア以外の各セクションを `_wrapUnfocusOnTap` (`Listener(PointerDown)`) で包み、どこタップでも一律 unfocus
+- Wide/Narrow 共通のヘルパで実装
 
-#### iOS ネイティブ設定
-- `AppDelegate.application(supportedInterfaceOrientationsFor:)` を `.all` で実装
-  - iPadシミュレータで orientation change が追従しない問題の対応（実機では動作）
-- Info.plist: iPhone 向け `UISupportedInterfaceOrientations` から landscape 2方向を削除 → **iPhone は portrait-only**
-- iPad 向け `UISupportedInterfaceOrientations~ipad` は全方向維持
+### 選択モードバー
+- 横画面で **幅 70% 中央寄せ** + 画面上端〜タブ上端の中央に配置（`viewPadding.top + 検索バー高さ + 機能バー高さ` で計算）
+- 縦画面は従来どおり
 
-#### バグ修正
-- `viewPadding.top - 4` が 4 未満になる環境で Padding アサーション失敗→クラッシュ
-- `(viewPadding.top - 4).clamp(0.0, double.infinity)` で対処
+### iPad シミュ回転対応
+- `Info.plist` に `UIRequiresFullScreen=true` を追加（Flutter iPad シミュの既知バグ回避）
+- 副作用として Split View / Slide Over / Stage Manager が無効化 → Phase 8 完了後に外す
 
-### 実機検証
-- Developer Mode + デバイス信頼 + ローカルネットワーク許可 すべて通った
-- 実機 iPad 横画面で綺麗に表示、現状は縦用レイアウトが横に広がる形（Step B の出番）
+## 次のアクション候補
 
-## 次のアクション
+### 優先度高
+1. **動作確認**（Mac キーボード経由で⌘ショートカット / iPhone 実機 / iPad 縦画面 Pro 13）
+2. **Step C 後半**: ⌘B / ⌘I（太字・斜体、MD モード時）
+3. **Step C 他要素**: D&D、右クリック/長押しメニュー、サイドバー常時表示
 
-### 次セッション最優先: Phase 8 Step B（iPad 横画面スプリットビュー）
-**注意: 実装はかなり大規模なリファクタリング**
-
-#### 現状の課題
-- `_buildMainContent` の Column 内に5要素がインラインで 300行以上
-- これを isWide 時に Row 配置へ切り替えるには変数抽出が必要
-- 今回、変数抽出を途中まで試みたが、途中で revert（安全優先）
-
-#### 推奨アプローチ
-1. 5要素を private method に切り出す
-   - `_buildSearchBarSection()`
-   - `_buildInputAreaSection(constraints)`
-   - `_buildFunctionBarSection()`
-   - `_buildTabSection(parentTagsAsync)`
-   - `_buildFolderBodySection(currentColor, parentTags, parentTagsAsync)` ← ここは Expanded を外して Container を返す
-2. `_buildMainContent` で isWide 分岐
-   - 縦画面: 従来の Column
-   - 横画面: Row(左: タブ+検索+機能バー+フォルダ本体 / 右: 入力エリア)
-3. 入力エリアの高さを isWide時は `constraints.maxHeight`（右カラム全域）に
-
-### その後（Step C）
-- ⌘キーショートカット（⌘N / ⌘F / ⌘Z / ⌘B/I / ⌘1-9）
-- ドラッグ&ドロップ（他アプリから画像/テキスト）
-- 右クリック / 長押しコンテキストメニュー
-- サイドバー常時表示（親タグ一覧左固定）
-- 並列編集モード（ROADMAP アイデアメモ）
-- Apple Pencil Scribble 検証
-- マルチウィンドウ（iPadOS Scene）
-
-### 盲点 / 要検証
-- iPad 横画面回転は実機では OK だが、シミュレータは**bugで追従しない**（iOS 17.2/26.3 両方確認）
-- Floating キーボード時のツールバー位置（viewInsets.bottom = 0 問題）
-- 外部 BT キーボード使用時はツールバー不要、⌘ショートカットで代替
+### 優先度中
+- Phase 8 完了時: `UIRequiresFullScreen` を外す、iPad 実機で最終動作確認
+- Phase 9: Firebase / iCloud 同期
 
 ## 技術メモ
 
 ### ビルド関連
-- **ビルド回避策**: `/tmp/memolette-run` に rsync してから build（Google Drive で codesign エラー回避）
-- **rsync のexclude**: `ios/Pods` と `ios/Podfile.lock` は除外すべき（Google Drive側の古い Pods でエラーになる）
-- **flutter run 再起動時**: iOS 側の変更がなくても数秒〜数十秒の差分ビルドは走る
-- **iOS バージョンが変わると pod install 必要**: 初回のみ
+- ビルド回避策: `/tmp/memolette-run` に rsync してから build（Google Drive で codesign エラー回避）
+- シミュで native library 問題 (`objective_c.framework` ロード失敗) が出たら `flutter clean + pod install` で解決
+- シミュの回転は `UIRequiresFullScreen=true` で追従（Flutter の iPad シミュ既知バグ対応）
 
 ### 実機デプロイ
-- **iPad 実機 ID**: `00008103-000470C63E04C01E`（のっくりのiPad, iOS 26.2.1）
-- **iPhone 実機 ID**: `00008130-0006252E2E40001C`（15promax, iOS 26.3.1）
-- **実機 flutter run**: 初回はDeveloper Mode + デバイス信頼 + ローカルネットワーク許可 が必要
-- **Installing and launching が長い**: 初回は 60-80秒 かかる
+- iPad 実機 ID: `00008103-000470C63E04C01E`（のっくりのiPad, iOS 26.2.1）
+- iPhone 実機 ID: `00008130-0006252E2E40001C`（15promax, iOS 26.3.1）
+- ワイヤレスだと Dart VM 繋がりにくい（Installing は成功、ホットリロード不可）→ USB 接続推奨
 
 ### シミュレータ
-- **iPhone 15 Pro Max**: `95C8A8C5-0972-4BB0-B793-5219096697DF` (iOS 17.2)
-- **iPad Pro 13-inch (M5)**: `CC1098F2-158C-48B5-A59A-0462BBEF0360` (iOS 26.3)
-- **iPad シミュは orientation change を追従しない既知の現象** — レイアウト確認のみシミュ、回転検証は実機で
+- iPhone 15 Pro Max: `95C8A8C5-0972-4BB0-B793-5219096697DF` (iOS 17.2)
+- iPad Pro 13-inch (M5): `CC1098F2-158C-48B5-A59A-0462BBEF0360` (iOS 26.3)
 
 ### コード構造の注意
-- `home_screen.dart` は 6100行超。`_buildMainContent` が巨大（300行以上）
-- Step B 着手時は**まず現状把握→method抽出→Row/Column切替**の順で慎重に
-- `MemoInputArea`（memo_input_area.dart）は 2960行、こちらもリファクタ対象候補
+- `home_screen.dart` は 6300行超
+- Step B で `_buildMainContent` は `_buildNarrowLayout` / `_buildWideLayout` に分離
+- Listener ラッパ `_wrapUnfocusOnTap` で入力エリア以外の一括 unfocus
+- `MemoInputArea` (`memo_input_area.dart`) は 2970行、リファクタ対象候補

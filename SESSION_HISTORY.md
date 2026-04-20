@@ -422,3 +422,45 @@
 - Phase 8 Step B: iPad 横画面スプリットビュー（左: 一覧 / 右: 入力）
 - `_buildMainContent` の 5要素を private method に切り出し → isWide時に Row 構成で組み直す
 - Step C（⌘ショートカット、D&D、サイドバー）は Step B 後
+
+---
+## #22 (2026-04-21) Phase 8 Step B + Step C 前半
+
+### Step B: iPad 横画面スプリットビュー
+- `_buildMainContent` を isWide 分岐で Row (左:一覧 / 右:入力) に組み替え
+- 検索バー/入力エリア/機能バー/タブ/フォルダ本体を private メソッドへ抽出
+- 横画面では最大化/縮小・シェブロン非表示、機能バー常時表示、下端余白、キーボード上ツールバー有効
+- `_buildNarrowLayout` / `_buildWideLayout` に構造を分離
+
+### 横画面用グリッド
+- enum に `iPadWideColumns` / `iPadWideRows` 追加。選択肢を `5×6` / `4×5` / `3×4` / `2×3` / `1×可変` / `タイトルのみ` に
+- iPad カードの本文表示行数を緩和（LayoutBuilder ベース、`_bodyLinesFor(context)` で動的化）
+- `Responsive.isWide` に `width > height` 条件追加（iPad Pro 13 縦画面誤発動を防ぐ）
+
+### Step C 前半: ⌘ショートカット 7種
+- `⌘N` / `⌘F` / `⌘1-9` / `⌘Return` / `Esc` / `⌘Z` / `⇧⌘Z`
+- `MemoInputArea` に `triggerUndo` / `triggerRedo` 公開
+- `build` を `CallbackShortcuts + Focus` でラップ
+
+### フッター・レイアウト微調整（iPad）
+- 左グループ (ゴミ箱/MD/プレビュー) と右グループを Spacer で分離、間隔 1.5 倍
+- Undo/Redo と最大化ボタンの左右余白強化（独立感）
+- 「閉じる」とコピー/最大化の距離を対称に
+- iPhone は元の配置維持
+
+### 状態不整合の修正
+- 枠外タップ判定を `isInputFocused` に（フローティングキーボード対応）
+- 入力エリア以外の各セクションに `Listener(PointerDown)` ベースの `_wrapUnfocusOnTap` を被せ、Wide/Narrow 共通で一律 unfocus
+
+### 選択モードバー
+- 横画面で 7 割幅 + 画面上端〜タブ上端の中央に計算配置
+- 縦画面は従来どおり
+
+### iPad シミュ回転対応
+- `Info.plist` に `UIRequiresFullScreen=true` を追加（Flutter の iPad シミュ既知バグ回避）
+- 副作用として Split View / Slide Over / Stage Manager が無効化 → Phase 8 完了後に外す
+
+### 次セッション
+- 動作確認: Mac キーボード経由で⌘ショートカット検証、iPhone 実機、iPad 縦画面 Pro 13
+- Step C 後半: `⌘B` / `⌘I`（太字・斜体、MD モード時）
+- Step C 他要素: D&D、右クリック/長押しメニュー、サイドバー
