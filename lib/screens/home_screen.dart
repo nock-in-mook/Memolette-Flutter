@@ -442,6 +442,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     _searchFocusNode.addListener(() {
       setState(() => _isSearchFocused = _searchFocusNode.hasFocus);
     });
+    // ⌘系ショートカットはフォーカス非依存のグローバルハンドラで処理
+    HardwareKeyboard.instance.addHandler(_handleGlobalKey);
     // 起動時セーフティネット: タイトル・本文とも空のメモを一掃 +
     // 起動時にフォーカスが入っていたら外す（入力状態で始まらない）
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -453,6 +455,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleGlobalKey);
     _drawerCtrl.dispose();
     _tabBarScrollController.dispose();
     _memosScrollController.dispose();
@@ -503,13 +506,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       });
     }
 
-    return CallbackShortcuts(
-      bindings: _buildShortcutBindings(),
-      child: Focus(
-        autofocus: true,
-        // 入力欄側にフォーカスが奪われても BubbleDown で拾わせるため debugLabel 付き
-        debugLabel: 'HomeShortcutsFocus',
-        child: Scaffold(
+    return Scaffold(
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: false, // キーボードでオーバーフローしないように
       // 入力欄以外の任意の場所をタップしたらキーボード+コンテキストメニューを閉じる
@@ -533,8 +530,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ],
         ),
       )),
-        ),
-      ),
     );
   }
 
@@ -542,38 +537,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // キーボードショートカット（Step C 前半）
   // ========================================
 
-  /// ⌘N / ⌘F / ⌘1-9 / ⌘Return / Esc / ⌘Z / ⇧⌘Z のバインディングを生成
-  Map<ShortcutActivator, VoidCallback> _buildShortcutBindings() {
-    return <ShortcutActivator, VoidCallback>{
-      // ⌘N: 新規メモ作成
-      const SingleActivator(LogicalKeyboardKey.keyN, meta: true):
-          _createNewMemo,
-      // ⌘F: 検索バーにフォーカス
-      const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () {
-        _searchFocusNode.requestFocus();
-      },
-      // ⌘1〜⌘9: _tabOrder の index（0-8）のタブに切替
-      for (int i = 0; i < 9; i++)
-        SingleActivator(_digitKey(i + 1), meta: true): () =>
-            _selectTabByOrderIndex(i),
-      // ⌘Return: 入力確定・編集モード離脱（キーボード閉じる）
-      const SingleActivator(LogicalKeyboardKey.enter, meta: true): () {
-        FocusManager.instance.primaryFocus?.unfocus();
-      },
-      // Esc: フォーカス解除
-      const SingleActivator(LogicalKeyboardKey.escape): () {
-        FocusManager.instance.primaryFocus?.unfocus();
-      },
-      // ⌘Z: Undo（アプリ独自のスナップショット Undo）
-      const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): () {
-        _inputAreaKey.currentState?.triggerUndo();
-      },
-      // ⇧⌘Z: Redo
-      const SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true):
-          () {
+  /// グローバルキーハンドラ（フォーカス非依存）
+  /// ⌘N / ⌘F / ⌘1-9 / ⌘Return / Esc は常時効く。
+  /// ⌘Z / ⇧⌘Z は TextField 編集中でも、Swift 版同様のメモ全体スナップショット
+  /// Undo を使う（TextField ネイティブだとフィールド単位でしか戻らないため）。
+  bool _handleGlobalKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    final kb = HardwareKeyboard.instance;
+    final meta = kb.isMetaPressed;
+    final shift = kb.isShiftPressed;
+    final key = event.logicalKey;
+
+    if (meta && !shift && key == LogicalKeyboardKey.keyN) {
+      _createNewMemo();
+      return true;
+    }
+    if (meta && !shift && key == LogicalKeyboardKey.keyF) {
+      _searchFocusNode.requestFocus();
+      return true;
+    }
+    if (meta && !shift) {
+      for (int i = 1; i <= 9; i++) {
+        if (key == _digitKey(i)) {
+          _selectTabByOrderIndex(i - 1);
+          return true;
+        }
+      }
+    }
+    if (meta && !shift && key == LogicalKeyboardKey.enter) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      return true;
+    }
+    if (!meta && !shift && key == LogicalKeyboardKey.escape) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      return true;
+    }
+    if (meta && key == LogicalKeyboardKey.keyZ) {
+      if (shift) {
         _inputAreaKey.currentState?.triggerRedo();
-      },
-    };
+      } else {
+        _inputAreaKey.currentState?.triggerUndo();
+      }
+      return true;
+    }
+    return false;
   }
 
   LogicalKeyboardKey _digitKey(int n) {
