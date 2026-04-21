@@ -87,6 +87,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   Future<void> triggerUndo() => _undo();
   /// 外部から Redo を実行（⇧⌘Z ショートカット用）
   Future<void> triggerRedo() => _redo();
+  /// 外部からフォーカス中の選択範囲を wrapper でラップ（⌘B / ⌘I 用）。
+  /// MD モード時のみ有効。選択なしのときはラッパーだけ挿入してカーソルを間に。
+  void triggerWrapMarkdown(String wrapper) {
+    if (!_isMarkdown) return;
+    _blockEditorKey.currentState?.wrapFocusedSelection(wrapper);
+  }
   /// 外部から Undo 可能か判定
   bool get canUndo => _canUndo;
   /// 外部から Redo 可能か判定

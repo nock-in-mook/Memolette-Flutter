@@ -580,6 +580,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       }
       return true;
     }
+    // ⌘B: 太字（MDモード時のみ。MemoInputArea 側で判定）
+    if (meta && !shift && key == LogicalKeyboardKey.keyB) {
+      _inputAreaKey.currentState?.triggerWrapMarkdown('**');
+      return true;
+    }
+    // ⌘I: 斜体（MDモード時のみ）
+    if (meta && !shift && key == LogicalKeyboardKey.keyI) {
+      _inputAreaKey.currentState?.triggerWrapMarkdown('*');
+      return true;
+    }
     return false;
   }
 
@@ -898,11 +908,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// 入力エリア「以外」のタップで現在のフォーカスを解除する Listener ラッパ。
   /// Listener は子の GestureDetector を阻害せず、PointerDown を横取りしない。
   /// これで メモタップ・タブ切替・爆速/ToDo 遷移など、遷移前に一律でキーボードを閉じる。
+  /// 入力エリアだけでなく検索バーにフォーカスがあるときも抜ける。
   Widget _wrapUnfocusOnTap(Widget child) {
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (_) {
-        if (_inputAreaKey.currentState?.isInputFocused ?? false) {
+        final hasInputFocus =
+            _inputAreaKey.currentState?.isInputFocused ?? false;
+        final hasSearchFocus = _searchFocusNode.hasFocus;
+        if (hasInputFocus || hasSearchFocus) {
           FocusManager.instance.primaryFocus?.unfocus();
         }
       },
@@ -933,6 +947,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           Expanded(
             child: _wrapUnfocusOnTap(_buildFolderBodySection(
                 currentColor, parentTags, parentTagsAsync)),
+          )
+        else
+          // フォルダ非表示中でも空白領域をタップしたら unfocus できるよう
+          // Expanded + 透明レイヤを _wrapUnfocusOnTap で覆う
+          Expanded(
+            child: _wrapUnfocusOnTap(
+              const SizedBox.expand(child: ColoredBox(color: Colors.transparent)),
+            ),
           ),
       ],
     );
@@ -1378,7 +1400,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 isDense: true,
                 filled: true,
                 fillColor: Colors.grey[200],
-                hintText: _isSearchActive ? '' : '', // Stackでプレースホルダーを表示するので空
+                // 非フォーカス時は Stack の中央揃え豪華版プレースホルダー
+                // を使うので空、フォーカス中は TextField の hintText で左寄せ表示。
+                hintText: _isSearchFocused ? '検索ワードを入力' : '',
+                hintStyle: TextStyle(fontSize: 13, color: Colors.grey[500]),
                 suffixIcon: _isSearchActive
                     ? GestureDetector(
                         onTap: () {

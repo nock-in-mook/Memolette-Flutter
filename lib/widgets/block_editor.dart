@@ -93,6 +93,42 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
     return last?.controller;
   }
 
+  /// フォーカス中（または最後にフォーカスがあった）TextBlock の
+  /// 選択範囲を wrapper で囲む。MarkdownToolbar の同名ロジックと等価。
+  /// ⌘B / ⌘I などキーボードショートカットから呼ぶ用途。
+  void wrapFocusedSelection(String wrapper) {
+    final controller = focusedController;
+    if (controller == null) return;
+    final text = controller.text;
+    final sel = controller.selection;
+    final start = sel.start.clamp(0, text.length);
+    final end = sel.end.clamp(0, text.length);
+
+    if (start == end) {
+      // 選択なし: ラッパーだけ挿入してカーソルを間に
+      final insert = '$wrapper$wrapper';
+      final newText =
+          text.substring(0, start) + insert + text.substring(start);
+      controller.value = TextEditingValue(
+        text: newText,
+        selection:
+            TextSelection.collapsed(offset: start + wrapper.length),
+      );
+    } else {
+      final selected = text.substring(start, end);
+      final replacement = '$wrapper$selected$wrapper';
+      final newText =
+          text.substring(0, start) + replacement + text.substring(end);
+      controller.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection(
+          baseOffset: start + wrapper.length,
+          extentOffset: end + wrapper.length,
+        ),
+      );
+    }
+  }
+
   /// 先頭の TextBlock にフォーカス。カーソルは末尾に寄せる。
   void focusFirst() {
     final first = _blocks.whereType<_TextBlock>().firstOrNull;
