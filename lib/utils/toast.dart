@@ -15,14 +15,24 @@ void showToast(
   Duration duration = const Duration(milliseconds: 1500),
   /// 画面高に対する上からの比率 (0.0〜1.0)。省略時は 0.38（やや上寄り中央）
   double topFraction = 0.38,
+  /// 絶対ピクセルでの上端位置。指定時は topFraction を無視
+  double? topPx,
+  /// トースト下端の絶対 Y 座標（画面 top 基準）。指定時は上端系を無視して下端を合わせる
+  double? bottomY,
   /// 背景色。省略時はすりガラス黒
   Color? backgroundColor,
 }) {
   final overlay = Overlay.of(context);
   late OverlayEntry entry;
   entry = OverlayEntry(builder: (ctx) {
+    final screenH = MediaQuery.of(ctx).size.height;
+    final double? topValue =
+        bottomY != null ? null : (topPx ?? screenH * topFraction);
+    final double? bottomValue =
+        bottomY != null ? (screenH - bottomY) : null;
     return Positioned(
-      top: MediaQuery.of(ctx).size.height * topFraction,
+      top: topValue,
+      bottom: bottomValue,
       left: 40,
       right: 40,
       child: IgnorePointer(

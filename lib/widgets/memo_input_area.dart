@@ -139,6 +139,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   // Phase 10++ ブロックエディタ実験: 本文を TextField+画像 Strip ではなく BlockEditor で描画
   final GlobalKey<BlockEditorState> _blockEditorKey =
       GlobalKey<BlockEditorState>();
+  // 入力欄ルート。トースト位置計算用（下端を取得して直下に表示するため）
+  final GlobalKey _inputAreaKey = GlobalKey();
+  // 入力欄フッター（ツールバー）。トースト位置計算用（上端を取得して直上に表示）
+  final GlobalKey _toolbarKey = GlobalKey();
   /// BlockEditor 内の任意の TextField にフォーカスがあるか
   bool get _isBlockEditorFocused =>
       _blockEditorKey.currentState?.hasAnyFocus ?? false;
@@ -146,6 +150,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       _titleFocusNode.hasFocus ||
       _contentFocusNode.hasFocus ||
       _isBlockEditorFocused;
+  // ダイアログ表示中フラグ: ダイアログが出るとフォーカスが一旦外れて
+  // フッターが閲覧モードに切り替わってしまうので、見た目を編集モードに固定するために使う
+  bool _isDialogOpen = false;
   List<Tag> _attachedTags = [];
   bool _hasMemo = false;
   bool _rouletteOpen = false;
@@ -771,19 +778,35 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             isMarkdown: value,
           );
     }
-    // トースト表示
+    // トースト表示（フッター上端の 5px 上にトースト下端を合わせる。親指の下に来ないように）
     if (mounted) {
+      final toastBottom = _toolbarTopPx() - 5;
       if (value) {
         showToast(
           context,
           'マークダウンモード オン\nボタンまたは左右フリックでプレビュー切替',
           duration: const Duration(milliseconds: 2400),
+          bottomY: toastBottom,
         );
       } else {
         showToast(context, 'マークダウンモード オフ',
-            duration: const Duration(milliseconds: 1200));
+            duration: const Duration(milliseconds: 1200),
+            bottomY: toastBottom);
       }
     }
+  }
+
+  /// 入力欄フッター（ツールバー）のグローバル上端 Y 座標。
+  /// 取得失敗時は画面高の 0.4（フォールバック）
+  double _toolbarTopPx() {
+    final ctx = _toolbarKey.currentContext;
+    if (ctx != null) {
+      final box = ctx.findRenderObject() as RenderBox?;
+      if (box != null && box.hasSize) {
+        return box.localToGlobal(Offset.zero).dy;
+      }
+    }
+    return MediaQuery.of(context).size.height * 0.4;
   }
 
   /// 本文だけを消す (消しゴムボタン): タイトル/タグはそのまま
@@ -791,12 +814,17 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   Future<void> clearBody() async {
     if (_contentController.text.isEmpty) return;
     widget.onDialogOpenChanged?.call(true);
+    setState(() => _isDialogOpen = true);
     try {
-      final ok = await focusSafe(
-        context,
-        () => showCupertinoDialog<bool>(
-          context: context,
-          builder: (ctx) => CupertinoAlertDialog(
+      // viewInsets を 0 に上書きして、キーボードが閉じるアニメーションに
+      // 引きずられてダイアログが上から降ってくる挙動を回避。
+      // focusSafe は使わない: キャンセル/クリア後に Navigator の自動フォーカス
+      // 復元が効いて元の編集カーソル位置に戻れるようにするため。
+      final ok = await showCupertinoDialog<bool>(
+        context: context,
+        builder: (ctx) => MediaQuery(
+          data: MediaQuery.of(ctx).copyWith(viewInsets: EdgeInsets.zero),
+          child: CupertinoAlertDialog(
             title: const Text('本文をクリアします。よろしいですか？'),
             content: const Text('タイトルとタグはそのまま残ります。'),
             actions: [
@@ -818,7 +846,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       _onChanged();
       setState(() {});
     } finally {
-      if (mounted) widget.onDialogOpenChanged?.call(false);
+      if (mounted) {
+        setState(() => _isDialogOpen = false);
+        widget.onDialogOpenChanged?.call(false);
+      }
     }
   }
 
@@ -875,6 +906,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     final allTagsAsync = ref.watch(allTagsProvider);
 
     return Container(
+      key: _inputAreaKey,
       margin: const EdgeInsets.fromLTRB(10, 6, 0, 2),
       // 通常は固定 316、最大化中は親のサイズに従う
       height: widget.isExpanded ? null : 316,
@@ -2151,17 +2183,20 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   }
 
   Widget _buildToolbar({bool compact = false}) {
-    // 「編集中」判定: 実際にフォーカスが入って入力している、または compact (Overlay)
+    // 「編集中」判定: 実際にフォーカスが入って入力している、compact (Overlay)、
+    // またはダイアログ表示中（フォーカスが一時的に外れるので編集中扱いに固定）
     // これ以外 (起動直後・閲覧モード・編集を抜けた状態) は閲覧寄りツールバーを出す
-    final isEditing = _isInputFocused || compact;
+    final isEditing = _isInputFocused || compact || _isDialogOpen;
     final inViewMode = !isEditing;
     final isTablet = Responsive.isTablet(context);
     // iPad は左右 2 グループに分けて配置、アイコン間隔も 1.5 倍に広げる。
     // iPhone は従来のまま左から詰めて並べる（本来の位置）。
     double sp(double base) => isTablet ? base * 1.5 : base;
     return Container(
+      key: compact ? null : _toolbarKey,
       constraints: const BoxConstraints(minHeight: 36),
-      padding: const EdgeInsets.fromLTRB(10, 3, 10, 3),
+      // 右 padding は 5 に詰めて、閉じる/拡大を右に寄せる（プレビュー表示時の押し出し対策）
+      padding: const EdgeInsets.fromLTRB(10, 3, 5, 3),
       child: Row(
         children: [
           // ========================================
@@ -2243,18 +2278,20 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           ],
 
           // ========================================
-          // 左右分離（iPad のみ Spacer で右グループを右寄せ）
-          // iPhone は詰めて並べるので Spacer は入れない
+          // 左右分離: 閲覧時は等間隔で左詰め（プレビュー↔多機能を多機能↔パレットと揃える）、
+          // 編集時は Spacer で右グループを右端寄せ
+          // iPhone はプレビュー↔多機能だけ +6px して右グループをセットで少し右にずらす
           // ========================================
-          if (isTablet) const Spacer(),
+          if (inViewMode)
+            SizedBox(width: isTablet ? sp(12) : 18)
+          else
+            const Spacer(),
 
           // ========================================
           // 右グループ: 閲覧時は 多機能/背景色/コピー、編集時は 画像追加 + Undo/Redo
           // ========================================
           // 多機能・背景色・コピーは閲覧時のみ
           if (inViewMode) ...[
-            // iPhone は左グループから続くので元の間隔、iPad は Spacer の後なので 0
-            if (!isTablet) const SizedBox(width: 12),
             // 多機能メニュー
             GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -2288,10 +2325,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 ),
               );
             }),
+            // 閉じる・拡大は常に右端寄せにしたいので、ここで Spacer を入れて
+            // コピーまでの左グループと切り離す
+            const Spacer(),
           ],
           // 画像追加は編集時のみ
           if (!inViewMode) ...[
-            if (!isTablet) const SizedBox(width: 12),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _attachImage,
@@ -2300,9 +2339,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             ),
           ],
           // Undo / Redo は編集時のみ。iPad は左右に大きめの余白で独立感を出す
-          // 画像追加と Undo の間隔は Undo/Redo 間の距離と揃える
+          // 画像↔Undo は Undo↔Redo より少し広めにして、画像ボタンに独立感を持たせる
           if (!inViewMode) ...[
-            SizedBox(width: isTablet ? 36 : 24),
+            SizedBox(width: isTablet ? 40 : 30),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _canUndo ? _undo : null,
@@ -2333,9 +2372,11 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           ],
           // 確定 (キーボード閉じる) は KeyboardDoneBar の「完了」と重複するため廃止
           // 閉じる (クリア) は 非フォーカス + メモ/タイトルあり + 非 compact のときだけ出す
-          // コピーとの間も、最大化ボタンとの間と対称になるよう余白を確保する
+          // ダイアログ表示中はフォーカスが一時的に外れるので、閉じる/拡大余白計算用にも
+          // _isDialogOpen を考慮してフッターレイアウトをチラつかせない
           if (!compact &&
               !_isInputFocused &&
+              !_isDialogOpen &&
               (_hasMemo || _titleController.text.isNotEmpty)) ...[
             SizedBox(width: isTablet ? 16 : 12),
             GestureDetector(
@@ -2362,11 +2403,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
               ),
             ),
           ],
-          // 最大化/縮小トグル（右端、少し雰囲気が違う機能なので iPad は左余白を大きめに）
+          // 最大化/縮小トグル（右端、少し雰囲気が違う機能なので左に余白を入れて独立感を出す）
           // アイコン周囲も含めて広めのタップ判定だが、見た目は右端寄せにする
           // onToggleExpanded が null（例: iPad 横画面）の場合はボタン自体を非表示
+          // 閉じる↔拡大の間隔は 11。プレビュー + 閉じる同時表示でも拡大が画面外に押されないようにする
           if (widget.onToggleExpanded != null) ...[
-            if (isTablet) const SizedBox(width: 16),
+            const SizedBox(width: 11),
             GestureDetector(
               onTap: () {
                 commitIME();
@@ -2431,13 +2473,19 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   /// 編集中のみフォルダビュー非表示フラグを立てる（閲覧時はフォルダを維持）
   Future<void> _confirmDeleteMemo() async {
     final wasEditing = _isInputFocused;
-    if (wasEditing) widget.onDialogOpenChanged?.call(true);
+    if (wasEditing) {
+      widget.onDialogOpenChanged?.call(true);
+      setState(() => _isDialogOpen = true);
+    }
     try {
-      final confirmed = await focusSafe(
-        context,
-        () => showCupertinoDialog<bool>(
-          context: context,
-          builder: (ctx) => CupertinoAlertDialog(
+      // viewInsets を 0 に上書きして、ダイアログが上から降ってくる挙動を回避。
+      // focusSafe は使わない: キャンセル後に Navigator の自動フォーカス復元で
+      // 元の編集カーソル位置に戻れるようにするため。
+      final confirmed = await showCupertinoDialog<bool>(
+        context: context,
+        builder: (ctx) => MediaQuery(
+          data: MediaQuery.of(ctx).copyWith(viewInsets: EdgeInsets.zero),
+          child: CupertinoAlertDialog(
             title: const Text('このメモを削除します。よろしいですか?'),
             actions: [
               CupertinoDialogAction(
@@ -2456,7 +2504,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       if (confirmed != true || !mounted) return;
       _deleteMemo();
     } finally {
-      if (mounted && wasEditing) widget.onDialogOpenChanged?.call(false);
+      if (mounted && wasEditing) {
+        setState(() => _isDialogOpen = false);
+        widget.onDialogOpenChanged?.call(false);
+      }
     }
   }
 }
