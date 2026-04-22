@@ -1,105 +1,109 @@
 # 引き継ぎメモ
 
-## ★ 後で動作確認するタスク（セッション#22で実装済・未検証）
+## ★ Mac 移動: iPhone 実機ビルド時の罠（次セッション以降も注意）
 
-### Mac キーボードをシミュに繋いで（I/O → Keyboard → Connect Hardware Keyboard）確認
-- [ ] `⌘N` 新規メモ作成
-- [ ] `⌘F` 検索バーにフォーカス
-- [ ] `⌘1` 〜 `⌘9` タブ切替（`_tabOrder[i]` の index 番目）
-- [ ] `⌘Return` 入力確定（フォーカス解除）
-- [ ] `Esc` フォーカス解除
-- [ ] `⌘Z` Undo（`_inputAreaKey.currentState?.triggerUndo()` 経由）
-- [ ] `⇧⌘Z` Redo
+USB 経由で iPhone (00008130-0006252E2E40001C) に **debug モード** で
+`flutter run` すると、`iproxy` ポートフォワードでエラー終了し、Dart VM に
+接続できないままアプリが起動 → 即クラッシュ（EXC_BAD_ACCESS / SIGBUS、
+クラッシュレポート確認済）。
 
-### iPhone 実機 / iPhone シミュで確認（#22 の変更は iPad シミュ中心）
-- [ ] iPhone のツールバー配置が均等（iPad 以外）に戻ってる
-- [ ] iPad 縦画面（特に iPad Pro 13: 1024×1366）でスプリットが誤発動しない — `isWide = width >= 840 && width > height` で対策済
-- [ ] iPhone 実機に新ビルドを入れ直す
+**回避策**: `flutter run --release -d <iPhone UDID>` で起動する。
 
-### Step C 後半 実装（次セッション以降）
-- [ ] `⌘B` 太字（MDモード時のみ、focused TextEditingController に `**` ラップ）
-- [ ] `⌘I` 斜体（同じく `*` ラップ）
-- [ ] MemoInputArea に `triggerInsertMd(String wrapper)` 的な public メソッド追加が必要
-- [ ] `MarkdownToolbar._wrapSelection` のロジックを State 側に移植 or 流用
+(再現条件: macOS Tahoe 26.3.1 + iOS 26.3.1。`sudo launchctl kickstart -k
+system/com.apple.usbmuxd` も SIP で拒否される。)
 
-### Phase 8 完了時に外すこと
-- [ ] **Info.plist `UIRequiresFullScreen`** — iPad マルチタスキング（Split View / Slide Over / Stage Manager）を復活させる。開発用にシミュ回転を効かせるために一時的に true にしている
+iPad シミュ (`C6A8AF6B-C3E8-4B93-BCCC-E8C398D4491F`) は通常通り debug で OK。
 
 ---
 
 ## 現在の状況
-- セッション#22 完了（2026-04-21）
+
+- セッション#23 完了（2026-04-22）
 - ブランチ: `main`
-- 最終コミット: `e8067b7` Phase 8 Step B (iPad スプリットビュー) + Step C 前半 + 細部調整
-- iPad Pro 13 シミュ + iPad 実機（#21）で動作確認済み
+- 最終コミット: `ca020ff` 爆速モード弧ライン延長
+- iPad Pro 13 シミュ縦画面と iPhone 15 Pro Max 実機（release）で動作確認済
 
-## #22 で完了したこと
+## #23 で完了したこと
 
-### Phase 8 Step B: iPad 横画面スプリットビュー
-- `_buildMainContent` を `isWide` 分岐で `Row` (左:一覧 / 右:入力) に組み替え
-- 検索バー / 入力エリア / 機能バー / タブ / フォルダ本体を private メソッドへ抽出
-- 横画面では 最大化/縮小・シェブロン非表示、機能バー常時表示、下端余白、キーボード上ツールバー有効
-- 縦横共通の構造を `_buildNarrowLayout` / `_buildWideLayout` に分離
+### ⌘ショートカット完成 (Step C 前半 + 後半)
+- `CallbackShortcuts + Focus(autofocus)` だとフォーカスツリーから抜けると
+  キーが届かず、非編集状態で⌘N等が反応しなかった。
+  → `HardwareKeyboard.instance.addHandler` のグローバルハンドラに移行
+- ⌘N / ⌘F / ⌘Return / Esc / ⌘Z / ⇧⌘Z 動作確認 OK（iPad シミュ + Mac キーボード）
+- ⌘1-9 はシミュ Window メニューが横取りするため未確認 → 実機で要確認
+- ⌘B (太字 `**`) / ⌘I (斜体 `*`) を MD モード時のみ発火するよう実装。
+  `BlockEditor.wrapFocusedSelection(wrapper)` + `MemoInputArea.triggerWrapMarkdown` 追加
+- ⌘Z は TextField 編集中でもアプリ独自スナップショット Undo を使用
+  （TextField ネイティブだとフィールド単位でしか戻らないため）
 
-### 横画面用グリッド
-- `enum GridSizeOption` に `iPadWideColumns` / `iPadWideRows` を追加
-- ラベルとメニュー選択肢を横画面用に（`5×6` / `4×5` / `3×4` / `2×3` / `1×可変` / `タイトルのみ`）
-- iPad カードの本文表示行数を緩和（`_bodyLinesFor(context)` で動的化、LayoutBuilder 実寸で計算）
-- `Responsive.isWide` に `width > height` 条件を追加（iPad Pro 13 縦画面で誤発動しない）
+### 検索バー UX 改善
+- フォーカス中に hintText「検索ワードを入力」を表示
+- 検索フォーカス時の枠外タップでフォーカス解除（_wrapUnfocusOnTap の条件に
+  `_searchFocusNode.hasFocus` を追加 + フォルダ非表示時の空白領域も対象化）
 
-### Step C 前半: ⌘ショートカット 7種
-- `⌘N` / `⌘F` / `⌘1-9` / `⌘Return` / `Esc` / `⌘Z` / `⇧⌘Z`
-- `MemoInputArea` に `triggerUndo` / `triggerRedo` 公開
-- `build` を `CallbackShortcuts + Focus` でラップ
+### 消しゴムボタン整理
+- フロート消しゴム (`_buildFloatingEraserButton`) と編集中機能バー
+  (`_buildEditingBar`) を廃止
+- 入力エリアフッターのゴミ箱の右に集約（編集時のみ、濃いめのオレンジ）
+- narrow 編集コンパクト時は機能バーセクション全体を非表示にして、
+  爆速/ToDo ボタンへの誤タップを解消
+- `EraserGlyph` に color 引数を追加（白以外も渡せるように）
 
-### フッター・レイアウト微調整
-- iPad のみ左グループ (ゴミ箱/MD/プレビュー) と右グループを Spacer で分離
-- アイコン間隔 1.5 倍、Undo/Redo と最大化ボタンの左右余白強化
-- 「閉じる」とコピー/最大化の距離を対称に
-- iPhone は元の配置を維持
+### 遷移アニメ短縮
+- ToDo / 爆速モード遷移を `_FastMaterialPageRoute` (150ms) に差し替え。
+  デフォルト 300ms から半減。
 
-### 状態不整合の修正
-- 枠外タップの unfocus 条件を `isInputFocused` 単独に（フローティングキーボード時も抜ける）
-- 入力エリア以外の各セクションを `_wrapUnfocusOnTap` (`Listener(PointerDown)`) で包み、どこタップでも一律 unfocus
-- Wide/Narrow 共通のヘルパで実装
+### 爆速モード iPad レイアウト全面調整
+- オープニング画面: 「次へ」ボタンを固定幅 220 + 中央寄せ、説明文の下に配置
+- フィルタ画面: フィルタリスト本体を maxWidth 560 中央寄せ、開始ボタンを
+  スクロール領域内のフィルター直下に
+- セット確認画面: 左上に戻るボタン追加、セット一覧 maxWidth 560、開始ボタン
+  もセット一覧直下に配置
+- 結果画面: 戦績カード maxWidth 560、ボタン群を戦績カード直下に配置
+- カルーセル画面:
+  - メモカード maxWidth 620 中央寄せ
+  - 日付（更新日/作成日）もカードと同じ maxWidth で左端揃え
+  - 弧状コントローラ幅を iPhone 相当 (max 480) に制限して中央寄せ
+    （iPad で弧が浅くなりボタンが沿わない問題の解消）
+  - 下部操作パネルも maxWidth 480 中央寄せ。
+    `MediaQuery.size.width / 2` を `LayoutBuilder` の `constraints.maxWidth / 2` に
+  - 削除ボタンとロックボタンの隙間を 54 → 72 に
+  - 弧ラインを画面端まで延長（`_ArcDividerPainter` に `arcWidth` 引数追加、
+    Positioned を Stack 境界外に出して clipBehavior: Clip.none を活用）
+- `_primaryButton` (開始 / 次のセット) を固定幅 240 + 中央寄せ
 
-### 選択モードバー
-- 横画面で **幅 70% 中央寄せ** + 画面上端〜タブ上端の中央に配置（`viewPadding.top + 検索バー高さ + 機能バー高さ` で計算）
-- 縦画面は従来どおり
+## 次のアクション候補（優先度順）
 
-### iPad シミュ回転対応
-- `Info.plist` に `UIRequiresFullScreen=true` を追加（Flutter iPad シミュの既知バグ回避）
-- 副作用として Split View / Slide Over / Stage Manager が無効化 → Phase 8 完了後に外す
-
-## 次のアクション候補
-
-### 優先度高
-1. **動作確認**（Mac キーボード経由で⌘ショートカット / iPhone 実機 / iPad 縦画面 Pro 13）
-2. **Step C 後半**: ⌘B / ⌘I（太字・斜体、MD モード時）
-3. **Step C 他要素**: D&D、右クリック/長押しメニュー、サイドバー常時表示
+### 優先度高（残課題）
+1. **ToDo 画面の iPad 対応** — 縦画面/横画面でレイアウト方針を決める
+2. **ToDo 画面に検索窓追加**（メモ側と同等）
+3. **iPhone 実機で ⌘1-9 動作確認**（シミュでは Window メニューが横取り）
+4. **iPad 実機で全体動作確認**（ケーブル接続後）
 
 ### 優先度中
-- Phase 8 完了時: `UIRequiresFullScreen` を外す、iPad 実機で最終動作確認
-- Phase 9: Firebase / iCloud 同期
+- **ToDo 複数リスト結合機能**
+- **フッターボタンの並びと間隔調整**（閲覧時/編集時とも）
+- **iPhone 横画面無効の挙動確認**（Info.plist は設定済みだが念のため）
+
+### 優先度低（Phase 8 完了時）
+- `Info.plist UIRequiresFullScreen=true` を外す（マルチタスキング復活）
 
 ## 技術メモ
 
-### ビルド関連
-- ビルド回避策: `/tmp/memolette-run` に rsync してから build（Google Drive で codesign エラー回避）
-- シミュで native library 問題 (`objective_c.framework` ロード失敗) が出たら `flutter clean + pod install` で解決
-- シミュの回転は `UIRequiresFullScreen=true` で追従（Flutter の iPad シミュ既知バグ対応）
+### iPhone 実機ビルド (Mac 移動後)
+- USB 接続でも iproxy が SIP で拒否される → debug モードでクラッシュ
+- **`flutter run --release -d 00008130-0006252E2E40001C` を使う**
+- ビルド時間: 初回 Xcode build ~40s、2回目以降 数秒〜10秒
 
-### 実機デプロイ
-- iPad 実機 ID: `00008103-000470C63E04C01E`（のっくりのiPad, iOS 26.2.1）
-- iPhone 実機 ID: `00008130-0006252E2E40001C`（15promax, iOS 26.3.1）
-- ワイヤレスだと Dart VM 繋がりにくい（Installing は成功、ホットリロード不可）→ USB 接続推奨
-
-### シミュレータ
-- iPhone 15 Pro Max: `95C8A8C5-0972-4BB0-B793-5219096697DF` (iOS 17.2)
-- iPad Pro 13-inch (M5): `CC1098F2-158C-48B5-A59A-0462BBEF0360` (iOS 26.3)
+### iPad シミュ
+- iPad Pro 13-inch (M5) `C6A8AF6B-C3E8-4B93-BCCC-E8C398D4491F` で動作確認
+- iOS 26.3 シミュは初回 `flutter clean + pod install` が必要なケースあり
+  （objective_c framework ロード失敗時）
 
 ### コード構造の注意
-- `home_screen.dart` は 6300行超
-- Step B で `_buildMainContent` は `_buildNarrowLayout` / `_buildWideLayout` に分離
-- Listener ラッパ `_wrapUnfocusOnTap` で入力エリア以外の一括 unfocus
-- `MemoInputArea` (`memo_input_area.dart`) は 2970行、リファクタ対象候補
+- `home_screen.dart` は 6300 行超
+- `quick_sort_screen.dart` は 4400 行超（_QuickSortScreen 本体 + Card + Painter 群）
+- `MemoInputArea` (`memo_input_area.dart`) は 2970 行
+- 弧の幅制限パターン: `final sw = screenW > 480 ? 480.0 : screenW;` + Center
+- ボタン中央寄せパターン: `Center(child: SizedBox(width: 220-240, ...))`
+- max-width 制限パターン: `Center(child: ConstrainedBox(constraints: BoxConstraints(maxWidth: 480-620), child: ...))`
