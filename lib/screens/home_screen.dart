@@ -356,6 +356,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   List<String>? _savedTabOrder;
   // 入力エリア用
   String? _editingMemoId;
+  // メモカード ダブルタップ検出用（onDoubleTap を外した代わりに手動で判定）
+  // onDoubleTap を GestureDetector に渡すと kDoubleTapTimeout (300ms) 待ちで
+  // 単タップの onTap が遅延するため、ここで自前検出して即時反応を優先する。
+  DateTime _lastMemoTapAt = DateTime.fromMillisecondsSinceEpoch(0);
+  String? _lastTappedMemoId;
   // 新規作成ボタンを押すたびに増えるカウンタ → MemoInputArea がフォーカスを取る
   int _focusInputTrigger = 0;
   // 入力エリアの最大化状態
@@ -2387,7 +2392,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       return _FrequentTabContent(
         gridOption: _frequentGridSize,
         tabColor: _currentTabColor(parentTags),
-        onTap: _openMemo,
+        onTap: _handleMemoTap,
         wrapBuilder: (memo, card) => _wrapMemoInContextMenu(memo, card),
         selectMode: _isSelectMode,
         selectedIds: _selectedMemoIds,
@@ -2412,8 +2417,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         stream: subStream,
         todoListStream: subTodoStream,
         gridSize: _gridSize,
-        onTap: _openMemo,
-        onDoubleTap: _openMemoExpanded,
+        onTap: _handleMemoTap,
         onTodoTap: _openTodoList,
         onTodoLongPress: _showTodoActions,
         wrapBuilder: (memo, card) => _wrapMemoInContextMenu(memo, card),
@@ -2437,8 +2441,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         stream: ref.watch(untaggedMemosProvider),
         todoListStream: ref.watch(untaggedTodoListsProvider),
         gridSize: _gridSize,
-        onTap: _openMemo,
-        onDoubleTap: _openMemoExpanded,
+        onTap: _handleMemoTap,
         onTodoTap: _openTodoList,
         onTodoLongPress: _showTodoActions,
         wrapBuilder: (memo, card) => _wrapMemoInContextMenu(memo, card),
@@ -2464,8 +2467,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         stream: ref.watch(memosForTagProvider(tagId)),
         todoListStream: ref.watch(todoListsForTagProvider(tagId)),
         gridSize: _gridSize,
-        onTap: _openMemo,
-        onDoubleTap: _openMemoExpanded,
+        onTap: _handleMemoTap,
         onTodoTap: _openTodoList,
         onTodoLongPress: _showTodoActions,
         // 親タグフォルダ表示時のみ子タグバッジ用にIDを渡す
@@ -3053,14 +3055,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         _suppressAnimation = false;
       });
     } else {
-      // 通常モード: メモデータを直接渡して即表示（DBクエリ待ちなし）
+      // 通常モード: メモデータを直接渡して即時反映（ポストフレーム待ちなし）
+      // MemoInputArea は常時マウントされているので currentState を同期で呼んで OK。
+      // 先に loadMemoDirectly を呼んで _directLoadApplied フラグを立てておくと、
+      // 後続の didUpdateWidget が _loadMemo (DBクエリ) を skip する。
+      _inputAreaKey.currentState?.loadMemoDirectly(memo);
       setState(() {
         _editingMemoId = memo.id;
         _highlightedMemoId = memo.id;
       });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _inputAreaKey.currentState?.loadMemoDirectly(memo);
-      });
+    }
+  }
+
+  /// MemoCard タップのエントリポイント。onDoubleTap を外して kDoubleTapTimeout
+  /// 待ちを消しているので、ここで前回タップからの経過時間を見てダブルタップを
+  /// 自前検出する。単タップは即時 _openMemo、300ms 以内に同じメモを再タップ
+  /// したら _openMemoExpanded（閲覧窓を最大化）へ。
+  void _handleMemoTap(Memo memo) {
+    final now = DateTime.now();
+    final elapsed = now.difference(_lastMemoTapAt);
+    final sameMemo = _lastTappedMemoId == memo.id;
+    _lastMemoTapAt = now;
+    _lastTappedMemoId = memo.id;
+    if (sameMemo && elapsed < const Duration(milliseconds: 300)) {
+      _openMemoExpanded(memo);
+    } else {
+      _openMemo(memo);
     }
   }
 
@@ -4831,7 +4851,6 @@ class _MemoGridView extends StatelessWidget {
   final AsyncValue<List<TodoList>>? todoListStream;
   final GridSizeOption gridSize;
   final void Function(Memo) onTap;
-  final void Function(Memo)? onDoubleTap;
   final void Function(TodoList)? onTodoTap;
   final void Function(TodoList)? onTodoLongPress;
   final MemoCardWrapper? wrapBuilder;
@@ -4868,7 +4887,6 @@ class _MemoGridView extends StatelessWidget {
     this.todoListStream,
     required this.gridSize,
     required this.onTap,
-    this.onDoubleTap,
     this.onTodoTap,
     this.onTodoLongPress,
     this.wrapBuilder,
@@ -4944,7 +4962,6 @@ class _MemoGridView extends StatelessWidget {
       key: ValueKey('memocard_${memo.id}'),
       memo: memo,
       onTap: () => onTap(memo),
-      onDoubleTap: onDoubleTap != null ? () => onDoubleTap!(memo) : null,
       parentTagId: parentTagId,
       gridSize: gridSize,
       isHighlighted: memo.id == editingMemoId || memo.id == highlightedMemoId,
