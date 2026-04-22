@@ -9,6 +9,7 @@ import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/keyboard_done_bar.dart';
+import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
@@ -317,6 +318,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                   ),
 
                   // メモカード（スワイプ＋スライドアニメーション）+ ロックボタン
+                  // iPad では中央寄せで最大幅 620 に制限（横長になりすぎないため）
                   GestureDetector(
             onHorizontalDragEnd: (details) {
               final v = details.primaryVelocity ?? 0;
@@ -326,7 +328,10 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                 _prevCard();
               }
             },
-            child: Padding(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 620),
+                child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 250),
@@ -394,43 +399,51 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                 ),
               ),
             ),
+              ),
+            ),
           ),
 
                   // 日付情報（AnimatedSizeで滑らかに出し入れ）
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeInOut,
-                    alignment: Alignment.topCenter,
-                    child: (_isCardExpanded || _rouletteOpen)
-                        ? const SizedBox(width: double.infinity, height: 0)
-                        : Align(
-                            alignment: Alignment.centerLeft,
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(24, 6, 24, 0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '更新日：${_formatDate(memo.updatedAt)}',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.grey.withValues(alpha: 0.5),
-                                    ),
+                  // カードと同じ max-width で中央寄せし、左端をカードに揃える
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 620),
+                      child: AnimatedSize(
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeInOut,
+                        alignment: Alignment.topCenter,
+                        child: (_isCardExpanded || _rouletteOpen)
+                            ? const SizedBox(width: double.infinity, height: 0)
+                            : Align(
+                                alignment: Alignment.centerLeft,
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(24, 6, 24, 0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '更新日：${_formatDate(memo.updatedAt)}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.grey.withValues(alpha: 0.5),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '作成日：${_formatDate(memo.createdAt)}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.grey.withValues(alpha: 0.5),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '作成日：${_formatDate(memo.createdAt)}',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.grey.withValues(alpha: 0.5),
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
-                          ),
+                      ),
+                    ),
                   ),
 
                   // カード下のスペース（Expanded内。最大化時に縮みカードが上下に伸びる）
@@ -445,8 +458,12 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           ),
 
           // 弧型コントローラー（弧線 + 3編集ボタン、最大化中も常時表示・固定位置）
+          // iPad で画面が広いと弧が浅くなってボタンが沿わなくなるので、
+          // 弧の幅を iPhone 相当に制限して中央寄せにする。
           Builder(builder: (context) {
-            final sw = MediaQuery.of(context).size.width;
+            final screenW = MediaQuery.of(context).size.width;
+            // iPhone ≈ 390〜430pt。それより広ければ制限（弧の見た目を iPhone 相当に）
+            final sw = screenW > 480 ? 480.0 : screenW;
             const arcH = 70.0;   // 弧の高さ
             const arcOff = 53.0; // 弧のY offset
             const btnHalf = 16.0;
@@ -457,7 +474,8 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
             double arcY(double t) =>
                 arcH * ((1 - t) * (1 - t) + t * t) + arcOff - btnHalf;
 
-            return SizedBox(
+            return Center(
+              child: SizedBox(
               height: arcH + arcOff, // 弧+ボタン全体のタップ領域を確保（下のスペーサーで相殺）
               width: sw,
               child: Stack(
@@ -517,6 +535,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                   ),
                 ],
               ),
+            ),
             );
           }),
 
@@ -524,11 +543,16 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           const SizedBox(height: 10),
 
           // 下部操作パネル（本家準拠: ZStack方式）
-          Padding(
+          // iPhone 相当の幅で中央寄せ（iPad で横に広がりすぎないように）
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
             child: SizedBox(
               height: 70,
-              child: Stack(
+              child: LayoutBuilder(builder: (context, constraints) {
+                return Stack(
                 clipBehavior: Clip.none,
                 children: [
                   // 左端: 前へ（三角形）
@@ -578,9 +602,9 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                       ),
                     ),
                   ),
-                  // ロックボタン（削除の右上あたり）
+                  // ロックボタン（削除の右上あたり）。削除との隙間を広めに。
                   Positioned(
-                    left: MediaQuery.of(context).size.width / 2 - 20 + 54,
+                    left: constraints.maxWidth / 2 - 20 + 72,
                     top: 10,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -668,7 +692,10 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                     ),
                   ),
                 ],
-              ),
+              );
+              }),
+            ),
+          ),
             ),
           ),
         ],
@@ -1622,6 +1649,29 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         child: Column(
           children: [
+            // 左上: 戻る（フィルタ画面へ戻す）
+            Row(
+              children: [
+                TextButton(
+                  onPressed: () => setState(() => _phase = _Phase.filter),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 36),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.arrow_back_ios, size: 16, color: Colors.blue),
+                      SizedBox(width: 4),
+                      Text('戻る',
+                          style: TextStyle(fontSize: 15, color: Colors.blue)),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+              ],
+            ),
             const Spacer(),
             const Icon(Icons.dashboard_customize_rounded,
                 size: 44, color: Colors.orange),
@@ -1645,26 +1695,31 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
             ),
             const SizedBox(height: 20),
 
-            // セット一覧
-            Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFFEFEFF4),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                children: [
-                  for (int i = 0; i < _totalSets; i++) ...[
-                    _buildSetRow(i, total),
-                    if (i < _totalSets - 1)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 50),
-                        child: Divider(
-                          height: 1,
-                          color: Colors.grey[300],
-                        ),
-                      ),
-                  ],
-                ],
+            // セット一覧（iPad では中央寄せで最大幅 560 に制限）
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFEFF4),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      for (int i = 0; i < _totalSets; i++) ...[
+                        _buildSetRow(i, total),
+                        if (i < _totalSets - 1)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 50),
+                            child: Divider(
+                              height: 1,
+                              color: Colors.grey[300],
+                            ),
+                          ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -1675,9 +1730,9 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                 color: Colors.grey[500],
               ),
             ),
-            const Spacer(),
 
-            // 開始ボタン
+            // ボタン群はセット一覧直下に程よく配置
+            const SizedBox(height: 24),
             _primaryButton(
               label: '開始',
               onTap: () {
@@ -1696,6 +1751,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                 ),
               ),
             ),
+            const Spacer(flex: 2),
           ],
         ),
       ),
@@ -1775,54 +1831,61 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
             const SizedBox(height: 28),
 
             // 戦績カード（白地・角丸・軽い影）
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
+            // iPad では中央寄せで最大幅 560 に制限
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.06),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  _resultRow(
-                    icon: Icons.label_rounded,
-                    iconColor: Colors.blue,
-                    count: tagged,
-                    suffix: 'にタグ付け',
+                  child: Column(
+                    children: [
+                      _resultRow(
+                        icon: Icons.label_rounded,
+                        iconColor: Colors.blue,
+                        count: tagged,
+                        suffix: 'にタグ付け',
+                      ),
+                      _resultDivider(),
+                      _resultRow(
+                        icon: Icons.text_fields_rounded,
+                        iconColor: Colors.grey,
+                        count: titled,
+                        suffix: 'にタイトル付け',
+                      ),
+                      _resultDivider(),
+                      _resultRow(
+                        icon: Icons.edit_rounded,
+                        iconColor: Colors.blue,
+                        count: edited,
+                        suffix: 'の本文を編集',
+                      ),
+                      _resultDivider(),
+                      _resultRow(
+                        icon: CupertinoIcons.delete_simple,
+                        iconColor: Colors.red,
+                        count: deleted,
+                        suffix: 'を削除',
+                        isDestructive: true,
+                        onReview: deleted > 0 ? _showDeletedReview : null,
+                      ),
+                    ],
                   ),
-                  _resultDivider(),
-                  _resultRow(
-                    icon: Icons.text_fields_rounded,
-                    iconColor: Colors.grey,
-                    count: titled,
-                    suffix: 'にタイトル付け',
-                  ),
-                  _resultDivider(),
-                  _resultRow(
-                    icon: Icons.edit_rounded,
-                    iconColor: Colors.blue,
-                    count: edited,
-                    suffix: 'の本文を編集',
-                  ),
-                  _resultDivider(),
-                  _resultRow(
-                    icon: CupertinoIcons.delete_simple,
-                    iconColor: Colors.red,
-                    count: deleted,
-                    suffix: 'を削除',
-                    isDestructive: true,
-                    onReview: deleted > 0 ? _showDeletedReview : null,
-                  ),
-                ],
+                ),
               ),
             ),
 
-            const Spacer(flex: 3),
+            // ボタン群は戦績カード直下に程よく配置
+            const SizedBox(height: 24),
 
             // メインボタン: オレンジ「完了」/「次のセットへ」
             _primaryButton(
@@ -1863,6 +1926,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                 ],
               ),
             ),
+            const Spacer(flex: 2),
           ],
         ),
       ),
@@ -1938,8 +2002,10 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
     IconData? icon,
     required VoidCallback onTap,
   }) {
-    return SizedBox(
-      width: double.infinity,
+    // 固定幅で中央寄せ（画面幅いっぱい・下端張り付きを避ける）
+    return Center(
+      child: SizedBox(
+      width: 240,
       height: 52,
       child: Material(
         color: Colors.orange,
@@ -1968,6 +2034,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
             ),
           ),
         ),
+      ),
       ),
     );
   }
@@ -3117,28 +3184,34 @@ class _QuickSortFilterPhaseState
                   color: Colors.blue)),
           const SizedBox(height: 16),
 
-          // スクロール領域
+          // スクロール領域。開始ボタンもこの中に入れて、
+          // フィルター直下に程よく配置する（下端張り付きを避ける）。
           Expanded(
             child: SingleChildScrollView(
               child: Column(
                 children: [
-                  // フィルタ条件リスト
                   _buildFilterList(),
+                  const SizedBox(height: 16),
+                  _buildStartButton(),
                   const SizedBox(height: 24),
                 ],
               ),
             ),
           ),
-
-          // 開始ボタン（固定フッター）
-          _buildStartButton(),
         ],
       ),
     );
   }
 
   Widget _buildFilterList() {
-    return Padding(
+    // iPad では画面幅一杯に広げず、中央寄せで最大幅を制限する
+    final isTablet = Responsive.isTablet(context);
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: isTablet ? 560 : double.infinity,
+        ),
+        child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         decoration: BoxDecoration(
@@ -3221,6 +3294,8 @@ class _QuickSortFilterPhaseState
               onTap: () => _toggleFilter('all'),
             ),
           ],
+        ),
+      ),
         ),
       ),
     );
@@ -3341,33 +3416,35 @@ class _QuickSortFilterPhaseState
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      child: SizedBox(
-        width: double.infinity,
-        height: 52,
-        child: ElevatedButton(
-          onPressed: enabled ? () => widget.onStart(_filteredMemos) : null,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: enabled ? Colors.orange : Colors.grey[400],
-            foregroundColor: Colors.white,
-            disabledBackgroundColor: Colors.grey[300],
-            disabledForegroundColor: Colors.white70,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14)),
-            elevation: enabled ? 2 : 0,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.bolt, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                '開始（$count件）',
-                style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.3),
-              ),
-            ],
+      child: Center(
+        child: SizedBox(
+          width: 240,
+          height: 52,
+          child: ElevatedButton(
+            onPressed: enabled ? () => widget.onStart(_filteredMemos) : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: enabled ? Colors.orange : Colors.grey[400],
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: Colors.grey[300],
+              disabledForegroundColor: Colors.white70,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+              elevation: enabled ? 2 : 0,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.bolt, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  '開始（$count件）',
+                  style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.3),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -3600,40 +3677,37 @@ class _QuickSortIntro extends StatelessWidget {
             ),
           ),
 
-          const Spacer(flex: 3),
-
-          // 次へボタン
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                onPressed: onNext,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                  elevation: 2,
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '次へ',
-                      style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.3),
-                    ),
-                    SizedBox(width: 6),
-                    Icon(Icons.arrow_forward_ios, size: 16),
-                  ],
-                ),
+          // 次へボタン（説明文の下に程よく置く。下端には張り付けない）
+          const SizedBox(height: 32),
+          SizedBox(
+            width: 220,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: onNext,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+                elevation: 2,
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '次へ',
+                    style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.3),
+                  ),
+                  SizedBox(width: 6),
+                  Icon(Icons.arrow_forward_ios, size: 16),
+                ],
               ),
             ),
           ),
+          const Spacer(flex: 3),
         ],
       ),
     );
