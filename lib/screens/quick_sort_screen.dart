@@ -481,14 +481,14 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
               child: Stack(
                     clipBehavior: Clip.none,
                     children: [
-                  // 弧の仕切り線
+                  // 弧の仕切り線（弧本体は sw 幅、両側は画面端まで水平線で延長）
                   Positioned(
                     top: arcOff,
-                    left: 0,
-                    right: 0,
+                    left: -((screenW - sw) / 2),
+                    right: -((screenW - sw) / 2),
                     child: CustomPaint(
-                      size: Size(sw, arcH),
-                      painter: _ArcDividerPainter(),
+                      size: Size(screenW, arcH),
+                      painter: _ArcDividerPainter(arcWidth: sw),
                     ),
                   ),
                   // 本文（中央 t=0.5）
@@ -4073,6 +4073,11 @@ class _TrianglePainter extends CustomPainter {
 }
 
 class _ArcDividerPainter extends CustomPainter {
+  /// 中央の弧の実幅。null なら全幅で弧を描く（従来挙動）。
+  /// 値を渡すと、中央 arcWidth で弧を描き、その左右は水平線で size.width まで延長。
+  final double? arcWidth;
+  _ArcDividerPainter({this.arcWidth});
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
@@ -4081,17 +4086,31 @@ class _ArcDividerPainter extends CustomPainter {
       ..strokeWidth = 2.5;
 
     final path = Path();
-    // 本家準拠: 左下→右下、制御点は中央上（height:70のframeでminY=0）
-    path.moveTo(0, size.height);
-    path.quadraticBezierTo(
-      size.width / 2, 0,
-      size.width, size.height,
-    );
+    if (arcWidth == null || arcWidth! >= size.width) {
+      // 全幅で弧（本家 iPhone 相当: size.width = iPhone の画面幅）
+      path.moveTo(0, size.height);
+      path.quadraticBezierTo(
+        size.width / 2, 0,
+        size.width, size.height,
+      );
+    } else {
+      // iPad 等: 中央の arcWidth で弧、両側は水平線で画面端まで延長
+      final startX = (size.width - arcWidth!) / 2;
+      final endX = startX + arcWidth!;
+      path.moveTo(0, size.height);
+      path.lineTo(startX, size.height);
+      path.quadraticBezierTo(
+        size.width / 2, 0,
+        endX, size.height,
+      );
+      path.lineTo(size.width, size.height);
+    }
     canvas.drawPath(path, paint);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _ArcDividerPainter old) =>
+      old.arcWidth != arcWidth;
 }
 
 
