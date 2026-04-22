@@ -516,19 +516,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ContextMenuController.removeAny();
           FocusManager.instance.primaryFocus?.unfocus();
         },
-        child: Stack(
-          children: [
-            _buildMainContent(parentTags, parentTagsAsync, currentColor),
-            // 最大化中 + キーボード表示中: 消しゴムボタンを左にフロート
-            if (_isInputExpanded &&
-                MediaQuery.of(context).viewInsets.bottom > 0)
-              Positioned(
-                left: 16,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 6,
-                child: _buildFloatingEraserButton(),
-              ),
-          ],
-        ),
+        child: _buildMainContent(parentTags, parentTagsAsync, currentColor),
       )),
     );
   }
@@ -669,37 +657,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
         child: const Icon(Icons.close_fullscreen,
             size: 18, color: Colors.white),
-      ),
-    );
-  }
-
-  // 最大化中にキーボード左上にフロートする消しゴムボタン
-  Widget _buildFloatingEraserButton() {
-    final state = _inputAreaKey.currentState;
-    final hasContent = state?.hasContent ?? false;
-    final isFocused = state?.isContentFocused ?? false;
-    return GestureDetector(
-      onTap: hasContent ? () => state?.clearBody() : null,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: (isFocused && hasContent)
-              ? Colors.orange.withValues(alpha: 0.6)
-              : const Color.fromRGBO(142, 142, 147, 0.15),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.15),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: const Center(
-          child: EraserGlyph(),
-        ),
       ),
     );
   }
@@ -1112,8 +1069,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  /// 要素3: 機能バー（編集中/通常/選択モードで切替）
+  /// 要素3: 機能バー（通常/選択モードで切替）
   /// 横画面では常時表示（爆速整理・ToDo等を消さない）
+  /// 編集コンパクト中（narrow + 入力フォーカス + キーボード表示）は非表示にして、
+  /// 消しゴムなど編集用ボタンは入力エリアフッターに集約する。
   Widget _buildFunctionBarSection() {
     final isWide = Responsive.isWide(context);
     return AnimatedContainer(
@@ -1124,6 +1083,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           : (_isInputExpanded ||
                   _isMemoListExpanded ||
                   _isInFolderSearch ||
+                  _isEditingCompact ||
                   (_isSearchFocused && !_isSearchActive))
               ? 0
               : null,
@@ -1137,9 +1097,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             opacity: _isSelectMode ? 0 : 1,
             child: IgnorePointer(
               ignoring: _isSelectMode,
-              child: _isEditingCompact
-                  ? _buildEditingBar()
-                  : _buildFunctionBar(),
+              child: _buildFunctionBar(),
             ),
           ),
           if (_isSelectMode)
@@ -1501,7 +1459,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           // 爆速モード
           GestureDetector(
             onTap: () => Navigator.of(context)
-                .push(MaterialPageRoute(
+                .push(_FastMaterialPageRoute(
                   builder: (_) => const QuickSortScreen(),
                 ))
                 .then((_) => FocusManager.instance.primaryFocus?.unfocus()),
@@ -1512,7 +1470,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           // ToDoリスト
           GestureDetector(
             onTap: () => Navigator.of(context)
-                .push(MaterialPageRoute(
+                .push(_FastMaterialPageRoute(
                   builder: (_) => const TodoListsScreen(),
                 ))
                 .then((_) => FocusManager.instance.primaryFocus?.unfocus()),
@@ -1629,42 +1587,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
         );
       },
-    );
-  }
-
-  Widget _buildEditingBar() {
-    final state = _inputAreaKey.currentState;
-    final hasContent = state?.hasContent ?? false;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-      child: Row(
-        children: [
-          // 左端: 消しゴム（本文あるときのみ有効）
-          // EraserGlyphは白線なので丸背景付きで囲む
-          GestureDetector(
-            onTap: hasContent ? () => state?.clearBody() : null,
-            behavior: HitTestBehavior.opaque,
-            child: SizedBox(
-              width: 44,
-              height: 44,
-              child: Center(
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: hasContent
-                        ? Colors.orange.withValues(alpha: 0.6)
-                        : const Color.fromRGBO(142, 142, 147, 0.15),
-                  ),
-                  child: const Center(child: EraserGlyph()),
-                ),
-              ),
-            ),
-          ),
-          const Spacer(),
-        ],
-      ),
     );
   }
 
@@ -6394,4 +6316,16 @@ class _ChevronPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ChevronPainter old) => old.up != up;
+}
+
+/// 遷移アニメ時間を 150ms に縮めた MaterialPageRoute。
+/// ToDo / 爆速モードなど、もたつきを感じやすい画面遷移で使う。
+class _FastMaterialPageRoute<T> extends MaterialPageRoute<T> {
+  _FastMaterialPageRoute({required super.builder});
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 150);
+
+  @override
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 150);
 }

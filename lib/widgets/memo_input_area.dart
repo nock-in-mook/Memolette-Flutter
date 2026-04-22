@@ -2179,6 +2179,26 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                       : Colors.grey.shade300),
             );
           }),
+          // 消しゴム（本文クリア）はゴミ箱の右。編集時のみ表示。
+          if (!inViewMode) ...[
+            SizedBox(width: sp(14)),
+            Builder(builder: (_) {
+              final hasContent = _contentController.text.isNotEmpty;
+              // 中くらいのオレンジで目立たせる。本文なしのときは薄く。
+              final color = hasContent
+                  ? const Color(0xFFFB8C00) // orange 600 相当
+                  : const Color(0x66FB8C00);
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: hasContent ? clearBody : () {},
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: EraserGlyph(color: color),
+                ),
+              );
+            }),
+          ],
           SizedBox(width: sp(14)),
           // MD (縦並び: 上ラベル + 下スイッチ)
           // Column全体をタップ領域にして、テキスト部分タップでもトグル動作
@@ -2280,8 +2300,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             ),
           ],
           // Undo / Redo は編集時のみ。iPad は左右に大きめの余白で独立感を出す
+          // 画像追加と Undo の間隔は Undo/Redo 間の距離と揃える
           if (!inViewMode) ...[
-            SizedBox(width: isTablet ? 32 : 16),
+            SizedBox(width: isTablet ? 36 : 24),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _canUndo ? _undo : null,
@@ -2613,18 +2634,24 @@ class _BgColorPickerDialogState extends State<_BgColorPickerDialog> {
 }
 
 class EraserGlyph extends StatelessWidget {
-  const EraserGlyph();
+  /// 線の色。省略時は白（丸い色背景の上に置く前提）。
+  /// フッター等で背景なしに置く場合は明示的にグレー系を渡すこと。
+  final Color? color;
+  const EraserGlyph({this.color});
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
       size: const Size(28, 28),
-      painter: EraserPainter(),
+      painter: EraserPainter(color: color ?? Colors.white),
     );
   }
 }
 
 class EraserPainter extends CustomPainter {
+  final Color color;
+  EraserPainter({this.color = Colors.white});
+
   @override
   void paint(Canvas canvas, Size size) {
     canvas.translate(size.width / 2, size.height / 2);
@@ -2640,17 +2667,17 @@ class EraserPainter extends CustomPainter {
       const Radius.circular(0.8),
     );
 
-    // 線画のみ (本家準拠: シンプルな白線)
     final line = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.6
-      ..color = Colors.white;
+      ..color = color;
     canvas.drawRRect(sleeve, line);
     canvas.drawRRect(tip, line);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant EraserPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 // 文字数上限フォーマッタ。超過時は LengthLimitingTextInputFormatter と同じく
