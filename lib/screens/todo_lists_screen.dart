@@ -642,7 +642,10 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
           top: false,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: Column(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 500),
+                child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -730,6 +733,8 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
                 ),
               ],
             ),
+              ),
+            ),
           ),
         );
       },
@@ -774,7 +779,9 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
         barrierColor: Colors.black.withValues(alpha: 0.3),
         transitionDuration: const Duration(milliseconds: 150),
         pageBuilder: (context, _, __) => Center(
-        child: Padding(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40),
           child: Material(
             color: Colors.transparent,
@@ -825,6 +832,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
               ),
             ),
           ),
+        ),
         ),
       ),
         transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
@@ -933,7 +941,9 @@ class _NewListDialogState extends State<_NewListDialog> {
       child: Padding(
         padding: const EdgeInsets.only(bottom: 300),
         child: Center(
-        child: Padding(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40),
         child: Material(
           color: Colors.white,
@@ -1068,6 +1078,7 @@ class _NewListDialogState extends State<_NewListDialog> {
           ),
         ),
       ),
+    ),
     ),
     ),
     );
