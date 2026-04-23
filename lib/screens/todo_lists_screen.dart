@@ -475,7 +475,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
 
   Widget _buildToolbar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 2, 14, 4),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
       child: Row(
         children: [
           // 閉じる
@@ -499,14 +499,14 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
             ),
           ),
           const Spacer(),
-          // 新規ボタン
+          // 新規ボタン（カプセル型）
           GestureDetector(
             onTap: _createListAndOpen,
             behavior: HitTestBehavior.opaque,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: const Color(0xFF007AFF), width: 1.5),
               ),
               child: const Row(
