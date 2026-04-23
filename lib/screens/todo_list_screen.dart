@@ -61,7 +61,14 @@ class _FlatRow {
 
 class TodoListScreen extends ConsumerStatefulWidget {
   final String listId;
-  const TodoListScreen({super.key, required this.listId});
+  /// 埋め込みモード: iPad 横画面の右カラムに埋め込まれる時は true。
+  /// Scaffold/SafeArea を外し、戻るボタンを非表示にする（閉じる動線は左側にあるため）。
+  final bool embedded;
+  const TodoListScreen({
+    super.key,
+    required this.listId,
+    this.embedded = false,
+  });
 
   @override
   ConsumerState<TodoListScreen> createState() => _TodoListScreenState();
@@ -905,59 +912,62 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   // ========================================
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    final content = GestureDetector(
       onTap: () {
         _closeSwipeIfOpen();
         // ルーレット閉じはグレー背景タップで行う（ここで閉じると履歴ボタン等が競合する）
       },
       behavior: HitTestBehavior.translucent,
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        body: SafeArea(
-          child: Stack(
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildToolbar(),
-                  _buildTitle(),
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    height: 0.5,
-                    color: Colors.black.withValues(alpha: 0.15),
-                  ),
-                  Expanded(
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        _buildItemList(),
-                        // フッター（下端フロート）
-                        Positioned(
-                          left: 0, right: 0, bottom: 8,
-                          child: _buildFooter(),
-                        ),
-                        // ルーレットオーバーレイ（常に配置、アニメーションで開閉）
-                        _buildRouletteOverlay(),
-                      ],
-                    ),
-                  ),
-                ],
+              _buildToolbar(),
+              _buildTitle(),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                height: 0.5,
+                color: Colors.black.withValues(alpha: 0.15),
               ),
-              // タグ履歴オーバーレイ（トレー下端のすぐ下に表示）
-              if (_showTagHistory && _rouletteOpen)
-                Positioned(
-                  right: 16,
-                  top: 273 + 150,
-                  child: Material(
-                    elevation: 8,
-                    borderRadius: BorderRadius.circular(10),
-                    child: _buildTagHistoryOverlay(),
-                  ),
+              Expanded(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    _buildItemList(),
+                    // フッター（下端フロート）
+                    Positioned(
+                      left: 0, right: 0, bottom: 8,
+                      child: _buildFooter(),
+                    ),
+                    // ルーレットオーバーレイ（常に配置、アニメーションで開閉）
+                    _buildRouletteOverlay(),
+                  ],
                 ),
+              ),
             ],
           ),
-        ),
+          // タグ履歴オーバーレイ（トレー下端のすぐ下に表示）
+          if (_showTagHistory && _rouletteOpen)
+            Positioned(
+              right: 16,
+              top: 273 + 150,
+              child: Material(
+                elevation: 8,
+                borderRadius: BorderRadius.circular(10),
+                child: _buildTagHistoryOverlay(),
+              ),
+            ),
+        ],
       ),
+    );
+    if (widget.embedded) {
+      // iPad 横画面の右カラム埋め込み: Scaffold/SafeArea は親側で担保
+      return ColoredBox(color: Colors.white, child: content);
+    }
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(child: content),
     );
   }
 
@@ -1083,37 +1093,39 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
               ],
             ),
           ),
-          Positioned(
-            left: 12,
-            top: 4,
-            child: GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 4,
-                      offset: const Offset(0, 1),
+          // 戻るボタン（埋め込みモードでは非表示: 左カラム側に閉じる導線あり）
+          if (!widget.embedded)
+            Positioned(
+              left: 12,
+              top: 4,
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: const Text(
+                    '戻る',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      fontFamily: 'Hiragino Sans',
+                      color: Colors.black87,
                     ),
-                  ],
-                ),
-                child: const Text(
-                  '戻る',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    fontFamily: 'Hiragino Sans',
-                    color: Colors.black87,
                   ),
                 ),
               ),
             ),
-          ),
           // 右上: 全展開/全収納ボタン
           Positioned(
             right: 12,

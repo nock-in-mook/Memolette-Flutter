@@ -8,6 +8,7 @@ import 'package:drift/drift.dart' hide Column;
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/keyboard_done_bar.dart';
+import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
@@ -27,6 +28,10 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
   // 本家 TodoListsView の緑色（red:0.55, green:0.82, blue:0.55）
   static const Color _todoTabColor = Color(0xFF8CD18C);
 
+  /// iPad 横画面スプリットビュー時に右カラムで開いている listId。
+  /// narrow レイアウト (iPhone / iPad 縦) では未使用。
+  String? _selectedListId;
+
   Stream<List<TodoList>> _watchLists() {
     final db = ref.read(databaseProvider);
     return (db.select(db.todoLists)
@@ -43,6 +48,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isWide = Responsive.isWide(context);
     return Scaffold(
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: false,
@@ -50,31 +56,105 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
         padding: EdgeInsets.only(
           top: MediaQuery.of(context).viewPadding.top - 4,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ツールバー（閉じる + 新規ボタン）
-            _buildToolbar(),
-            // TODOタブ
-            _buildTodoTab(),
-            // 緑色のフォルダ本体（リストがあれば一覧、なければ空状態）
-            Expanded(
-              child: Container(
-                color: _todoTabColor,
-                child: StreamBuilder<List<TodoList>>(
-                  stream: _watchLists(),
-                  builder: (context, snap) {
-                    final lists = snap.data ?? const <TodoList>[];
-                    if (lists.isEmpty) return _buildEmptyState();
-                    return _buildListGrid(lists);
-                  },
+        child: StreamBuilder<List<TodoList>>(
+          stream: _watchLists(),
+          builder: (context, snap) {
+            final lists = snap.data ?? const <TodoList>[];
+            if (isWide) {
+              _ensureSelection(lists);
+              return _buildWideLayout(lists);
+            }
+            return _buildNarrowLayout(lists);
+          },
+        ),
+      )),
+    );
+  }
+
+  /// 狭幅（iPhone / iPad 縦）: 従来どおり縦積み。詳細は画面遷移で開く。
+  Widget _buildNarrowLayout(List<TodoList> lists) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildToolbar(),
+        _buildTodoTab(),
+        Expanded(
+          child: Container(
+            color: _todoTabColor,
+            child: lists.isEmpty
+                ? _buildEmptyState()
+                : _buildListGrid(lists),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// iPad 横画面: 左=リスト一覧 / 右=選択中リストの詳細。
+  Widget _buildWideLayout(List<TodoList> lists) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // 左カラム（リスト一覧）
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildToolbar(),
+              _buildTodoTab(),
+              Expanded(
+                child: Container(
+                  color: _todoTabColor,
+                  child: lists.isEmpty
+                      ? _buildEmptyState()
+                      : _buildListGrid(lists),
                 ),
               ),
-            ),
-          ],
-        )),
-      ),
+            ],
+          ),
+        ),
+        const VerticalDivider(width: 1, thickness: 1),
+        // 右カラム（詳細）
+        Expanded(
+          child: _buildDetailPane(lists),
+        ),
+      ],
     );
+  }
+
+  /// 右カラム。lists が空 or 未選択なら案内、選ばれていれば TodoListScreen を埋め込む。
+  Widget _buildDetailPane(List<TodoList> lists) {
+    final id = _selectedListId;
+    if (id == null || lists.isEmpty) {
+      return Center(
+        child: Text(
+          'リストを選択してください',
+          style: TextStyle(
+            fontSize: 15,
+            fontFamily: 'Hiragino Sans',
+            color: Colors.black.withValues(alpha: 0.4),
+          ),
+        ),
+      );
+    }
+    return TodoListScreen(
+      // listId 変更で内部 State をリセットしたいので key に含める
+      key: ValueKey(id),
+      listId: id,
+      embedded: true,
+    );
+  }
+
+  /// 選択中リストが削除された/未選択の場合に、先頭を自動選択する。
+  void _ensureSelection(List<TodoList> lists) {
+    final current = _selectedListId;
+    if (current != null && lists.any((l) => l.id == current)) return;
+    final next = lists.isEmpty ? null : lists.first.id;
+    if (current == next) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() => _selectedListId = next);
+    });
   }
 
   /// ルートアイテムをwatch（リスト単位）
@@ -379,6 +459,11 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
   }
 
   void _openList(String id) {
+    // iPad 横画面は右カラムで開く（画面遷移しない）
+    if (Responsive.isWide(context)) {
+      setState(() => _selectedListId = id);
+      return;
+    }
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (_, _, _) => TodoListScreen(listId: id),
@@ -529,7 +614,11 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
     final created = await db.createTodoList(title: title);
     final id = created.id;
     if (!mounted) return;
-    // 即時遷移（スライドアニメなし）
+    // iPad 横画面は右カラムで開く、それ以外は画面遷移
+    if (Responsive.isWide(context)) {
+      setState(() => _selectedListId = id);
+      return;
+    }
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (_, _, _) => TodoListScreen(listId: id),
