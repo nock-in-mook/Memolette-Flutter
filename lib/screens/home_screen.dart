@@ -17,6 +17,7 @@ import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
+import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/memo_card.dart';
 import '../widgets/memo_input_area.dart';
 import '../widgets/move_to_top_icon.dart';
@@ -218,27 +219,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Future<void> _confirmDeleteSelected() async {
     final count = _selectedCount;
     if (count == 0) return;
-    final confirmed = await focusSafe(
-      context,
-      () => showCupertinoDialog<bool>(
-        context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: Text('$count件を削除します。よろしいですか？'),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('キャンセル'),
-            ),
-            CupertinoDialogAction(
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('削除'),
-            ),
-          ],
-        ),
-      ),
+    final confirmed = await showConfirmDeleteDialog(
+      context: context,
+      title: '$count件を削除',
+      message: '選択した$count件を削除します。よろしいですか？',
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
     final memoIds = _selectedMemoIds.toList();
     final todoIds = _selectedTodoIds.toList();
     final db = ref.read(databaseProvider);
@@ -923,10 +909,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return Column(
       children: [
         // 1. 検索バー / 入力欄最大化中はミニバー。
-        // 検索バー自体は TextField 側でフォーカスを取る必要があるため
-        // _wrapUnfocusOnTap で包まない（包むと入力欄フォーカス中のタップで
-        // 先に unfocus されて検索バーへフォーカスが移らない）。
-        _buildSearchBarSection(),
+        // 検索バー周辺（+ボタン、⚙、余白）をタップしたら現フォーカスを外す。
+        // Listener は translucent なので検索 TextField 自身のタップは
+        // 子の GestureDetector に届きフォーカス取得される。
+        _wrapUnfocusOnTap(_buildSearchBarSection()),
         // 2. メモ入力エリア（高さをアニメーション）
         _buildInputAreaSection(constraints, parentTags),
         // 3. 機能バー or 編集中バー（入力エリア以外 → unfocus 対象）
@@ -3567,28 +3553,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     if (memoCount == 0) {
       // メモが無いなら確認ダイアログだけ
-      final confirmed = await focusSafe(
-        context,
-        () => showCupertinoDialog<bool>(
-          context: context,
-          builder: (ctx) => CupertinoAlertDialog(
-            title: const Text('タグを削除'),
-            content: Text('「${tag.name}」を削除しますか?'),
-            actions: [
-              CupertinoDialogAction(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('キャンセル'),
-              ),
-              CupertinoDialogAction(
-                isDestructiveAction: true,
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('削除する'),
-              ),
-            ],
-          ),
-        ),
+      final confirmed = await showConfirmDeleteDialog(
+        context: context,
+        title: 'タグを削除',
+        message: '「${tag.name}」を削除しますか？',
       );
-      if (confirmed != true || !mounted) return;
+      if (!confirmed || !mounted) return;
       // 削除前のタブバースクロール位置を保存（削除で先頭に戻るのを防ぐ）
       final savedOffset = _tabBarScrollController.hasClients
           ? _tabBarScrollController.offset
@@ -3645,32 +3615,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (mode == null || !mounted) return;
 
     // ステップ2: 最終確認
-    final confirmed = await focusSafe(
-      context,
-      () => showCupertinoDialog<bool>(
-        context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('本当に削除しますか？'),
-          content: Text(
-            mode == 'withMemos'
-                ? '「${tag.name}」とそのメモが全て削除されます。この操作は取り消せません。'
-                : 'タグ「${tag.name}」が削除されます。メモは全て「タグなし」に変更されます。',
-          ),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('キャンセル'),
-            ),
-            CupertinoDialogAction(
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('削除する'),
-            ),
-          ],
-        ),
-      ),
+    final confirmed = await showConfirmDeleteDialog(
+      context: context,
+      title: '本当に削除しますか？',
+      message: mode == 'withMemos'
+          ? '「${tag.name}」とそのメモが全て削除されます。この操作は取り消せません。'
+          : 'タグ「${tag.name}」が削除されます。メモは全て「タグなし」に変更されます。',
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     // 削除前のタブバースクロール位置を保存（削除で先頭に戻るのを防ぐ）
     final savedOffset = _tabBarScrollController.hasClients
@@ -3946,27 +3898,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         break;
       case 'delete':
         if (!mounted) return;
-        final confirmed = await focusSafe(
-          context,
-          () => showCupertinoDialog<bool>(
-            context: context,
-            builder: (ctx) => CupertinoAlertDialog(
-              title: const Text('このメモを削除します。よろしいですか？'),
-              actions: [
-                CupertinoDialogAction(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('キャンセル'),
-                ),
-                CupertinoDialogAction(
-                  isDestructiveAction: true,
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: const Text('削除'),
-                ),
-              ],
-            ),
-          ),
+        final confirmed = await showConfirmDeleteDialog(
+          context: context,
+          title: 'メモを削除',
+          message: 'このメモを削除します。よろしいですか？',
         );
-        if (confirmed == true) {
+        if (confirmed) {
           await db.deleteMemo(memo.id);
           if (!mounted) return;
           // 削除したメモが入力欄に表示されていたらクリア
@@ -4146,79 +4083,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         }
         break;
       case 'delete':
-        // 削除確認ダイアログ
         if (!mounted) return;
-        final confirmed = await focusSafe(
-          context,
-          () => showGeneralDialog<bool>(
-            context: context,
-            barrierDismissible: true, barrierLabel: '',
-            barrierColor: Colors.black.withValues(alpha: 0.3),
-            transitionDuration: const Duration(milliseconds: 150),
-            pageBuilder: (ctx, _, __) => Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 40),
-              child: Material(
-                color: Colors.transparent,
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.15),
-                      blurRadius: 20, offset: const Offset(0, 4))],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text('ToDoリストを削除', style: TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w600,
-                        fontFamily: 'Hiragino Sans')),
-                      const SizedBox(height: 12),
-                      const Text('ToDoリストを削除します。よろしいですか？',
-                        style: TextStyle(fontSize: 13,
-                          fontFamily: 'Hiragino Sans',
-                          color: Color(0x993C3C43))),
-                      const SizedBox(height: 16),
-                      GestureDetector(
-                        onTap: () => Navigator.of(ctx).pop(true),
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8)),
-                          alignment: Alignment.center,
-                          child: const Text('削除する', style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w500,
-                            fontFamily: 'Hiragino Sans', color: Colors.red)),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      GestureDetector(
-                        onTap: () => Navigator.of(ctx).pop(false),
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          alignment: Alignment.center,
-                          child: const Text('キャンセル', style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w500,
-                            fontFamily: 'Hiragino Sans',
-                            color: Color(0x993C3C43))),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-            transitionBuilder: (_, anim, __, child) =>
-                FadeTransition(opacity: anim, child: child),
-          ),
+        final confirmed = await showConfirmDeleteDialog(
+          context: context,
+          title: 'ToDoリストを削除',
+          message: 'ToDoリストを削除します。よろしいですか？',
         );
-        if (confirmed == true) {
+        if (confirmed) {
           await (db.delete(db.todoItems)
                 ..where((t) => t.listId.equals(list.id)))
               .go();

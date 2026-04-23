@@ -12,6 +12,7 @@ import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
+import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/trapezoid_tab_shape.dart';
 import '../widgets/wide_todo_pane.dart';
 import 'todo_list_screen.dart';
@@ -769,75 +770,14 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
     }
   }
 
-  /// 削除確認ダイアログ
-  void _showDeleteConfirmDialog(TodoList list) {
-    focusSafe(
-      context,
-      () => showGeneralDialog(
-        context: context,
-        barrierDismissible: true, barrierLabel: '',
-        barrierColor: Colors.black.withValues(alpha: 0.3),
-        transitionDuration: const Duration(milliseconds: 150),
-        pageBuilder: (context, _, __) => Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white, borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 20, offset: const Offset(0, 4))],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('ToDoリストを削除', style: TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Hiragino Sans')),
-                  const SizedBox(height: 12),
-                  const Text('ToDoリストを削除します。よろしいですか？',
-                    style: TextStyle(fontSize: 13, fontFamily: 'Hiragino Sans',
-                      color: Color(0x993C3C43))),
-                  const SizedBox(height: 16),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      _deleteList(list.id);
-                    },
-                    child: Container(
-                      width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8)),
-                      alignment: Alignment.center,
-                      child: const Text('削除する', style: TextStyle(fontSize: 14,
-                        fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans', color: Colors.red)),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
-                    child: Container(
-                      width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10),
-                      alignment: Alignment.center,
-                      child: const Text('キャンセル', style: TextStyle(fontSize: 14,
-                        fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans',
-                        color: Color(0x993C3C43))),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        ),
-      ),
-        transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
-      ),
+  /// 削除確認ダイアログ（共通部品 showConfirmDeleteDialog 使用）
+  Future<void> _showDeleteConfirmDialog(TodoList list) async {
+    final confirmed = await showConfirmDeleteDialog(
+      context: context,
+      title: 'ToDoリストを削除',
+      message: 'ToDoリストを削除します。よろしいですか？',
     );
+    if (confirmed) await _deleteList(list.id);
   }
 
   /// リストと配下の全アイテムを削除

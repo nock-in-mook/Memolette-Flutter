@@ -9,6 +9,7 @@ import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
+import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/frosted_alert_dialog.dart';
 import '../widgets/new_tag_sheet.dart';
 import '../widgets/tag_dial_view.dart';
@@ -428,88 +429,13 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     });
   }
 
-  void _showMemoDeleteDialog(String itemId) {
-    focusSafe(
-      context,
-      () => showGeneralDialog(
-        context: context,
-        barrierDismissible: true,
-        barrierLabel: '',
-        barrierColor: Colors.black.withValues(alpha: 0.3),
-        transitionDuration: const Duration(milliseconds: 150),
-        pageBuilder: (context, anim1, anim2) {
-          return Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.15),
-                      blurRadius: 20,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('メモを削除',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
-                        fontFamily: 'Hiragino Sans')),
-                    const SizedBox(height: 12),
-                    Text('このメモを削除しますか？',
-                      style: TextStyle(fontSize: 13, fontFamily: 'Hiragino Sans',
-                        color: Colors.black.withValues(alpha: 0.5))),
-                    const SizedBox(height: 16),
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.of(context).pop();
-                        _saveMemo(itemId, '');
-                      },
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        alignment: Alignment.center,
-                        child: const Text('削除する',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500,
-                            fontFamily: 'Hiragino Sans', color: Colors.red)),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    GestureDetector(
-                      onTap: () => Navigator.of(context).pop(),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        alignment: Alignment.center,
-                        child: Text('キャンセル',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500,
-                            fontFamily: 'Hiragino Sans',
-                            color: Colors.black.withValues(alpha: 0.5))),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-        transitionBuilder: (context, anim1, anim2, child) {
-          return FadeTransition(opacity: anim1, child: child);
-        },
-      ),
+  Future<void> _showMemoDeleteDialog(String itemId) async {
+    final confirmed = await showConfirmDeleteDialog(
+      context: context,
+      title: 'メモを削除',
+      message: 'このメモを削除しますか？',
     );
+    if (confirmed && mounted) _saveMemo(itemId, '');
   }
 
   void _toggleExpand(String itemId) {

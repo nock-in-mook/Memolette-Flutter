@@ -21,6 +21,7 @@ import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
 import 'block_editor.dart';
+import 'confirm_delete_dialog.dart';
 import 'frosted_alert_dialog.dart';
 import 'markdown_text_controller.dart';
 import 'markdown_toolbar.dart';
@@ -840,28 +841,13 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       // 引きずられてダイアログが上から降ってくる挙動を回避。
       // focusSafe は使わない: キャンセル/クリア後に Navigator の自動フォーカス
       // 復元が効いて元の編集カーソル位置に戻れるようにするため。
-      final ok = await showCupertinoDialog<bool>(
+      final ok = await showConfirmDeleteDialog(
         context: context,
-        builder: (ctx) => MediaQuery(
-          data: MediaQuery.of(ctx).copyWith(viewInsets: EdgeInsets.zero),
-          child: CupertinoAlertDialog(
-            title: const Text('本文をクリアします。よろしいですか？'),
-            content: const Text('タイトルとタグはそのまま残ります。'),
-            actions: [
-              CupertinoDialogAction(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('キャンセル'),
-              ),
-              CupertinoDialogAction(
-                isDestructiveAction: true,
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('クリア'),
-              ),
-            ],
-          ),
-        ),
+        title: '本文をクリア',
+        message: '本文をクリアします。タイトルとタグはそのまま残ります。',
+        confirmLabel: 'クリア',
       );
-      if (ok != true || !mounted) return;
+      if (!ok || !mounted) return;
       _contentController.clear();
       _onChanged();
       setState(() {});
@@ -2502,27 +2488,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       // viewInsets を 0 に上書きして、ダイアログが上から降ってくる挙動を回避。
       // focusSafe は使わない: キャンセル後に Navigator の自動フォーカス復元で
       // 元の編集カーソル位置に戻れるようにするため。
-      final confirmed = await showCupertinoDialog<bool>(
+      final confirmed = await showConfirmDeleteDialog(
         context: context,
-        builder: (ctx) => MediaQuery(
-          data: MediaQuery.of(ctx).copyWith(viewInsets: EdgeInsets.zero),
-          child: CupertinoAlertDialog(
-            title: const Text('このメモを削除します。よろしいですか?'),
-            actions: [
-              CupertinoDialogAction(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('キャンセル'),
-              ),
-              CupertinoDialogAction(
-                isDestructiveAction: true,
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('削除'),
-              ),
-            ],
-          ),
-        ),
+        title: 'メモを削除',
+        message: 'このメモを削除します。よろしいですか？',
       );
-      if (confirmed != true || !mounted) return;
+      if (!confirmed || !mounted) return;
       _deleteMemo();
     } finally {
       if (mounted && wasEditing) {

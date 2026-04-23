@@ -13,6 +13,7 @@ import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
+import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/frosted_alert_dialog.dart';
 import '../widgets/memo_input_area.dart' show EraserGlyph;
 import '../widgets/new_tag_sheet.dart';
@@ -2402,28 +2403,13 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
   /// 本文クリア（確認ダイアログ付き・メモ入力画面と同じ挙動）
   Future<void> _clearBodyWithConfirm() async {
     if (_contentController.text.isEmpty) return;
-    final ok = await focusSafe(
-      context,
-      () => showCupertinoDialog<bool>(
-        context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('本文をクリアします。よろしいですか？'),
-          content: const Text('タイトルとタグはそのまま残ります。'),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('キャンセル'),
-            ),
-            CupertinoDialogAction(
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('クリア'),
-            ),
-          ],
-        ),
-      ),
+    final ok = await showConfirmDeleteDialog(
+      context: context,
+      title: '本文をクリア',
+      message: '本文をクリアします。タイトルとタグはそのまま残ります。',
+      confirmLabel: 'クリア',
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
     _contentController.clear();
     _saveContent();
     setState(() {});

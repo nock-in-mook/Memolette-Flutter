@@ -10,6 +10,7 @@ import '../providers/database_provider.dart';
 import '../utils/image_storage.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
+import 'confirm_delete_dialog.dart';
 import 'frosted_alert_dialog.dart';
 import 'image_viewer.dart';
 import 'markdown_text_controller.dart';
@@ -553,18 +554,10 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
   }
 
   Future<void> _confirmDeleteImage(_ImageBlock block) async {
-    var ok = false;
-    await showFrostedAlert(
+    final ok = await showConfirmDeleteDialog(
       context: context,
-      title: '画像を削除しますか？',
-      actions: [
-        FrostedAlertAction(label: 'キャンセル'),
-        FrostedAlertAction(
-          label: '削除',
-          isDestructive: true,
-          onPressed: () => ok = true,
-        ),
-      ],
+      title: '画像を削除',
+      message: 'この画像を削除しますか？',
     );
     if (!ok) return;
     final db = ref.read(databaseProvider);
