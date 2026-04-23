@@ -66,7 +66,7 @@ class NewTagSheet extends ConsumerStatefulWidget {
         final mq = MediaQuery.of(ctx);
         final screenH = mq.size.height;
         final keyboardH = mq.viewInsets.bottom;
-        final visibleH = screenH * 0.75;
+        final visibleH = screenH * 0.85;
         final maxVisible = screenH - mq.padding.top - 10;
         final sheetH =
             visibleH > maxVisible && maxVisible > 0 ? maxVisible : visibleH;
