@@ -526,3 +526,23 @@
 
 ### 次セッション
 - ToDo 画面の iPad 対応を本格的に（縦/横両方）
+
+---
+## Memolette-Flutter_025 (2026-04-23)
+
+### 成果
+- メモタップ→閲覧窓反映の体感速度を大幅改善（最大 ~308ms 短縮）
+  - `addPostFrameCallback` を撤廃して `loadMemoDirectly` を同期実行に（~8ms @ 120Hz）
+  - `GestureDetector.onDoubleTap` を外して `kDoubleTapTimeout` (300ms) 撤廃
+  - ダブルタップは親側 `_handleMemoTap` で前回タップからの経過時間で自前検出
+- iPhone 15 Pro Max 実機（release wireless）で体感「めちゃくちゃ早くなった」と確認
+
+### Flutter の罠メモ
+- `onDoubleTap` を GestureDetector に渡すと kDoubleTapTimeout で onTap が 300ms 遅延する
+- タップ応答が重要な UI では onDoubleTap を外して親で自前検出（今回のパターンが基本形）
+
+### メインコミット
+- `3963ae2` メモタップ→閲覧窓反映の体感速度を大幅改善
+
+### 次セッション
+- ToDo 画面の iPad 対応（縦/横両方）← 前セッションからの持ち越し

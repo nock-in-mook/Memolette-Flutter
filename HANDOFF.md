@@ -33,43 +33,29 @@ Flutter 側 `ios/Runner.xcodeproj` の Team 設定は個人 Team のまま
 
 ## 現在の状況
 
-- セッション#24 完了（2026-04-23）
+- セッション#25 完了（2026-04-23）
 - ブランチ: `main`
-- 最終コミット: `79cee4f` 入力欄フッター整備 + ダイアログ挙動修正
+- 最終コミット: `3963ae2` メモタップ→閲覧窓反映の体感速度を大幅改善
 - iPhone 15 Pro Max 実機（release, wireless）で動作確認済
 
-## #24 で完了したこと
+## #25 で完了したこと
 
-### 入力欄フッター整備（閲覧/編集とも）
-- 閲覧/編集モード問わず**閉じる/拡大ボタンを常に右寄せ**に統一
-  （コピーの後に `Spacer()` 追加、編集時は従来のSpacerのまま）
-- 閲覧モードのアイコン列を **+6px 右にシフト**
-  - `SizedBox(width: isTablet ? sp(12) : 18)` に変更
-  - 多機能/パレット/コピーを等間隔（12px, iPad は 18px）に
-- プレビュー表示時の**拡大ボタン押し出し対策**
-  - 閉じる↔拡大を 16 → 11 に詰める
-  - ツールバー右padding を 10 → 5 に詰める
-- 消しゴムは**編集モードのみ表示**に戻す（常時グレー案は却下）
-- 画像↔Undo は Undo↔Redo より少し広く（iPhone 30, iPad 40）して
-  画像ボタンに独立感
+### メモタップ → 閲覧窓反映の体感速度を大幅改善（最大 ~308ms 短縮）
+- **`addPostFrameCallback` を撤廃** → `loadMemoDirectly` を同期実行に
+  - `_openMemo` 通常モード分岐で 1 フレーム（~8ms @ 120Hz）短縮
+  - `MemoInputArea` は常時マウントされているので currentState 直呼びで OK
+  - `_directLoadApplied` フラグが didUpdateWidget の `_loadMemo`（DBクエリ）を skip
+- **`onDoubleTap` を GestureDetector から外す** → kDoubleTapTimeout (300ms) 撤廃
+  - `_MemoGridView` / `_FrequentTabContent` の onDoubleTap パラメータを削除
+  - ダブルタップは親側 `_handleMemoTap` で自前検出
+    （同じメモを 300ms 以内に再タップ → `_openMemoExpanded`）
+- **トレードオフ**: ダブルタップ時は「1 回目で閲覧窓に出 → 2 回目で拡大」の
+  2 段動作になる。実機で体感したら許容範囲、むしろ単タップ速度の方が重要
 
-### MDトグル トースト位置調整
-- `showToast` に `bottomY` パラメータを追加（絶対 Y 座標でトースト下端を指定）
-- `_toolbarKey` をツールバーに付けて、フッター上端の 5px 上にトースト下端を合わせる
-- 親指に隠れないよう、入力欄内（本文表示領域）に出すイメージ
-
-### ダイアログ挙動修正（本文クリア・メモ削除）
-- **viewInsets を 0 に上書き** → キーボードが閉じるアニメーションに
-  引きずられて「上から降ってくる」挙動を解消
-- **focusSafe を外す** → Navigator の自動フォーカス復元で、キャンセル後に
-  元の編集カーソル位置 (＋キーボード) へ復帰
-- **`_isDialogOpen` フラグ**を追加してダイアログ中のフッター切替を抑制
-  - `_buildToolbar` の `isEditing` 判定と、閉じる表示条件の両方で考慮
-  - `clearBody` と `_confirmDeleteMemo` の両方で設定
-
-### iPhone 実機動作
-- wireless 接続で `flutter run --release` が通ることを確認
-- 初回 Xcode build ~35s、増分 ~18s、インストール 2〜3s
+### Flutter の罠メモ（次回以降も注意）
+- `GestureDetector` に `onDoubleTap` を渡すと `kDoubleTapTimeout` (300ms) 待ちで
+  `onTap` が遅延する。タップ応答が重要な UI では onDoubleTap を外して
+  親側で「前回タップからの経過時間」で自前検出するのがベストプラクティス
 
 ## 次のアクション（次セッション）
 
