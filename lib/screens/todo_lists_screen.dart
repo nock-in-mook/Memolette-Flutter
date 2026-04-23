@@ -13,6 +13,7 @@ import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
 import '../widgets/trapezoid_tab_shape.dart';
+import '../widgets/wide_todo_pane.dart';
 import 'todo_list_screen.dart';
 
 /// ToDoリスト一覧画面
@@ -30,6 +31,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
 
   /// iPad 横画面スプリットビュー時に右カラムで開いている listId。
   /// narrow レイアウト (iPhone / iPad 縦) では未使用。
+  /// 初期値は null（何も開いていない状態）。ユーザーがリストをタップして初めて開く。
   String? _selectedListId;
 
   Stream<List<TodoList>> _watchLists() {
@@ -122,7 +124,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
     );
   }
 
-  /// 右カラム。lists が空 or 未選択なら案内、選ばれていれば TodoListScreen を埋め込む。
+  /// 右カラム。lists が空 or 未選択なら案内、選ばれていれば WideTodoPane を埋め込む。
   Widget _buildDetailPane(List<TodoList> lists) {
     final id = _selectedListId;
     if (id == null || lists.isEmpty) {
@@ -137,23 +139,21 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
         ),
       );
     }
-    return TodoListScreen(
-      // listId 変更で内部 State をリセットしたいので key に含める
-      key: ValueKey(id),
+    return WideTodoPane(
       listId: id,
-      embedded: true,
+      onClose: () => setState(() => _selectedListId = null),
     );
   }
 
-  /// 選択中リストが削除された/未選択の場合に、先頭を自動選択する。
+  /// 選択中のリストが削除されたときだけ選択を外す。自動先頭選択はしない。
+  /// 起動直後や閉じたあとは「リストを選択してください」案内を維持する。
   void _ensureSelection(List<TodoList> lists) {
     final current = _selectedListId;
-    if (current != null && lists.any((l) => l.id == current)) return;
-    final next = lists.isEmpty ? null : lists.first.id;
-    if (current == next) return;
+    if (current == null) return;
+    if (lists.any((l) => l.id == current)) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      setState(() => _selectedListId = next);
+      setState(() => _selectedListId = null);
     });
   }
 
@@ -848,27 +848,26 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
   }
 
   Widget _buildTodoTab() {
-    // タブ自体は左寄せ、本家準拠で1.08倍スケール（選択中相当）
-    return Padding(
-      padding: const EdgeInsets.only(left: 8, top: 6),
-      child: Align(
-        alignment: Alignment.bottomLeft,
-        child: Transform.scale(
-          scale: 1.08,
-          alignment: Alignment.bottomCenter,
-          child: CustomPaint(
-            painter: const TrapezoidTabPainter(
-              color: _todoTabColor,
-              shadows: [
-                Shadow(
-                  color: Color(0x66000000),
-                  offset: Offset(-3, 3),
-                  blurRadius: 5,
-                ),
-              ],
-            ),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+    // 横幅いっぱいの単一タブ（検索結果タブと同型のレイアウト）。
+    // 「ここにはタブは増やせない」という視覚的アピールも兼ねる。
+    return SizedBox(
+      height: 40,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: CustomPaint(
+          painter: const TrapezoidTabPainter(
+            color: _todoTabColor,
+            shadows: [
+              Shadow(
+                color: Color(0x66000000),
+                offset: Offset(-3, 3),
+                blurRadius: 5,
+              ),
+            ],
+          ),
+          child: const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 9),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

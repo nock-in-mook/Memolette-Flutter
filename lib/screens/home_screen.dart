@@ -23,6 +23,7 @@ import '../widgets/move_to_top_icon.dart';
 import '../widgets/new_tag_sheet.dart';
 import '../widgets/todo_card.dart';
 import '../widgets/trapezoid_tab_shape.dart';
+import '../widgets/wide_todo_pane.dart';
 import 'quick_sort_screen.dart';
 import 'settings_screen.dart';
 import 'todo_list_screen.dart';
@@ -991,63 +992,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             child: Stack(
               children: [
                 _buildInputAreaSection(constraints, parentTags),
-                if (_wideTodoListId != null) ...[
+                if (_wideTodoListId != null)
                   Positioned.fill(
-                    child: Material(
-                      color: Colors.white,
-                      child: TodoListScreen(
-                        key: ValueKey('wide_todo_${_wideTodoListId!}'),
-                        listId: _wideTodoListId!,
-                        embedded: true,
-                      ),
+                    child: WideTodoPane(
+                      listId: _wideTodoListId!,
+                      onClose: () =>
+                          setState(() => _wideTodoListId = null),
                     ),
                   ),
-                  // 右カラムTODO専用の閉じるボタン（左上に浮かせる）
-                  Positioned(
-                    left: 8,
-                    top: 8,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () =>
-                            setState(() => _wideTodoListId = null),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.92),
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.12),
-                                blurRadius: 4,
-                                offset: const Offset(0, 1),
-                              ),
-                            ],
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.close,
-                                  size: 14, color: Color(0xFF007AFF)),
-                              SizedBox(width: 4),
-                              Text(
-                                '閉じる',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Color(0xFF007AFF),
-                                  fontFamily: 'Hiragino Sans',
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
