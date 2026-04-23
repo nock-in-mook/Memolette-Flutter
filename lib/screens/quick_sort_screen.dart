@@ -2893,9 +2893,11 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
         backgroundColor: Colors.transparent,
         builder: (context) {
           return StatefulBuilder(builder: (context, setSheetState) {
-          return Container(
+          return Center(
+            child: Container(
             constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.5),
+                maxHeight: MediaQuery.of(context).size.height * 0.5,
+                maxWidth: 500),
             margin: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Colors.white,
@@ -2954,7 +2956,8 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                   const Center(child: CircularProgressIndicator()),
                 error: (_, _) => const Center(child: Text('エラー')),
               ),
-            );
+            ),
+          );
           });
         },
       ),

@@ -3469,7 +3469,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           top: false,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: Column(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 500),
+                child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -3597,6 +3600,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ),
               ],
             ),
+              ),
+            ),
           ),
         );
       },
@@ -3691,7 +3696,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           top: false,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: Column(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 500),
+                child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -3803,6 +3811,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   ),
                 ),
               ],
+            ),
+              ),
             ),
           ),
         );
