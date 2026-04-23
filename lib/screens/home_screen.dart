@@ -372,6 +372,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   List<String>? _savedTabOrder;
   // 入力エリア用
   String? _editingMemoId;
+  // iPad 横画面で右カラムに TodoListScreen(embedded) を表示するときの listId。
+  // narrow では使わない（narrow は従来通り Navigator.push で別画面遷移）。
+  // メモ編集中に TODO を開いたら _editingMemoId を null にしてこちらを優先する（排他）。
+  String? _wideTodoListId;
   // メモカード ダブルタップ検出用（onDoubleTap を外した代わりに手動で判定）
   // onDoubleTap を GestureDetector に渡すと kDoubleTapTimeout (300ms) 待ちで
   // 単タップの onTap が遅延するため、ここで自前検出して即時反応を優先する。
@@ -972,13 +976,80 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
         // 区切り線
         const VerticalDivider(width: 1, thickness: 1),
-        // 右カラム: 入力エリア（Home Indicator 下に余白を確保）
+        // 右カラム: 入力エリアは常時マウント、TODO選択中は上に TodoListScreen を重ねる。
+        // dispose→rebuild で Riverpod の ref が使えなくなる問題を回避するため Stack で重ねる方式。
+        // Home Indicator 下に余白を確保。
+        // TODO表示時は左カラム相当の上余白（viewPadding.top）を確保する。
         Expanded(
           child: Padding(
             padding: EdgeInsets.only(
+              top: _wideTodoListId != null
+                  ? MediaQuery.of(context).viewPadding.top
+                  : 0,
               bottom: MediaQuery.of(context).viewPadding.bottom + 8,
             ),
-            child: _buildInputAreaSection(constraints, parentTags),
+            child: Stack(
+              children: [
+                _buildInputAreaSection(constraints, parentTags),
+                if (_wideTodoListId != null) ...[
+                  Positioned.fill(
+                    child: Material(
+                      color: Colors.white,
+                      child: TodoListScreen(
+                        key: ValueKey('wide_todo_${_wideTodoListId!}'),
+                        listId: _wideTodoListId!,
+                        embedded: true,
+                      ),
+                    ),
+                  ),
+                  // 右カラムTODO専用の閉じるボタン（左上に浮かせる）
+                  Positioned(
+                    left: 8,
+                    top: 8,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () =>
+                            setState(() => _wideTodoListId = null),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.92),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.12),
+                                blurRadius: 4,
+                                offset: const Offset(0, 1),
+                              ),
+                            ],
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.close,
+                                  size: 14, color: Color(0xFF007AFF)),
+                              SizedBox(width: 4),
+                              Text(
+                                '閉じる',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Color(0xFF007AFF),
+                                  fontFamily: 'Hiragino Sans',
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
       ],
@@ -2725,6 +2796,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   /// ToDoリストを開く
+  /// - iPad 横（isWide）: 右カラムに TodoListScreen(embedded) を表示（画面遷移なし）
+  /// - 狭幅: 従来通り Navigator.push で別画面に遷移
   void _openTodoList(TodoList list) {
     // 選択モード中はカードタップを選択トグルに振り替え（編集に入らない）
     if (_isSelectMode) {
@@ -2732,6 +2805,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       return;
     }
     if (_isReorderMode) return;
+    if (Responsive.isWide(context)) {
+      // メモ編集中なら閉じてからTODO表示に切替（排他）
+      if (_editingMemoId != null) {
+        _inputAreaKey.currentState?.closeMemo();
+      }
+      setState(() {
+        _editingMemoId = null;
+        _wideTodoListId = list.id;
+      });
+      return;
+    }
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (_, _, _) => TodoListScreen(listId: list.id),
@@ -3255,6 +3339,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       _isMemoListExpanded = false;
       _isInputExpanded = true;
       _openedFromMemoList = cameFromListExpanded;
+      _wideTodoListId = null; // メモ優先（TODO右カラム表示を解除）
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _suppressAnimation = false;
@@ -3284,6 +3369,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         _isMemoListExpanded = false;
         _isInputExpanded = true;
         _openedFromMemoList = true;
+        _wideTodoListId = null; // メモ優先
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _suppressAnimation = false;
@@ -3297,6 +3383,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       setState(() {
         _editingMemoId = memo.id;
         _highlightedMemoId = memo.id;
+        _wideTodoListId = null; // メモ優先
       });
     }
   }
