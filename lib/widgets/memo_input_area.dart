@@ -143,13 +143,21 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   final GlobalKey _inputAreaKey = GlobalKey();
   // 入力欄フッター（ツールバー）。トースト位置計算用（上端を取得して直上に表示）
   final GlobalKey _toolbarKey = GlobalKey();
-  /// BlockEditor 内の任意の TextField にフォーカスがあるか
+  /// BlockEditor 内の任意の TextField が primaryFocus を持つか
+  /// （hasFocus ベースではなく primaryFocus ベース。別 route のシート等に
+  ///   入力が移った瞬間に false になる）。
   bool get _isBlockEditorFocused =>
-      _blockEditorKey.currentState?.hasAnyFocus ?? false;
-  bool get _isInputFocused =>
-      _titleFocusNode.hasFocus ||
-      _contentFocusNode.hasFocus ||
-      _isBlockEditorFocused;
+      _blockEditorKey.currentState?.hasActivePrimaryFocus ?? false;
+  /// この MemoInputArea の TextField 群のいずれかが実際に入力を受けているか。
+  /// primaryFocus ベースの厳密判定。タグシート等を上に載せたとき、そちらの
+  /// TextField にフォーカスが移ればこれは false になる（ツールバー残留防止）。
+  bool get _isInputFocused {
+    final primary = FocusManager.instance.primaryFocus;
+    if (primary == null) return false;
+    if (primary == _titleFocusNode) return true;
+    if (primary == _contentFocusNode) return true;
+    return _isBlockEditorFocused;
+  }
   // ダイアログ表示中フラグ: ダイアログが出るとフォーカスが一旦外れて
   // フッターが閲覧モードに切り替わってしまうので、見た目を編集モードに固定するために使う
   bool _isDialogOpen = false;
@@ -431,6 +439,11 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _resetUndoHistory();
     _titleFocusNode.addListener(_onFocusChange);
     _contentFocusNode.addListener(_onFocusChange);
+    // BlockEditor 内の動的 TextBlock や別 route の TextField への
+    // primaryFocus 移動を検知するためのグローバルリスナー。
+    // これがないと、タグシート等を上に開いたときにツールバー Overlay が
+    // 残留したまま再評価されない。
+    FocusManager.instance.addListener(_onFocusChange);
   }
 
   void _onFocusChange() {
@@ -893,6 +906,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _toolbarOverlay = null;
     KeyboardDoneBar.accessoryHeight.value = 0;
     _tagFlashTimer?.cancel();
+    FocusManager.instance.removeListener(_onFocusChange);
     _titleController.dispose();
     _contentController.dispose();
     _contentScrollController.dispose();

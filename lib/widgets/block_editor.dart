@@ -70,9 +70,21 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
   /// 現在のシリアライズ済み本文を返す
   String get currentContent => _serialize();
 
-  /// 任意の TextBlock にフォーカスがあるか
+  /// 任意の TextBlock にフォーカスがあるか（hasFocus ベース）。
+  /// フォーカスパス上に TextBlock があれば true になる（緩い判定）。
   bool get hasAnyFocus =>
       _blocks.whereType<_TextBlock>().any((b) => b.focusNode.hasFocus);
+
+  /// 任意の TextBlock が primaryFocus を持つか（厳密判定）。
+  /// 別 route の TextField に primaryFocus が移った時には false になる。
+  /// キーボード上ツールバーの表示制御など、「実際に入力を受けているか」で
+  /// 判断したい場面で使う。
+  bool get hasActivePrimaryFocus {
+    final primary = FocusManager.instance.primaryFocus;
+    return _blocks
+        .whereType<_TextBlock>()
+        .any((b) => b.focusNode == primary);
+  }
 
   /// 現在（または最後に）フォーカスされている TextBlock の controller。
   /// マークダウンツールバー等、外部から本文編集を差し込むときに使う。
