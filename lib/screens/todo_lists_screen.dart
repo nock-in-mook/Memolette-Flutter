@@ -937,8 +937,7 @@ class _NewListDialogState extends State<_NewListDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return SuppressKeyboardDoneBar(
-      child: Padding(
+    return Padding(
         padding: const EdgeInsets.only(bottom: 300),
         child: Center(
         child: ConstrainedBox(
@@ -1078,7 +1077,6 @@ class _NewListDialogState extends State<_NewListDialog> {
           ),
         ),
       ),
-    ),
     ),
     ),
     );

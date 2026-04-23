@@ -70,7 +70,7 @@ class NewTagSheet extends ConsumerStatefulWidget {
         final maxVisible = screenH - mq.padding.top - 10;
         final sheetH =
             visibleH > maxVisible && maxVisible > 0 ? maxVisible : visibleH;
-        return SuppressKeyboardDoneBar(child: SizedBox(
+        return SizedBox(
           height: sheetH,
           child: ClipRRect(
             borderRadius: const BorderRadius.vertical(
@@ -97,7 +97,7 @@ class NewTagSheet extends ConsumerStatefulWidget {
               ),
             ),
           ),
-        ));
+        );
         },
       ),
     );
