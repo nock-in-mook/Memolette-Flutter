@@ -5164,21 +5164,12 @@ class _FrequentTabContent extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Center(
-            child: Icon(
-              isLocked
-                  ? CupertinoIcons.lock_fill
-                  : isSelected
-                      ? CupertinoIcons.checkmark_circle_fill
-                      : CupertinoIcons.circle,
-              size: 16,
-              color: isLocked
-                  ? Colors.grey.withValues(alpha: 0.4)
-                  : isSelected
-                      ? Colors.blue
-                      : Colors.grey.withValues(alpha: 0.6),
+            child: buildSelectModeIcon(
+              isSelected: isSelected,
+              isBlocked: isLocked,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 6),
           Expanded(
             child: Opacity(
               opacity: isLocked ? 0.4 : 1.0,
@@ -5407,21 +5398,12 @@ class _MemoGridView extends StatelessWidget {
       // ロックは削除を防ぐ用なので、削除モードのときだけ操作不可扱い。
       // トップ移動モードではロック中も普通に選択できる。
       final isLockedBlocked = isDeleteSelectMode && memo.isLocked;
-      // 本家準拠: HStack(spacing: 4) { icon(16pt); MemoCard }
+      // 本家準拠: HStack { icon; MemoCard }
       // crossAxisAlignment: stretch でカードがセル高さを満たす（縮まない）
       // アイコンとカード両方が選択トグルのタップ対象
-      final iconWidget = Icon(
-        isLockedBlocked
-            ? CupertinoIcons.lock_fill
-            : isSelected
-                ? CupertinoIcons.checkmark_circle_fill
-                : CupertinoIcons.circle,
-        size: 16,
-        color: isLockedBlocked
-            ? Colors.grey.withValues(alpha: 0.4)
-            : isSelected
-                ? Colors.blue
-                : Colors.grey.withValues(alpha: 0.6),
+      final iconWidget = buildSelectModeIcon(
+        isSelected: isSelected,
+        isBlocked: isLockedBlocked,
       );
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -5431,7 +5413,7 @@ class _MemoGridView extends StatelessWidget {
           children: [
             // アイコンは中央寄せ（縦stretch内でCenterで中央配置）
             Center(child: iconWidget),
-            const SizedBox(width: 4),
+            const SizedBox(width: 6),
             Expanded(
               child: Opacity(
                 opacity: isLockedBlocked ? 0.4 : 1.0,
@@ -5519,18 +5501,9 @@ class _MemoGridView extends StatelessWidget {
     if (selectMode) {
       final isSelected = selectedTodoIds.contains(list.id);
       final isLockedBlocked = isDeleteSelectMode && list.isLocked;
-      final iconWidget = Icon(
-        isLockedBlocked
-            ? CupertinoIcons.lock_fill
-            : isSelected
-                ? CupertinoIcons.checkmark_circle_fill
-                : CupertinoIcons.circle,
-        size: 16,
-        color: isLockedBlocked
-            ? Colors.grey.withValues(alpha: 0.4)
-            : isSelected
-                ? Colors.blue
-                : Colors.grey.withValues(alpha: 0.6),
+      final iconWidget = buildSelectModeIcon(
+        isSelected: isSelected,
+        isBlocked: isLockedBlocked,
       );
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -5539,7 +5512,7 @@ class _MemoGridView extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Center(child: iconWidget),
-            const SizedBox(width: 4),
+            const SizedBox(width: 6),
             Expanded(
               child: Opacity(
                 opacity: isLockedBlocked ? 0.4 : 1.0,
@@ -6879,4 +6852,29 @@ class _FastMaterialPageRoute<T> extends MaterialPageRoute<T> {
 
   @override
   Duration get reverseTransitionDuration => const Duration(milliseconds: 150);
+}
+
+/// 選択モード時のチェック/ロックアイコン描画ヘルパ。
+/// サイズ・色は統一（視認性優先）:
+///   - 非選択: 濃いグレーの空円
+///   - 選択中: 濃い青の塗り円 + 白抜きチェック
+///   - ロック中（削除モード）: 薄グレーのロックアイコン
+Widget buildSelectModeIcon({
+  required bool isSelected,
+  required bool isBlocked,
+}) {
+  const accent = Color(0xFF007AFF);
+  return Icon(
+    isBlocked
+        ? CupertinoIcons.lock_fill
+        : isSelected
+            ? CupertinoIcons.checkmark_circle_fill
+            : CupertinoIcons.circle,
+    size: 24,
+    color: isBlocked
+        ? Colors.grey.withValues(alpha: 0.5)
+        : isSelected
+            ? accent
+            : Colors.grey.shade700,
+  );
 }
