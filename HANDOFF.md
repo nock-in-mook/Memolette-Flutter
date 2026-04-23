@@ -12,10 +12,15 @@ USB 経由で iPhone (00008130-0006252E2E40001C) に **debug モード** で
 (再現条件: macOS Tahoe 26.3.1 + iOS 26.3.1。`sudo launchctl kickstart -k
 system/com.apple.usbmuxd` も SIP で拒否される。)
 
-iPad シミュ (`C6A8AF6B-C3E8-4B93-BCCC-E8C398D4491F`) は通常通り debug で OK。
+iPad シミュ ID は HANDOFF 古い値 (`C6A8AF6B-...`) ではなく
+現在は iPad Pro 12.9-inch (6th gen) = `1F181174-7768-44DB-9BDA-E9E9976695F0`。
 
 wireless 接続だと iPhone がスリープするたびに `Installing and launching` が
 「Could not run」で失敗する → iPhone を起こしてから再試行。
+**今セッションでも wireless が非常に不安定で、起こした状態でも
+`Installing` フェーズで Could not run になり続けた**。
+古いバイナリだけ残って新版がインストールされていないのに「青いドット」が
+出ることがあるので注意。次回は USB ケーブル or iPhone シミュで検証推奨。
 
 ---
 
@@ -33,47 +38,88 @@ Flutter 側 `ios/Runner.xcodeproj` の Team 設定は個人 Team のまま
 
 ## 現在の状況
 
-- セッション#25 完了（2026-04-23）
+- セッション#26 完了（2026-04-23）
 - ブランチ: `main`
-- 最終コミット: `3963ae2` メモタップ→閲覧窓反映の体感速度を大幅改善
-- iPhone 15 Pro Max 実機（release, wireless）で動作確認済
+- 最終コミット: `8590e7b` 効かない SuppressKeyboardDoneBar を削除
+- iPad Pro 12.9 シミュ + iPhone 15 Pro Max シミュで動作確認済
+- iPhone 15 Pro Max 実機は **wireless のインストール不安定で確認できず**
 
-## #25 で完了したこと
+## #26 で完了したこと
 
-### メモタップ → 閲覧窓反映の体感速度を大幅改善（最大 ~308ms 短縮）
-- **`addPostFrameCallback` を撤廃** → `loadMemoDirectly` を同期実行に
-  - `_openMemo` 通常モード分岐で 1 フレーム（~8ms @ 120Hz）短縮
-  - `MemoInputArea` は常時マウントされているので currentState 直呼びで OK
-  - `_directLoadApplied` フラグが didUpdateWidget の `_loadMemo`（DBクエリ）を skip
-- **`onDoubleTap` を GestureDetector から外す** → kDoubleTapTimeout (300ms) 撤廃
-  - `_MemoGridView` / `_FrequentTabContent` の onDoubleTap パラメータを削除
-  - ダブルタップは親側 `_handleMemoTap` で自前検出
-    （同じメモを 300ms 以内に再タップ → `_openMemoExpanded`）
-- **トレードオフ**: ダブルタップ時は「1 回目で閲覧窓に出 → 2 回目で拡大」の
-  2 段動作になる。実機で体感したら許容範囲、むしろ単タップ速度の方が重要
+### iPad 横画面のレイアウト整備
+- **iPhone 縦画面固定を SystemChrome でも制御**
+  - Info.plist の UISupportedInterfaceOrientations だけでは UIRequiresFullScreen=true と
+    組み合わさったとき効かないケースがあったため、`main.dart` で PlatformDispatcher
+    から shortestSide を測って iPhone (< 600pt) は portraitUp 固定
+- **ToDo 画面を iPad 横画面で左右分割レイアウトに対応**
+  - メモ側 `_buildWideLayout` と同じ型
+  - `TodoListScreen` に `embedded` パラメータ追加（Scaffold/SafeArea 外し、戻るボタン非表示）
+  - `TodoListsScreen` の `_selectedListId` ステートで選択管理、`_openList` と
+    `_createListAndOpen` で isWide 時は `Navigator.push` せず setState に分岐
 
-### Flutter の罠メモ（次回以降も注意）
-- `GestureDetector` に `onDoubleTap` を渡すと `kDoubleTapTimeout` (300ms) 待ちで
-  `onTap` が遅延する。タップ応答が重要な UI では onDoubleTap を外して
-  親側で「前回タップからの経過時間」で自前検出するのがベストプラクティス
+### 横幅いっぱい問題の一掃（iPad 横で広がりすぎる UI）
+- **トースト**: maxWidth 400pt (`utils/toast.dart`)
+- **メモ/ToDo 長押しメニュー + タグピッカー**: maxWidth 500pt (`home_screen.dart`, `quick_sort_screen.dart`)
+- **新規リスト作成ダイアログ**: maxWidth 440pt / 削除確認ダイアログ: maxWidth 400pt / リスト長押しメニュー: maxWidth 500pt (`todo_lists_screen.dart`)
+
+### タグ追加シートの位置改善
+- 画面高 55% → 85% に拡大（最初からカラーパレットまで見える）
+- `Padding(bottom: keyboardH)` を SizedBox の外→内に移動し、
+  シート外枠はキーボードで動かず内側コンテンツだけ上に詰めるように
+
+### メモ入力ツールバー残留問題の修正
+- 症状: メモ本文（BlockEditor 内 TextBlock）にフォーカスがある状態でタグシート等を開き、
+  そちらの TextField にフォーカス→キーボード出すと、メモ入力エリアのキーボード上
+  ツールバー (ゴミ箱/MD/画像/Undo/Redo/完了) が残留表示される
+- 原因: `_onFocusChange` リスナーが `_titleFocusNode` / `_contentFocusNode` にしか
+  張られておらず、BlockEditor 内の動的 FocusNode や別 route への primaryFocus 移動を
+  検知できていなかった。加えて `_isInputFocused` が hasFocus ベース（緩い判定）で、
+  別 route の TextField に primaryFocus が移っても true のまま残ることがあった
+- 修正:
+  - `block_editor.dart` に `hasActivePrimaryFocus` を追加（primaryFocus ベース厳密判定）
+  - `memo_input_area.dart` の `_isBlockEditorFocused` / `_isInputFocused` を
+    primaryFocus ベースに変更
+  - `initState` で `FocusManager.instance.addListener(_onFocusChange)` を登録
+    （dispose で removeListener）。別 route への入力移動も即検知できる
+
+### 効かない SuppressKeyboardDoneBar の削除
+- `SuppressKeyboardDoneBar` は InheritedWidget で「子ツリーの KeyboardDoneBar を抑制」する
+  設計だったが、実際の使用箇所はすべて `showModalBottomSheet` / `showGeneralDialog`
+  経由で別 Route として表示されるため、**InheritedWidget の参照が親ツリーに届かず抑制が効いていなかった**
+- 結果として完了ボタンは常に出ていた（ユーザーの希望動作と一致）ので、
+  見た目だけ「抑制している風」のコードを整理削除
+
+## Flutter の罠メモ（次回以降も注意）
+
+- `Info.plist` の向き制限は `UIRequiresFullScreen=true` と組み合わさると効かない場合あり。
+  `SystemChrome.setPreferredOrientations` で Flutter 側でも制御すべき
+- `InheritedWidget` は `Navigator.push` / `showModalBottomSheet` / `showGeneralDialog` 越しには
+  参照が届かない（子 Route の要素からは親 Route の InheritedWidget が見えない）。
+  Route 跨ぎの抑制/制御は `ValueNotifier` や静的フィールド経由で
+- BlockEditor のように **動的に FocusNode が増減する** ケースで、
+  特定 FocusNode の addListener では変化を捕捉できない。`FocusManager.instance.addListener`
+  でグローバル監視すべき
+- `FocusNode.hasFocus` は「フォーカスパス上にあれば true」の緩い判定。
+  別 route に primaryFocus が移っても親 route 側で hasFocus=true のままになりうる。
+  厳密に「入力を受けているか」を判定したいときは `FocusManager.instance.primaryFocus` 比較
 
 ## 次のアクション（次セッション）
 
-### 優先度高（次セッションで本格対応）
-1. **ToDo 画面の iPad 対応** ← 次セッションのメイン
-   - 縦画面/横画面でレイアウト方針を決める
-   - `todo_lists_screen.dart` / `todo_list_screen.dart` 全面調整
+### 優先度高
+1. **iPhone 実機で最新ビルドの全体動作確認**（今セッションは wireless 失敗でシミュのみ検証）
+   - USB ケーブル接続か、wireless が安定するタイミングで
+   - 特に iPhone 縦固定・タグシート位置・ツールバー残留修正を実機で確認
 
 ### 優先度中
 - **ToDo 画面に検索窓追加**（メモ側と同等）
 - **ToDo 複数リスト結合機能**
-- **iPhone 横画面無効の挙動確認**（Info.plist は設定済み）
-- **iPhone 実機で ⌘1-9 動作確認**（シミュでは Window メニューが横取り）
 - **iPad 実機で全体動作確認**（ケーブル接続後）
+- **iPhone 実機で ⌘1-9 動作確認**（シミュでは Window メニューが横取り）
 
 ### 優先度低
 - **TestFlight 内部配布セットアップ**（Apple Developer 登録済みの活用）
 - `Info.plist UIRequiresFullScreen=true` を外す（マルチタスキング復活）
+- 爆速整理モードの iPad 対応（縦/横）
 
 ## 技術メモ
 
@@ -82,15 +128,17 @@ Flutter 側 `ios/Runner.xcodeproj` の Team 設定は個人 Team のまま
 - iPhone スリープ中はインストール失敗するので、再試行時は画面を起こす
 - Google Drive 上で直接ビルドは codesign エラー → `/tmp/memolette-run` に
   rsync してからビルド
+- `/tmp/memolette-run` は再起動で消えるので、次セッション先頭で再作成が必要
 
-### iPad シミュ
-- iPad Pro 13-inch (M5) `C6A8AF6B-C3E8-4B93-BCCC-E8C398D4491F` で動作確認
-- iOS 26.3 シミュは初回 `flutter clean + pod install` が必要なケースあり
+### シミュレータ ID（現行）
+- iPad Pro 12.9-inch (6th gen): `1F181174-7768-44DB-9BDA-E9E9976695F0`
+- iPhone 15 Pro Max: `95C8A8C5-0972-4BB0-B793-5219096697DF`
 
 ### コード構造の注意
 - `home_screen.dart` は 6300 行超
 - `quick_sort_screen.dart` は 4400 行超（_QuickSortScreen 本体 + Card + Painter 群）
-- `MemoInputArea` (`memo_input_area.dart`) は 3000 行超（#24 で +91 行）
+- `MemoInputArea` (`memo_input_area.dart`) は 3000 行超
+- `todo_list_screen.dart` は 3156 行超（embedded 対応で少し増）
 - `utils/safe_dialog.dart` の `focusSafe` はダイアログ閉時のキーボード自動再表示を
   抑制するラッパー。**編集中にダイアログを開いてキャンセル後に編集続行したい
   場面では使わない**こと（Navigator の自動フォーカス復元が効かなくなる）
@@ -104,3 +152,12 @@ Flutter 側 `ios/Runner.xcodeproj` の Team 設定は個人 Team のまま
 4. `_isInputFocused` を使う条件（閉じる表示など）にも `!_isDialogOpen` を追加
 
 閲覧中に出すダイアログはそのままでも問題ない（`wasEditing` ガード）。
+
+### iPad 横幅制限の定石（#26 で確立）
+iPad 横画面で画面いっぱいに広がる UI は、`Center + ConstrainedBox(maxWidth: N)` で
+中央寄せ＋最大幅制限する：
+- ダイアログ系: 320-440pt
+- ボトムシート: 500pt
+- トースト: 400pt
+
+iPhone では画面幅 < maxWidth なので ConstrainedBox は実質効かず、見た目は従来通り。

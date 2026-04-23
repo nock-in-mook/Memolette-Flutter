@@ -546,3 +546,46 @@
 
 ### 次セッション
 - ToDo 画面の iPad 対応（縦/横両方）← 前セッションからの持ち越し
+
+---
+## Memolette-Flutter_026 (2026-04-23)
+
+### 成果
+- **iPhone 縦画面固定を SystemChrome でも制御**
+  - Info.plist + UIRequiresFullScreen=true だけだと効かないケースがあるため main.dart で shortestSide < 600pt なら portraitUp 固定を呼ぶように
+- **ToDo 画面を iPad 横画面で左右分割レイアウトに対応**
+  - メモ側 `_buildWideLayout` と同じ型で「左=リスト一覧 / 右=選択中リスト詳細」
+  - `TodoListScreen` に `embedded` パラメータ追加（Scaffold 外・戻るボタン非表示）
+  - `TodoListsScreen` の `_selectedListId` で選択管理、`_openList` / `_createListAndOpen` を isWide 分岐
+- **横幅いっぱい問題を一掃**（iPad 横で広がっていた UI を maxWidth で制限）
+  - トースト 400 / 長押しメニュー・タグピッカー 500 / 新規リスト作成 440 / 削除確認 400 / リスト長押し 500
+- **タグ追加シートの位置を引き上げ**
+  - 画面高 55% → 85%（最初からカラーパレットまで見える）
+  - `Padding(bottom: keyboardH)` を SizedBox の外→内に移動（シート外枠はキーボードで動かず、内側コンテンツだけ上に詰める）
+- **メモ入力ツールバー残留問題を修正**
+  - BlockEditor 内 TextBlock にフォーカスがある状態でタグシート等を開いた時、メモ入力エリアのキーボード上ツールバーが残る不具合
+  - `FocusManager.instance.addListener(_onFocusChange)` をグローバル登録、`_isInputFocused` / `_isBlockEditorFocused` を primaryFocus ベースの厳密判定に変更
+- **効かない SuppressKeyboardDoneBar を削除**
+  - InheritedWidget は `showModalBottomSheet` / `showGeneralDialog` 越しには参照が届かないため元々抑制が効いておらず（完了ボタンは常に出ていた）、コードの意図と動作を一致させるため削除
+
+### Flutter の罠メモ
+- `Info.plist` の向き制限は `UIRequiresFullScreen=true` と組み合わさると効かない場合あり。`SystemChrome.setPreferredOrientations` で Flutter 側でも制御すべき
+- `InheritedWidget` は `Navigator.push` / `showModalBottomSheet` / `showGeneralDialog` 越しには参照が届かない。Route 跨ぎの制御には使えない
+- BlockEditor のように動的に FocusNode が増減するケースは `FocusManager.instance.addListener` でグローバル監視が必要
+- `FocusNode.hasFocus` はフォーカスパス上にあれば true になる緩い判定。厳密に「今入力を受けているか」判定したいときは `FocusManager.instance.primaryFocus` 比較
+
+### メインコミット
+- `293f291` iPhone 縦画面固定
+- `3b7595b` ToDo iPad 横で左右分割
+- `ba17e6c` トースト maxWidth 400
+- `0b27b83` 長押し/タグピッカー maxWidth 500
+- `c58c56c` ToDoリスト系ダイアログ/シート maxWidth
+- `dedf3c5` タグ追加シート位置引き上げ
+- `c855c26` タグ追加シート高 85%
+- `d002295` メモ入力ツールバー残留問題
+- `8590e7b` 効かない SuppressKeyboardDoneBar 削除
+
+### 次セッション
+- iPhone 実機（wireless）で最新ビルドの全体動作確認（今回 wireless が不安定でシミュ検証のみ）
+- ToDo 画面に検索窓追加、複数リスト結合機能
+- iPad 実機で全体動作確認
