@@ -96,6 +96,28 @@ class AppDatabase extends _$AppDatabase {
     return (await getMemoById(id))!;
   }
 
+  /// ToDoアイテム新規作成（ダミー生成ヘルパ）。listId 必須、title / memo / parentId は任意。
+  Future<TodoItem> createTodoItem({
+    required String listId,
+    String title = '',
+    String? memo,
+    String? parentId,
+    int? sortOrder,
+  }) async {
+    final id = _uuid.v4();
+    final companion = TodoItemsCompanion.insert(
+      id: id,
+      listId: listId,
+      title: Value(title),
+      memo: Value(memo),
+      parentId: Value(parentId),
+      sortOrder: Value(sortOrder ?? 0),
+    );
+    await into(todoItems).insert(companion);
+    return (await (select(todoItems)..where((t) => t.id.equals(id)))
+        .getSingle());
+  }
+
   /// ToDoリスト新規作成（メモと一貫した manualSortOrder を設定）
   Future<TodoList> createTodoList({String title = ''}) async {
     final id = _uuid.v4();
@@ -643,6 +665,39 @@ class AppDatabase extends _$AppDatabase {
             expression: todoLists.createdAt, mode: OrderingMode.desc),
       ]);
     return query.map((row) => row.readTable(todoLists)).watch();
+  }
+
+  /// TODOリスト全文検索: title, 紐付く items の title / memo のいずれかに
+  /// クエリ部分一致するリストを返す（大文字小文字区別なし、重複排除）。
+  /// リストアイテム (todo_items.memo) の変更もリアルタイム追従。
+  Stream<List<TodoList>> searchTodoLists(String query) {
+    final lower = '%${query.toLowerCase()}%';
+    return customSelect(
+      '''
+      SELECT DISTINCT tl.* FROM todo_lists tl
+      WHERE lower(tl.title) LIKE ?1
+         OR tl.id IN (
+           SELECT DISTINCT list_id FROM todo_items
+           WHERE lower(title) LIKE ?1
+              OR (memo IS NOT NULL AND lower(memo) LIKE ?1)
+         )
+      ORDER BY tl.is_pinned DESC,
+               tl.manual_sort_order DESC,
+               tl.created_at DESC
+      ''',
+      variables: [Variable<String>(lower)],
+      readsFrom: {todoLists, todoItems},
+    ).watch().map((rows) => rows.map((row) {
+          return TodoList(
+            id: row.read<String>('id'),
+            title: row.read<String>('title'),
+            createdAt: row.read<DateTime>('created_at'),
+            updatedAt: row.read<DateTime>('updated_at'),
+            isPinned: row.read<bool>('is_pinned'),
+            isLocked: row.read<bool>('is_locked'),
+            manualSortOrder: row.read<int>('manual_sort_order'),
+          );
+        }).toList());
   }
 
   /// タグなしToDoリストを取得（リアルタイム）

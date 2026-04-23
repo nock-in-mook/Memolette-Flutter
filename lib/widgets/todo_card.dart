@@ -133,38 +133,41 @@ class TodoCard extends ConsumerWidget {
                         ),
                       ],
                     ),
-                    // 仕切り線（メモカード準拠: 0.5px グレー）
-                    Container(
-                      height: 0.5,
-                      margin: const EdgeInsets.only(top: 4, bottom: 3),
-                      color: Colors.grey.withValues(alpha: 0.6),
-                    ),
-                    // "ToDo" + 件数（本文相当）
-                    Row(
-                      children: [
-                        Text(
-                          'ToDo',
-                          style: TextStyle(
-                            fontSize: _bodyFont,
-                            fontWeight: FontWeight.w700,
-                            fontFamily: 'Hiragino Sans',
-                            color: Colors.green,
-                            height: 1.2,
+                    // titleOnly モードではタイトルのみ表示（仕切り線・件数は省略）
+                    if (gridSize != GridSizeOption.titleOnly) ...[
+                      // 仕切り線（メモカード準拠: 0.5px グレー）
+                      Container(
+                        height: 0.5,
+                        margin: const EdgeInsets.only(top: 4, bottom: 3),
+                        color: Colors.grey.withValues(alpha: 0.6),
+                      ),
+                      // "ToDo" + 件数（本文相当）
+                      Row(
+                        children: [
+                          Text(
+                            'ToDo',
+                            style: TextStyle(
+                              fontSize: _bodyFont,
+                              fontWeight: FontWeight.w700,
+                              fontFamily: 'Hiragino Sans',
+                              color: Colors.green,
+                              height: 1.2,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '$done/$total件',
-                          style: TextStyle(
-                            fontSize: _bodyFont,
-                            fontWeight: FontWeight.w500,
-                            fontFamily: 'Hiragino Sans',
-                            color: Colors.black87,
-                            height: 1.2,
+                          const SizedBox(width: 6),
+                          Text(
+                            '$done/$total件',
+                            style: TextStyle(
+                              fontSize: _bodyFont,
+                              fontWeight: FontWeight.w500,
+                              fontFamily: 'Hiragino Sans',
+                              color: Colors.black87,
+                              height: 1.2,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
                 // ピン・ロックアイコン（右上）

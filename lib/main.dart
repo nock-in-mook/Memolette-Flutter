@@ -113,8 +113,45 @@ Future<Uint8List> _renderSampleImage(int seed) async {
   return data!.buffer.asUint8List();
 }
 
-class MemolettApp extends StatelessWidget {
+class MemolettApp extends StatefulWidget {
   const MemolettApp({super.key});
+
+  @override
+  State<MemolettApp> createState() => _MemolettAppState();
+}
+
+class _MemolettAppState extends State<MemolettApp>
+    with WidgetsBindingObserver {
+  Orientation? _prevOrientation;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    // 画面サイズ変化のうち orientation が変わった瞬間、
+    // 全画面共通で primaryFocus を外す。
+    // （検索バー・入力欄等でフォーカス残留したまま編集モードに
+    //   見える問題の解消。回転時は対象画面をまたいで有効。）
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    final size = view.physicalSize;
+    final newOri = size.width > size.height
+        ? Orientation.landscape
+        : Orientation.portrait;
+    if (_prevOrientation != null && _prevOrientation != newOri) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
+    _prevOrientation = newOri;
+  }
 
   @override
   Widget build(BuildContext context) {

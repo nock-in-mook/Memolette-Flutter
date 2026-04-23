@@ -146,6 +146,25 @@ final untaggedTodoListsProvider = StreamProvider<List<TodoList>>((ref) {
   return db.watchUntaggedTodoLists();
 });
 
+/// TODOリスト検索（title / items.title / items.memo のいずれかにヒット）
+final searchTodoListsProvider =
+    StreamProvider.family<List<TodoList>, String>((ref, query) {
+  final db = ref.watch(databaseProvider);
+  if (query.isEmpty) return Stream<List<TodoList>>.value(const []);
+  return db.searchTodoLists(query);
+});
+
+/// 特定 TODOリストの全アイテムを購読（sortOrder 順）
+/// 検索結果カード内でヒットアイテムを表示するのに使う。
+final todoItemsForListProvider =
+    StreamProvider.family<List<TodoItem>, String>((ref, listId) {
+  final db = ref.watch(databaseProvider);
+  return (db.select(db.todoItems)
+        ..where((t) => t.listId.equals(listId))
+        ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+      .watch();
+});
+
 /// ToDoリストに紐づくタグ取得（StreamProvider）
 final tagsForTodoListStreamProvider =
     StreamProvider.family<List<Tag>, String>((ref, todoListId) {

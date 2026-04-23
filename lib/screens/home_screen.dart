@@ -467,6 +467,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     _drawerCtrl = AnimationController.unbounded(vsync: this, value: 0);
     _searchFocusNode.addListener(() {
       setState(() => _isSearchFocused = _searchFocusNode.hasFocus);
+      // 検索バーにフォーカスが移った瞬間、入力欄を明示的にクローズ
+      // （編集中の空メモが即削除され、ツールバー残留も防ぐ）
+      if (_searchFocusNode.hasFocus) {
+        _inputAreaKey.currentState?.closeMemo();
+        _editingMemoId = null;
+      }
     });
     // ⌘系ショートカットはフォーカス非依存のグローバルハンドラで処理
     HardwareKeyboard.instance.addHandler(_handleGlobalKey);
@@ -916,8 +922,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       Color currentColor) {
     return Column(
       children: [
-        // 1. 検索バー / 入力欄最大化中はミニバー（入力エリア以外 → unfocus 対象）
-        _wrapUnfocusOnTap(_buildSearchBarSection()),
+        // 1. 検索バー / 入力欄最大化中はミニバー。
+        // 検索バー自体は TextField 側でフォーカスを取る必要があるため
+        // _wrapUnfocusOnTap で包まない（包むと入力欄フォーカス中のタップで
+        // 先に unfocus されて検索バーへフォーカスが移らない）。
+        _buildSearchBarSection(),
         // 2. メモ入力エリア（高さをアニメーション）
         _buildInputAreaSection(constraints, parentTags),
         // 3. 機能バー or 編集中バー（入力エリア以外 → unfocus 対象）
@@ -925,8 +934,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         // 4. 親タグタブ（入力エリア以外 → unfocus 対象）
         _wrapUnfocusOnTap(_buildTabContainerSection(parentTagsAsync)),
         // 5. フォルダ本体（入力エリア以外 → unfocus 対象）
-        // 入力欄最大化中 / 検索バーフォーカス中＋クエリ空 は非表示
-        if (!_isInputExpanded && !(_isSearchFocused && !_isSearchActive))
+        // 入力欄最大化中 / 検索バーフォーカス中＋クエリ空 は非表示。
+        // ただしフォルダ最大化中は検索フォーカスでもフォルダを維持（空白画面回避）。
+        if (_isMemoListExpanded ||
+            (!_isInputExpanded && !(_isSearchFocused && !_isSearchActive)))
           Expanded(
             child: _wrapUnfocusOnTap(_buildFolderBodySection(
                 currentColor, parentTags, parentTagsAsync)),
@@ -1192,6 +1203,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               query: _searchQuery,
               onTapMemo: _openMemo,
               onLongPressMemo: (m) => _showMemoActions(m),
+              onTapTodo: _openTodoList,
               highlightedMemoId: _highlightedMemoId,
             )
           else if (_isInFolderSearch)
@@ -2622,14 +2634,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// - todo のみ: 空を返す
   /// - タグなし: untaggedMemosProvider に差し替え
   /// - 全/メモのみ: base をそのまま
+  /// いずれの場合も「タイトル/本文/背景色が全て空」のメモは一覧から除外する
+  /// （_preCreateEmptyMemo で入力フォーカス時に作られる空メモがフォルダに
+  ///  即時出現するのを防ぐため。実体データは残すが表示のみ抑制）。
   AsyncValue<List<Memo>> _filterMemoStream(AsyncValue<List<Memo>> base) {
+    AsyncValue<List<Memo>> src;
     if (_typeFilter == _TypeFilter.todo) {
       return const AsyncValue<List<Memo>>.data([]);
     }
     if (_typeFilter == _TypeFilter.untagged) {
-      return ref.watch(untaggedMemosProvider);
+      src = ref.watch(untaggedMemosProvider);
+    } else {
+      src = base;
     }
-    return base;
+    return src.whenData(_excludeEmptyMemos);
+  }
+
+  /// 未入力（title/content/bgColor すべて空）のメモを除外する
+  List<Memo> _excludeEmptyMemos(List<Memo> list) {
+    return list
+        .where((m) =>
+            m.title.isNotEmpty ||
+            m.content.isNotEmpty ||
+            m.bgColorIndex != 0)
+        .toList();
   }
 
   /// タイプフィルタを適用した TodoList ストリームを返す。
@@ -4536,55 +4564,60 @@ class _SearchResultsView extends ConsumerWidget {
   final String query;
   final void Function(Memo) onTapMemo;
   final void Function(Memo) onLongPressMemo;
+  final void Function(TodoList) onTapTodo;
   final String? highlightedMemoId;
 
   const _SearchResultsView({
     required this.query,
     required this.onTapMemo,
     required this.onLongPressMemo,
+    required this.onTapTodo,
     this.highlightedMemoId,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final memosAsync = ref.watch(searchMemosProvider(query.toLowerCase()));
+    final todosAsync = ref.watch(searchTodoListsProvider(query));
     final parentTags =
         ref.watch(parentTagsProvider).valueOrNull ?? const <Tag>[];
 
-    return memosAsync.when(
-      data: (memos) {
-        if (memos.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Icon(CupertinoIcons.search,
-                    size: 32, color: Color(0xB33C3C43)),
-                SizedBox(height: 8),
-                Text(
-                  '見つかりませんでした',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontFamily: 'Hiragino Sans',
-                    color: Color(0xB33C3C43),
-                  ),
-                ),
-              ],
+    // どちらも loading なら circular indicator
+    if (memosAsync.isLoading && todosAsync.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final memos = memosAsync.valueOrNull ?? const <Memo>[];
+    final todos = todosAsync.valueOrNull ?? const <TodoList>[];
+
+    if (memos.isEmpty && todos.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(CupertinoIcons.search,
+                size: 32, color: Color(0xB33C3C43)),
+            SizedBox(height: 8),
+            Text(
+              '見つかりませんでした',
+              style: TextStyle(
+                fontSize: 14,
+                fontFamily: 'Hiragino Sans',
+                color: Color(0xB33C3C43),
+              ),
             ),
-          );
-        }
-        // メモごとのタグを取得して、親タグ別にグループ化
-        return _SearchSections(
-          query: query,
-          memos: memos,
-          parentTags: parentTags,
-          onTapMemo: onTapMemo,
-          onLongPressMemo: onLongPressMemo,
-          highlightedMemoId: highlightedMemoId,
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('検索エラー: $e')),
+          ],
+        ),
+      );
+    }
+    return _SearchSections(
+      query: query,
+      memos: memos,
+      todos: todos,
+      parentTags: parentTags,
+      onTapMemo: onTapMemo,
+      onLongPressMemo: onLongPressMemo,
+      onTapTodo: onTapTodo,
+      highlightedMemoId: highlightedMemoId,
     );
   }
 }
@@ -4592,22 +4625,31 @@ class _SearchResultsView extends ConsumerWidget {
 class _SearchSections extends ConsumerWidget {
   final String query;
   final List<Memo> memos;
+  final List<TodoList> todos;
   final List<Tag> parentTags;
   final void Function(Memo) onTapMemo;
   final void Function(Memo) onLongPressMemo;
+  final void Function(TodoList) onTapTodo;
   final String? highlightedMemoId;
 
   const _SearchSections({
     required this.query,
     required this.memos,
+    required this.todos,
     required this.parentTags,
     required this.onTapMemo,
     required this.onLongPressMemo,
+    required this.onTapTodo,
     this.highlightedMemoId,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // iPad 縦画面のみ 4列、それ以外（iPhone/iPad 横）は 2列
+    final cols =
+        (Responsive.isTablet(context) && !Responsive.isWide(context))
+            ? 4
+            : 2;
     // 各メモの親タグ集合を集める
     final memoParents = <String, Set<String>>{};
     for (final m in memos) {
@@ -4648,7 +4690,7 @@ class _SearchSections extends ConsumerWidget {
       }
     }
 
-    final totalHits = memos.length;
+    final totalHits = memos.length + todos.length;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(8, 4, 8, 80),
       child: Column(
@@ -4657,7 +4699,8 @@ class _SearchSections extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
             child: Text(
-              '$totalHits件ヒット',
+              '$totalHits件ヒット'
+              '${todos.isNotEmpty ? '（ToDo ${todos.length}件）' : ''}',
               style: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
@@ -4666,6 +4709,103 @@ class _SearchSections extends ConsumerWidget {
               ),
             ),
           ),
+          // TODO セクションを検索結果のトップに
+          if (todos.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    width: 0.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 3,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, bottom: 8),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF8CD18C),
+                              borderRadius: BorderRadius.circular(7),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(CupertinoIcons.checkmark_square,
+                                    size: 13, color: Colors.black),
+                                SizedBox(width: 4),
+                                Text(
+                                  'TODO',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    fontFamily: 'Hiragino Sans',
+                                    color: Colors.black,
+                                    height: 1.0,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${todos.length}件',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              fontFamily: 'Hiragino Sans',
+                              color: Color(0x993C3C43),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    for (var i = 0; i < todos.length; i += cols)
+                      Padding(
+                        padding: EdgeInsets.only(
+                            bottom: i + cols < todos.length ? 8 : 0),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (var j = 0; j < cols; j++) ...[
+                              if (j > 0) const SizedBox(width: 8),
+                              Expanded(
+                                child: i + j < todos.length
+                                    ? SizedBox(
+                                        height: 110,
+                                        child: _SearchTodoCard(
+                                          list: todos[i + j],
+                                          query: query,
+                                          onTap: () =>
+                                              onTapTodo(todos[i + j]),
+                                        ),
+                                      )
+                                    : const SizedBox.shrink(),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
           for (final s in sections)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
@@ -4725,44 +4865,35 @@ class _SearchSections extends ConsumerWidget {
                         ],
                       ),
                     ),
-                    // 2列レイアウト (手動 Column-of-Rows で確実な余白制御)
-                    for (var i = 0; i < s.memos.length; i += 2)
+                    // 可変列グリッド (cols 列、手動 Column-of-Rows で余白制御)
+                    for (var i = 0; i < s.memos.length; i += cols)
                       Padding(
                         padding: EdgeInsets.only(
-                            bottom: i + 2 < s.memos.length ? 8 : 0),
+                            bottom: i + cols < s.memos.length ? 8 : 0),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: SizedBox(
-                                height: 110,
-                                child: _SearchMemoCard(
-                                  memo: s.memos[i],
-                                  query: query,
-                                  onTap: () => onTapMemo(s.memos[i]),
-                                  onLongPress: () =>
-                                      onLongPressMemo(s.memos[i]),
-                                  isHighlighted: s.memos[i].id == highlightedMemoId,
-                                ),
+                            for (var j = 0; j < cols; j++) ...[
+                              if (j > 0) const SizedBox(width: 8),
+                              Expanded(
+                                child: i + j < s.memos.length
+                                    ? SizedBox(
+                                        height: 110,
+                                        child: _SearchMemoCard(
+                                          memo: s.memos[i + j],
+                                          query: query,
+                                          onTap: () =>
+                                              onTapMemo(s.memos[i + j]),
+                                          onLongPress: () =>
+                                              onLongPressMemo(s.memos[i + j]),
+                                          isHighlighted:
+                                              s.memos[i + j].id ==
+                                                  highlightedMemoId,
+                                        ),
+                                      )
+                                    : const SizedBox.shrink(),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: i + 1 < s.memos.length
-                                  ? SizedBox(
-                                      height: 110,
-                                      child: _SearchMemoCard(
-                                        memo: s.memos[i + 1],
-                                        query: query,
-                                        onTap: () =>
-                                            onTapMemo(s.memos[i + 1]),
-                                        onLongPress: () =>
-                                            onLongPressMemo(s.memos[i + 1]),
-                                        isHighlighted: s.memos[i + 1].id == highlightedMemoId,
-                                      ),
-                                    )
-                                  : const SizedBox.shrink(),
-                            ),
+                            ],
                           ],
                         ),
                       ),
@@ -4774,6 +4905,201 @@ class _SearchSections extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// 検索結果用の TodoList カード。
+/// ヒット箇所に応じてアイコンを切り替えて表示:
+///   - リスト title ヒット → ブックマーク(オレンジ)
+///   - アイテム title ヒット → チェックボックス
+///   - アイテム memo ヒット → メモアイコン
+/// 各ヒット行はクエリ部分を黄色ハイライト。最大2件表示 + 「他N件」。
+class _SearchTodoCard extends ConsumerWidget {
+  final TodoList list;
+  final String query;
+  final VoidCallback onTap;
+
+  const _SearchTodoCard({
+    required this.list,
+    required this.query,
+    required this.onTap,
+  });
+
+  /// テキスト内のマッチ箇所を黄色ハイライトした TextSpan に変換。
+  TextSpan _highlight(String text, TextStyle baseStyle) {
+    final lower = normalizeForSearch(text);
+    final lowerQ = normalizeForSearch(query);
+    if (lowerQ.isEmpty) return TextSpan(text: text, style: baseStyle);
+    final spans = <TextSpan>[];
+    var start = 0;
+    while (true) {
+      final idx = lower.indexOf(lowerQ, start);
+      if (idx < 0) {
+        spans.add(TextSpan(text: text.substring(start), style: baseStyle));
+        break;
+      }
+      if (idx > start) {
+        spans.add(
+            TextSpan(text: text.substring(start, idx), style: baseStyle));
+      }
+      spans.add(
+        TextSpan(
+          text: text.substring(idx, idx + lowerQ.length),
+          style: baseStyle.copyWith(
+            backgroundColor: Colors.yellow.withValues(alpha: 0.5),
+            fontWeight: FontWeight.w600,
+            color: Colors.black,
+          ),
+        ),
+      );
+      start = idx + lowerQ.length;
+    }
+    return TextSpan(children: spans);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final itemsAsync = ref.watch(todoItemsForListProvider(list.id));
+    final items = itemsAsync.valueOrNull ?? const <TodoItem>[];
+    final normQ = normalizeForSearch(query);
+    final titleHit = normQ.isNotEmpty &&
+        normalizeForSearch(list.title).contains(normQ);
+
+    // ヒットアイテム抽出
+    final hitItems = <_HitTodoItem>[];
+    for (final it in items) {
+      final inTitle = normQ.isNotEmpty &&
+          normalizeForSearch(it.title).contains(normQ);
+      final inMemo = normQ.isNotEmpty &&
+          it.memo != null &&
+          normalizeForSearch(it.memo!).contains(normQ);
+      if (inTitle || inMemo) {
+        hitItems.add(_HitTodoItem(it, inTitle: inTitle, inMemo: inMemo));
+      }
+    }
+    const maxShow = 2;
+    final shown = hitItems.take(maxShow).toList();
+    final remaining = hitItems.length - shown.length;
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // リスト title 行（ヒットなら title をハイライト）
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Icon(CupertinoIcons.bookmark_fill,
+                    size: 14, color: Colors.orange),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: RichText(
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    text: titleHit
+                        ? _highlight(
+                            list.title.isEmpty ? '無題のリスト' : list.title,
+                            const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              fontFamily: 'Hiragino Sans',
+                              color: Colors.black87,
+                            ),
+                          )
+                        : TextSpan(
+                            text: list.title.isEmpty ? '無題のリスト' : list.title,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              fontFamily: 'Hiragino Sans',
+                              color: Colors.black87,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+            // ヒットアイテム行
+            if (shown.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              for (final hit in shown)
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 3),
+                  child: _buildHitItemRow(hit),
+                ),
+              if (remaining > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, top: 2),
+                  child: Text(
+                    '他${remaining}件',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'Hiragino Sans',
+                      color: Colors.black.withValues(alpha: 0.45),
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHitItemRow(_HitTodoItem hit) {
+    const textStyle = TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+      fontFamily: 'Hiragino Sans',
+      color: Colors.black87,
+      height: 1.25,
+    );
+    // title ヒットなら title を、memo ヒットなら memo を表示（両方なら title 優先）
+    final showTitle = hit.inTitle;
+    final text = showTitle ? hit.item.title : (hit.item.memo ?? '');
+    final icon = showTitle
+        ? CupertinoIcons.square
+        : CupertinoIcons.doc_text; // メモアイコン
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 1),
+          child: Icon(icon, size: 12, color: Colors.grey.shade600),
+        ),
+        const SizedBox(width: 4),
+        Expanded(
+          child: RichText(
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            text: _highlight(text, textStyle),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HitTodoItem {
+  final TodoItem item;
+  final bool inTitle;
+  final bool inMemo;
+  _HitTodoItem(this.item, {required this.inTitle, required this.inMemo});
 }
 
 class _SearchSection {

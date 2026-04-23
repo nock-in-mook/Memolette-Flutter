@@ -701,6 +701,13 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   /// 以降の入力はすべてupdateMemoで処理されるため、rebuildが発生せず
   /// カスタムキーボードのテキスト消失を防ぐ
   Future<void> _preCreateEmptyMemo() async {
+    // 二重呼び出しガード: title/content/FocusManager の3つのリスナーが
+    // フォーカス取得時に同時発火するため、createMemo の await 中に
+    // 2回目以降が走ると空メモが重複作成される（iOS 実機 / シミュで再現）。
+    // 同期的にフラグを立ててから await に入ることでレースを防ぐ。
+    if (_hasMemo) return;
+    _hasMemo = true;
+
     final db = ref.read(databaseProvider);
     final memo = await db.createMemo(
       isMarkdown: _isMarkdown,
@@ -720,7 +727,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _pendingChildTag = null;
     _selfCreatedMemoId = memo.id;
     widget.onMemoCreated(memo.id);
-    if (mounted) setState(() => _hasMemo = true);
+    if (mounted) setState(() {});
   }
 
   // 確定: キーボードを閉じるだけ。メモは残す（本家準拠）

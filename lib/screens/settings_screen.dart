@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/toast.dart';
@@ -415,8 +416,82 @@ class SettingsScreen extends ConsumerWidget {
       );
     }
 
+    // ── TODO リスト（title / items.title / items.memo に Claude バリエーション）──
+    Future<TodoList> mkList(String title,
+        {List<String> tagIds = const []}) async {
+      final list = await db.createTodoList(title: title);
+      for (final tid in tagIds) {
+        await db.addTagToTodoList(list.id, tid);
+      }
+      return list;
+    }
+
+    // 1. リストタイトルに Claude
+    final l1 = await mkList('Claude プロジェクト', tagIds: [ai.id, aiChat.id]);
+    await db.createTodoItem(listId: l1.id, title: 'API呼び出しの設計');
+    await db.createTodoItem(listId: l1.id, title: 'プロンプト最適化');
+    await db.createTodoItem(
+        listId: l1.id, title: '評価指標の策定', memo: 'Claudeの応答品質を測る指標');
+
+    final l2 = await mkList('CLAUDE 検証タスク', tagIds: [dev.id, devTool.id]);
+    await db.createTodoItem(listId: l2.id, title: 'API キー取得');
+    await db.createTodoItem(listId: l2.id, title: 'テストコード作成');
+
+    // 2. アイテムタイトルに Claude
+    final l3 = await mkList('AI リサーチ', tagIds: [note.id]);
+    await db.createTodoItem(listId: l3.id, title: 'Claude の料金体系');
+    await db.createTodoItem(listId: l3.id, title: 'GPT との比較');
+    await db.createTodoItem(listId: l3.id, title: 'Gemini との比較');
+
+    // 3. アイテムメモに Claude
+    final l4 = await mkList('AI ツール選定', tagIds: [dev.id, aiCode.id]);
+    await db.createTodoItem(
+        listId: l4.id,
+        title: 'コスト試算',
+        memo: 'Claude / GPT / Gemini の月額比較表を作成する');
+    await db.createTodoItem(
+        listId: l4.id,
+        title: 'パフォーマンス評価',
+        memo: 'claudeのレスポンスタイムを実測');
+
+    // 4. タイトル / items / memo 全部に Claude
+    final l5 = await mkList('Claude 導入プロジェクト', tagIds: [ai.id]);
+    await db.createTodoItem(
+        listId: l5.id, title: 'Claude 試用', memo: 'Claude のAPIを触ってみる');
+    await db.createTodoItem(listId: l5.id, title: 'チーム内共有');
+    await db.createTodoItem(
+        listId: l5.id, title: 'ドキュメント整備', memo: 'CLAUDE の使い方をまとめる');
+
+    // 5. ノイズ（Claude 非含有）
+    final l6 = await mkList('買い物リスト', tagIds: [misc.id]);
+    await db.createTodoItem(listId: l6.id, title: '牛乳');
+    await db.createTodoItem(listId: l6.id, title: 'パン');
+    await db.createTodoItem(listId: l6.id, title: '卵');
+
+    final l7 = await mkList('今日のタスク', tagIds: [misc.id]);
+    await db.createTodoItem(listId: l7.id, title: '洗濯');
+    await db.createTodoItem(listId: l7.id, title: '掃除');
+
+    // 6. 大量データ（一部に Claude 混入）
+    for (var i = 1; i <= 15; i++) {
+      final l = await mkList('TODO #$i',
+          tagIds: i % 2 == 0 ? [ai.id] : [dev.id]);
+      await db.createTodoItem(listId: l.id, title: 'タスクA');
+      await db.createTodoItem(listId: l.id, title: 'タスクB');
+      if (i % 3 == 0) {
+        await db.createTodoItem(
+            listId: l.id,
+            title: 'Claudeに相談',
+            memo: '$i 番目のリスト内メモ');
+      }
+      if (i % 5 == 0) {
+        await db.createTodoItem(
+            listId: l.id, title: 'まとめ作成', memo: 'claude の出力を添付');
+      }
+    }
+
     if (!context.mounted) return;
-    showToast(context, 'Claude検索検証用ダミーデータを投入しました');
+    showToast(context, 'Claude検索検証用ダミーデータを投入しました（メモ + TODO）');
   }
 
   // 長文メモ検証用: 1000〜10000文字を1000刻みで10件
