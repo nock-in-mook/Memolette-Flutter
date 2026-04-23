@@ -84,15 +84,28 @@ const String kAllTabKey = '__all__';
 const String kUntaggedTabKey = '__untagged__';
 const String kFrequentTabKey = '__frequent__';
 
-/// 「すべて」タブ内のサブフィルタ
+/// 「すべて」タブ内のサブフィルタ（表示軸: 全件 / よく見る / 最近見た）
 enum _AllTabSubFilter {
   all('すべて'),
   frequent('よく見る'),
-  recent('最近見た'),
-  untagged('タグなし');
+  recent('最近見た');
 
   final String label;
   const _AllTabSubFilter(this.label);
+}
+
+/// 表示タイプのフィルタ（メモ/TODO/タグなしで絞る軸）
+/// どのタブでも共通に使える。親タグタブでは untagged は選べない。
+/// label は「フィルタ:<label>」の形でボタンに出る。未適用時は all=「なし」。
+enum _TypeFilter {
+  all('なし', Icons.apps),
+  memo('メモのみ', Icons.note_outlined),
+  todo('TODOのみ', Icons.checklist),
+  untagged('タグなし', Icons.label_off_outlined);
+
+  final String label;
+  final IconData icon;
+  const _TypeFilter(this.label, this.icon);
 }
 
 // メモ複数選択モード（本家準拠）
@@ -108,8 +121,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   List<String>? _tabOrder;
   // 選択中のタブ（キー指定）
   String _selectedTabKey = kAllTabKey;
-  // 「すべて」タブ内のサブフィルタ（すべて/よく見る/最近見た/タグなし）
+  // 「すべて」タブ内のサブフィルタ（すべて/よく見る/最近見た）
   _AllTabSubFilter _allTabSubFilter = _AllTabSubFilter.all;
+  // 表示タイプフィルタ（全ファイル/メモのみ/TODOのみ/タグなし）
+  // 親タグタブでは untagged は選べない（UIで除外）
+  _TypeFilter _typeFilter = _TypeFilter.all;
   // 子タグドロワー (0=閉, 1=開) — ドロワー本体と件数バー/メモグリッドのスライドを同期させる
   late final AnimationController _drawerCtrl;
   bool _childDrawerOpen = false;
@@ -2291,17 +2307,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
       );
     }
+    // 親タグタブ等: 左=件数(+子タグバッジ)、中央=フィルタ▼（単一ボタン、タップで直下展開）
     return Container(
       height: 37,
       padding: const EdgeInsets.symmetric(horizontal: 14),
-      alignment: Alignment.centerLeft,
       child: Row(
         children: [
           _MemoCountText(
             tabKey: _selectedTabKey,
             childTagId: _selectedChildTagId,
+            typeFilter: _typeFilter,
           ),
-          // 子タグフィルター中: 親-子 カプセルバッジ
           if (_selectedChildTagId != null && parentId != null) ...[
             const SizedBox(width: 6),
             _ParentChildBadge(
@@ -2310,15 +2326,204 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               tabColor: tabColor,
             ),
           ],
+          Expanded(
+            child: Center(child: _buildFilterButton(allowUntagged: false)),
+          ),
         ],
       ),
     );
   }
 
+  /// フィルタボタン（単一ピル型）。タップでボタン直下にプルダウン展開。
+  /// - 親タグタブ (allowUntagged=false): 「フィルタ:<label>」（現在選択を反映）
+  /// - 「すべて」タブ (allowUntagged=true): 「フィルタ ▼」（固定、選択は非表示）
+  Widget _buildFilterButton({required bool allowUntagged}) {
+    final filter = _typeFilter;
+    final active = filter != _TypeFilter.all;
+    const fg = Colors.black87;
+    // 選択中は白背景+濃い枠でハイライト、未選択は透明+薄い枠。
+    // どのタブ色でもコントラストが取れる（青ハイライトは青背景で埋もれる問題対策）。
+    final bgColor =
+        active ? Colors.white.withValues(alpha: 0.92) : Colors.transparent;
+    final borderColor = active
+        ? Colors.black.withValues(alpha: 0.6)
+        : Colors.black.withValues(alpha: 0.35);
+    final fw = active ? FontWeight.w700 : FontWeight.w600;
+    return Builder(builder: (btnContext) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _showFilterMenu(btnContext, allowUntagged: allowUntagged),
+        child: Stack(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: borderColor, width: 1),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (allowUntagged) ...[
+                    if (!active) ...[
+                      Text(
+                        'フィルタ',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: fw,
+                          color: fg,
+                          fontFamily: 'Hiragino Sans',
+                        ),
+                      ),
+                    ] else ...[
+                      Icon(filter.icon, size: 13, color: fg),
+                      const SizedBox(width: 3),
+                      Text(
+                        filter.label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: fw,
+                          color: fg,
+                          fontFamily: 'Hiragino Sans',
+                        ),
+                      ),
+                    ],
+                  ] else ...[
+                    Text(
+                      'フィルタ:',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: fw,
+                        color: fg,
+                        fontFamily: 'Hiragino Sans',
+                      ),
+                    ),
+                    if (filter != _TypeFilter.all) ...[
+                      const SizedBox(width: 3),
+                      Icon(filter.icon, size: 13, color: fg),
+                    ],
+                    const SizedBox(width: 3),
+                    Text(
+                      filter.label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: fw,
+                        color: fg,
+                        fontFamily: 'Hiragino Sans',
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: 2),
+                  const Icon(Icons.expand_more, size: 15, color: fg),
+                ],
+              ),
+            ),
+            // 選択中はカプセル枠の内側に紫のグローをぐるりと描画
+            if (active)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _InnerGlowPainter(
+                      color: const Color(0xFF8A2BE2).withValues(alpha: 0.85),
+                      sigma: 2.5,
+                      borderRadius: 14,
+                      strokeWidth: 4,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    });
+  }
+
+  /// タイプフィルタのプルダウンメニュー。ボタン直下に展開。
+  /// showMenu で iOS風にカスタマイズ（小さめフォント + チェックマーク）。
+  Future<void> _showFilterMenu(
+    BuildContext btnContext, {
+    required bool allowUntagged,
+  }) async {
+    final options = allowUntagged
+        ? _TypeFilter.values
+        : _TypeFilter.values
+            .where((f) => f != _TypeFilter.untagged)
+            .toList();
+
+    final RenderBox button =
+        btnContext.findRenderObject()! as RenderBox;
+    final RenderBox overlay =
+        Overlay.of(btnContext).context.findRenderObject()! as RenderBox;
+    final Offset buttonLeftBottom = button.localToGlobal(
+        button.size.bottomLeft(Offset.zero),
+        ancestor: overlay);
+    final Offset buttonRightBottom = button.localToGlobal(
+        button.size.bottomRight(Offset.zero),
+        ancestor: overlay);
+    final position = RelativeRect.fromLTRB(
+      buttonLeftBottom.dx,
+      buttonLeftBottom.dy + 4,
+      overlay.size.width - buttonRightBottom.dx,
+      0,
+    );
+
+    final selected = await showMenu<_TypeFilter>(
+      context: btnContext,
+      position: position,
+      elevation: 8,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+      items: [
+        for (final opt in options)
+          PopupMenuItem<_TypeFilter>(
+            value: opt,
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Row(
+              children: [
+                // 全ファイル/なし はアイコンなし（幅だけ合わせる）
+                if (opt != _TypeFilter.all)
+                  Icon(opt.icon, size: 16, color: Colors.black54)
+                else
+                  const SizedBox(width: 16),
+                const SizedBox(width: 10),
+                Text(
+                  opt.label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: _typeFilter == opt
+                        ? FontWeight.w700
+                        : FontWeight.w500,
+                    fontFamily: 'Hiragino Sans',
+                    color: _typeFilter == opt
+                        ? const Color(0xFF007AFF)
+                        : Colors.black87,
+                  ),
+                ),
+                const SizedBox(width: 20),
+                const Spacer(),
+                if (_typeFilter == opt)
+                  const Icon(Icons.check,
+                      size: 16, color: Color(0xFF007AFF)),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (selected != null && mounted) {
+      setState(() => _typeFilter = selected);
+    }
+  }
+
   // ========================================
   // 7. メモグリッド
   // ========================================
-  /// 「すべて」タブ専用のサブフィルタバー（件数 + ピル状フィルタ）
+  /// 「すべて」タブ専用のサブフィルタバー（件数 + ピル + フィルタ▼）
+  /// 既存「タグなし」ピルは廃止し、同じ位置（右端）にタイプフィルタ▼を置く。
+  /// タグなしも「フィルタ▼」のメニュー内で選べる。
   Widget _buildAllTabSubFilterBar() {
     return SizedBox(
       height: 40,
@@ -2333,6 +2538,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 tabKey: _selectedTabKey,
                 childTagId: _selectedChildTagId,
                 subFilter: _allTabSubFilter,
+                typeFilter: _typeFilter,
               ),
             ),
             const SizedBox(width: 8),
@@ -2345,6 +2551,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     children: [
                       for (final filter in _AllTabSubFilter.values)
                         _buildAllTabSubFilterChip(filter),
+                      // 「タグなし」ピル廃止→ここにフィルタ▼（タグなしも含めて選択）
+                      _buildFilterButton(allowUntagged: true),
                     ],
                   ),
                 ),
@@ -2387,6 +2595,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  /// タイプフィルタを適用した memo ストリームを返す。
+  /// - todo のみ: 空を返す
+  /// - タグなし: untaggedMemosProvider に差し替え
+  /// - 全/メモのみ: base をそのまま
+  AsyncValue<List<Memo>> _filterMemoStream(AsyncValue<List<Memo>> base) {
+    if (_typeFilter == _TypeFilter.todo) {
+      return const AsyncValue<List<Memo>>.data([]);
+    }
+    if (_typeFilter == _TypeFilter.untagged) {
+      return ref.watch(untaggedMemosProvider);
+    }
+    return base;
+  }
+
+  /// タイプフィルタを適用した TodoList ストリームを返す。
+  AsyncValue<List<TodoList>> _filterTodoStream(
+      AsyncValue<List<TodoList>> base) {
+    if (_typeFilter == _TypeFilter.memo) {
+      return const AsyncValue<List<TodoList>>.data([]);
+    }
+    if (_typeFilter == _TypeFilter.untagged) {
+      return ref.watch(untaggedTodoListsProvider);
+    }
+    return base;
+  }
+
   Widget _buildMemoGrid(List<Tag> parentTags) {
     if (_selectedTabKey == kFrequentTabKey) {
       return _FrequentTabContent(
@@ -2401,21 +2635,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       );
     }
     if (_selectedTabKey == kAllTabKey) {
-      final subStream = switch (_allTabSubFilter) {
+      final baseMemo = switch (_allTabSubFilter) {
         _AllTabSubFilter.all => ref.watch(allMemosProvider),
         _AllTabSubFilter.frequent => ref.watch(frequentMemosProvider),
         _AllTabSubFilter.recent => ref.watch(recentMemosProvider),
-        _AllTabSubFilter.untagged => ref.watch(untaggedMemosProvider),
       };
-      // ToDoリストは「すべて」「タグなし」サブでのみ表示、「よく見る」「最近見た」は非表示
-      final subTodoStream = switch (_allTabSubFilter) {
+      // ToDoリストは「すべて」サブでのみ表示、「よく見る」「最近見た」は非表示
+      final baseTodo = switch (_allTabSubFilter) {
         _AllTabSubFilter.all => ref.watch(allTodoListsProvider),
-        _AllTabSubFilter.untagged => ref.watch(untaggedTodoListsProvider),
         _ => const AsyncValue<List<TodoList>>.data([]),
       };
       return _MemoGridView(
-        stream: subStream,
-        todoListStream: subTodoStream,
+        stream: _filterMemoStream(baseMemo),
+        todoListStream: _filterTodoStream(baseTodo),
         gridSize: _gridSize,
         onTap: _handleMemoTap,
         onTodoTap: _openTodoList,
@@ -2438,8 +2670,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       );
     } else if (_selectedTabKey == kUntaggedTabKey) {
       return _MemoGridView(
-        stream: ref.watch(untaggedMemosProvider),
-        todoListStream: ref.watch(untaggedTodoListsProvider),
+        stream: _filterMemoStream(ref.watch(untaggedMemosProvider)),
+        todoListStream:
+            _filterTodoStream(ref.watch(untaggedTodoListsProvider)),
         gridSize: _gridSize,
         onTap: _handleMemoTap,
         onTodoTap: _openTodoList,
@@ -2464,8 +2697,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (parentId == null) return const SizedBox();
       final tagId = _selectedChildTagId ?? parentId;
       return _MemoGridView(
-        stream: ref.watch(memosForTagProvider(tagId)),
-        todoListStream: ref.watch(todoListsForTagProvider(tagId)),
+        stream: _filterMemoStream(ref.watch(memosForTagProvider(tagId))),
+        todoListStream:
+            _filterTodoStream(ref.watch(todoListsForTagProvider(tagId))),
         gridSize: _gridSize,
         onTap: _handleMemoTap,
         onTodoTap: _openTodoList,
@@ -3938,15 +4172,28 @@ class _MemoCountText extends ConsumerWidget {
   final String? childTagId;
   // 「すべて」タブのときだけ意味を持つ。サブフィルタに連動した件数を出すため。
   final _AllTabSubFilter subFilter;
+  // 表示タイプフィルタ（全/メモのみ/TODOのみ/タグなし）
+  final _TypeFilter typeFilter;
 
   const _MemoCountText({
     required this.tabKey,
     this.childTagId,
     this.subFilter = _AllTabSubFilter.all,
+    this.typeFilter = _TypeFilter.all,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // typeFilter=untagged は「すべて」タブで選ばれたタグなし絞り込み。
+    // 他タブでは UI で選ばせないため到達しない前提だが念のため同じ処理で。
+    if (typeFilter == _TypeFilter.untagged) {
+      final m = ref.watch(untaggedMemosProvider).valueOrNull?.length ?? 0;
+      final t =
+          ref.watch(untaggedTodoListsProvider).valueOrNull?.length ?? 0;
+      return Text('${m + t}件',
+          style: TextStyle(fontSize: 12, color: Colors.grey[600]));
+    }
+
     AsyncValue<List<Memo>> memosAsync;
     AsyncValue<List<TodoList>> todosAsync;
     if (tabKey == kAllTabKey) {
@@ -3954,11 +4201,9 @@ class _MemoCountText extends ConsumerWidget {
         _AllTabSubFilter.all => ref.watch(allMemosProvider),
         _AllTabSubFilter.frequent => ref.watch(frequentMemosProvider),
         _AllTabSubFilter.recent => ref.watch(recentMemosProvider),
-        _AllTabSubFilter.untagged => ref.watch(untaggedMemosProvider),
       };
       todosAsync = switch (subFilter) {
         _AllTabSubFilter.all => ref.watch(allTodoListsProvider),
-        _AllTabSubFilter.untagged => ref.watch(untaggedTodoListsProvider),
         // よく見る・最近見たは ToDo 対象外（メモのみ）
         _ => const AsyncValue<List<TodoList>>.data([]),
       };
@@ -3971,8 +4216,12 @@ class _MemoCountText extends ConsumerWidget {
       todosAsync = ref.watch(todoListsForTagProvider(tagId));
     }
 
-    final memoCount = memosAsync.valueOrNull?.length ?? 0;
-    final todoCount = todosAsync.valueOrNull?.length ?? 0;
+    final memoCount = typeFilter == _TypeFilter.todo
+        ? 0
+        : (memosAsync.valueOrNull?.length ?? 0);
+    final todoCount = typeFilter == _TypeFilter.memo
+        ? 0
+        : (todosAsync.valueOrNull?.length ?? 0);
     return Text(
       '${memoCount + todoCount}件',
       style: TextStyle(fontSize: 12, color: Colors.grey[600]),
@@ -5761,6 +6010,45 @@ class _TabContextMenuOverlay extends StatelessWidget {
       ],
     );
   }
+}
+
+/// カプセル枠の内側全周に blurred な色を描いてインナーグローを再現する Painter。
+/// iOS Impeller で BoxShadow(BlurStyle.inner) が正しく描画されない問題の回避策。
+class _InnerGlowPainter extends CustomPainter {
+  final Color color;
+  final double sigma;
+  final double borderRadius;
+  final double strokeWidth;
+
+  const _InnerGlowPainter({
+    required this.color,
+    this.sigma = 4,
+    this.borderRadius = 14,
+    this.strokeWidth = 6,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(borderRadius));
+    canvas.save();
+    // カプセル形状にクリップ → blur stroke を描くと内側にだけ広がった残像が見える
+    canvas.clipRRect(rrect);
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, sigma);
+    canvas.drawRRect(rrect, paint);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _InnerGlowPainter old) =>
+      old.color != color ||
+      old.sigma != sigma ||
+      old.borderRadius != borderRadius ||
+      old.strokeWidth != strokeWidth;
 }
 
 class _MenuActionRow extends StatefulWidget {
