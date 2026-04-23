@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'db/database.dart';
@@ -12,6 +13,17 @@ import 'utils/keyboard_done_bar.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // iPhone は縦固定 / iPad は全向き許可
+  // （Info.plist だけだと UIRequiresFullScreen=true と組み合わさったときに
+  //   iPhone 側の方向制限が効かないケースがあるため Flutter 側でも制御する）
+  final view = ui.PlatformDispatcher.instance.views.first;
+  final shortestSide =
+      view.physicalSize.shortestSide / view.devicePixelRatio;
+  if (shortestSide < 600) {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
+  }
   // Documents パスを温めて以降の Image.file FutureBuilder を同期化
   await ImageStorage.warmUp();
   // ダミータグ挿入（タグ0件のときだけ）
