@@ -45,7 +45,9 @@ void showToast(
             builder: (_, opacity, child) =>
                 Opacity(opacity: opacity, child: child),
             child: Center(
-              child: ClipRRect(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: ClipRRect(
                 borderRadius: BorderRadius.circular(14),
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
@@ -70,6 +72,7 @@ void showToast(
                     ),
                   ),
                 ),
+              ),
               ),
             ),
           ),
