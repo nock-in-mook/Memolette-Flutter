@@ -41,8 +41,9 @@ class NewTagSheet extends ConsumerStatefulWidget {
   });
 
   /// モーダルボトムシートで開くヘルパー。完了時に対象タグIDを返す。
-  /// Swift版 .medium detent 相当: 画面高の約55%が見える状態。
-  /// キーボード表示時はシート全体を上に伸ばし、見える領域(55%)を維持する。
+  /// 画面高の約 75% を占める大きなシート。カラーパレットまで最初から見える位置。
+  /// キーボード表示時はシート外枠は動かさず、内側コンテンツだけを上に寄せる
+  /// （= 編集中に位置がガタつかない）。
   static Future<String?> show({
     required BuildContext context,
     String? parentTagId,
@@ -65,25 +66,26 @@ class NewTagSheet extends ConsumerStatefulWidget {
         final mq = MediaQuery.of(ctx);
         final screenH = mq.size.height;
         final keyboardH = mq.viewInsets.bottom;
-        final visibleH = screenH * 0.55;
-        final maxVisible = screenH - mq.padding.top - 10 - keyboardH;
-        final actualVisible =
+        final visibleH = screenH * 0.75;
+        final maxVisible = screenH - mq.padding.top - 10;
+        final sheetH =
             visibleH > maxVisible && maxVisible > 0 ? maxVisible : visibleH;
-        return SuppressKeyboardDoneBar(child: Padding(
-          padding: EdgeInsets.only(bottom: keyboardH),
-          child: SizedBox(
-            height: actualVisible,
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(16),
-              ),
-              child: BackdropFilter(
-                // すりガラス効果（iOS UIBlurEffect.systemMaterial 相当）
-                // sigma小さめで形が軽く残るくらいに
-                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                child: Container(
-                  // 半透明の白で軽くカバー
-                  color: Colors.white.withValues(alpha: 0.65),
+        return SuppressKeyboardDoneBar(child: SizedBox(
+          height: sheetH,
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(16),
+            ),
+            child: BackdropFilter(
+              // すりガラス効果（iOS UIBlurEffect.systemMaterial 相当）
+              // sigma小さめで形が軽く残るくらいに
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(
+                // 半透明の白で軽くカバー
+                color: Colors.white.withValues(alpha: 0.65),
+                // 内側だけキーボード分上に詰める（外枠は動かない）
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: keyboardH),
                   child: NewTagSheet(
                     parentTagId: parentTagId,
                     editingTag: editingTag,
