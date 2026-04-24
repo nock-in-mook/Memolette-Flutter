@@ -38,11 +38,31 @@ Flutter 側 `ios/Runner.xcodeproj` の Team 設定は個人 Team のまま
 
 ## 現在の状況
 
-- セッション#26 完了（2026-04-23）
+- **セッション#27 完了**（2026-04-24）
 - ブランチ: `main`
-- 最終コミット: `8590e7b` 効かない SuppressKeyboardDoneBar を削除
-- iPad Pro 12.9 シミュ + iPhone 15 Pro Max シミュで動作確認済
-- iPhone 15 Pro Max 実機は **wireless のインストール不安定で確認できず**
+- 最終コミット: `cecb85a` 結合マーク位置とチェックボックス配置の調整 + フィルタボタンを中央固定
+- iPhone 15 Pro Max **実機 (wireless)** + iPad Pro 13-inch シミュで動作確認済
+- 今回は wireless デプロイ安定、devicectl 経由で問題なし
+
+## #27 で完了したこと
+
+### TODO リスト UI の細部仕上げ
+- 結合済みマークを「しおり上端とカード上端の中間寄り」に再配置 (`todo_lists_screen.dart` / `todo_card.dart`)
+- 結合モード中のチェックボックスと結合マークの重なり回避（マークを `left: 22` へ右シフト）
+- 結合モード上部バー（キャンセル⇔結合する間の余白）タップで結合モード抜ける
+- メモ一覧の select モードでも TodoCard の結合マークが右シフトするよう `selectModeActive` 引数追加
+
+### 親タグタブのフィルタボタンの位置ゆれ解消
+- `Row + Expanded` だと件数の桁数でフィルタボタン位置が左右に動いていた
+- `Stack + Align(centerLeft)` に変更、フィルタボタンは常にバー中央固定
+- 件数＋子タグバッジは左にオーバーレイ表示
+
+### 本業以外の進捗（関連プロジェクト立ち上げ）
+- **`_Apps2026/session-recall/` を新規作成**（2026-04-24）
+- claude-mem (OSS) を試用したが、バグ多・ノイズ多・高コストと判明 → 自作路線へ
+- 既存の `SESSION_HISTORY.md` / `HANDOFF.md` を Claude が横断検索する仕組みを段階的に作る計画
+- GitHub: https://github.com/nock-in-mook/session-recall
+- 経緯と全フェーズ計画は `session-recall/HANDOFF.md` に詳細記載済み
 
 ## #26 で完了したこと
 
@@ -105,16 +125,14 @@ Flutter 側 `ios/Runner.xcodeproj` の Team 設定は個人 Team のまま
 
 ## 次のアクション（次セッション）
 
-### 優先度高
-1. **iPhone 実機で最新ビルドの全体動作確認**（今セッションは wireless 失敗でシミュのみ検証）
-   - USB ケーブル接続か、wireless が安定するタイミングで
-   - 特に iPhone 縦固定・タグシート位置・ツールバー残留修正を実機で確認
-
-### 優先度中
+### Memolette 本体
 - **ToDo 画面に検索窓追加**（メモ側と同等）
-- **ToDo 複数リスト結合機能**
-- **iPad 実機で全体動作確認**（ケーブル接続後）
+- **iPad 実機で全体動作確認**
 - **iPhone 実機で ⌘1-9 動作確認**（シミュでは Window メニューが横取り）
+
+### 別プロジェクトでの作業（session-recall）
+- `_Apps2026/session-recall/` に移動して Phase 1 から開始
+- 詳細は `session-recall/HANDOFF.md` を参照
 
 ### 優先度低
 - **TestFlight 内部配布セットアップ**（Apple Developer 登録済みの活用）

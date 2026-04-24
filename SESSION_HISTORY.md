@@ -589,3 +589,35 @@
 - iPhone 実機（wireless）で最新ビルドの全体動作確認（今回 wireless が不安定でシミュ検証のみ）
 - ToDo 画面に検索窓追加、複数リスト結合機能
 - iPad 実機で全体動作確認
+
+---
+## #27 (2026-04-24): TODO UI 仕上げ + session-recall プロジェクト発足
+
+### Memolette 本体の作業
+- TODO リスト結合マーク位置を微調整（しおり上端寄り `top: 4`、結合モード時は `left: 22` へ右シフト）
+- 結合モード中のチェックボックスと結合マークの重なり回避
+- 結合モード上部バー余白タップで結合モード抜ける
+- メモ一覧 select モード時も `TodoCard` に `selectModeActive` 引数で右シフト対応
+- 親タグタブのフィルタボタンを `Stack + Align` で中央固定化（件数桁数で位置がずれる問題解消）
+- メインコミット: `cecb85a 結合マーク位置とチェックボックス配置の調整 + フィルタボタンを中央固定`
+
+### 動作検証
+- iPhone 15 Pro Max 実機 (wireless) + iPad Pro 13-inch シミュ、両方でデプロイ検証済
+- devicectl 経由の install は今回は安定、wireless でも問題なし
+
+### 関連プロジェクト立ち上げ: session-recall
+- X 経由で claude-mem (OSS) の記事を共有され試用 → バグ多・ノイズ多・週 quota 3%/往復のコスト過大で撤退判断
+- 既存の `SESSION_HISTORY.md` / `HANDOFF.md` 等の手動メンテ資産を活用した自作版を計画
+- `_Apps2026/session-recall/` を新規作成 (`git init` + GitHub push 済)
+- 全フェーズ計画（Lv.0〜Lv.3 セマンティック検索まで、Mac/Windows 横断）を `HANDOFF.md` に詳述
+- リポジトリ: https://github.com/nock-in-mook/session-recall
+- 次セッションはこのプロジェクトで Phase 1 (Lv.0: CLAUDE.md 指示追加) から着手予定
+
+### claude-mem の現状
+- 有効化したまま残置。session-recall 完成後に撤去予定
+- バックアップ: `~/.claude-backup-pre-claude-mem/`
+
+### 学び
+- claude-mem の数字（GitHub 6.6万スター、v12.3.9）は実際には盛られていなかった。一次情報で確認して判断すべき
+- 上流が急速に発展中（4日で 7 リリース）で critical バグ多数の時期は時期尚早。数週間待つのも手
+- のっくりさんの手動メンテドキュメント資産は claude-mem の自動要約より情報密度が圧倒的に高い
