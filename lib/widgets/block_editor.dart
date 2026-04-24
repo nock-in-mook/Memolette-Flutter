@@ -633,34 +633,34 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
     final hintText = isFirstText
         ? (widget.isMarkdown ? 'タップでマークダウン編集...' : 'メモを入力...')
         : null;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
-      child: TextField(
-        controller: block.controller,
-        focusNode: block.focusNode,
-        readOnly: widget.readOnly,
-        onTap: TextMenuDismisser.wrap(() {
-          widget.onTap?.call();
-        }),
-        style: const TextStyle(
-          fontSize: 16,
-          height: 1.25,
-          fontWeight: FontWeight.w500,
-          fontFamily: 'PingFang JP',
-          color: Colors.black87,
-        ),
-        decoration: InputDecoration(
-          hintText: hintText,
-          hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.4)),
-          border: InputBorder.none,
-          isDense: true,
-          contentPadding: EdgeInsets.zero,
-        ),
-        contextMenuBuilder: TextMenuDismisser.builder,
-        maxLines: null,
-        textAlignVertical: TextAlignVertical.top,
-        keyboardType: TextInputType.multiline,
+    // 外側 Padding は廃し、contentPadding でタッチ判定領域を拡張
+    // （文字の外側の余白にもカーソル/選択が届くように）
+    return TextField(
+      controller: block.controller,
+      focusNode: block.focusNode,
+      readOnly: widget.readOnly,
+      onTap: TextMenuDismisser.wrap(() {
+        widget.onTap?.call();
+      }),
+      style: const TextStyle(
+        fontSize: 16,
+        height: 1.25,
+        fontWeight: FontWeight.w500,
+        fontFamily: 'PingFang JP',
+        color: Colors.black87,
       ),
+      decoration: InputDecoration(
+        hintText: hintText,
+        hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.4)),
+        border: InputBorder.none,
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
+      ),
+      contextMenuBuilder: TextMenuDismisser.builder,
+      maxLines: null,
+      textAlignVertical: TextAlignVertical.top,
+      keyboardType: TextInputType.multiline,
     );
   }
 

@@ -1573,7 +1573,10 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                             // 非フォーカス時のTextオーバーレイのみで見せる
                             border: InputBorder.none,
                             isDense: true,
-                            contentPadding: EdgeInsets.symmetric(vertical: 4),
+                            // 横方向 padding でタッチ判定を拡張（文字の外側余白にも
+                            // カーソル/選択が届くように）
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 4),
                           ),
                           maxLines: 1,
                         ),
@@ -1595,6 +1598,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                               // TextField(isDense + contentPadding vertical:4)は
                               // 実際にはテキストを中央寄せで描画するため centerLeft
                               alignment: Alignment.centerLeft,
+                              // TextField 側 contentPadding horizontal:12 に合わせる
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
                               child: Text(
                                 _titleController.text.isEmpty
                                     ? '\u30BF\u30A4\u30C8\u30EB\uFF08\u4EFB\u610F\uFF09'

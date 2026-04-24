@@ -2609,7 +2609,8 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                           ),
                           border: InputBorder.none,
                           isDense: true,
-                          contentPadding: EdgeInsets.zero,
+                          // 文字の外側余白にもタッチ判定が届くように
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12),
                         ),
                         maxLines: 1,
                         onChanged: (_) {
@@ -2695,7 +2696,8 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                                         height: 1.5,
                                       ),
                                       isDense: true,
-                                      contentPadding: EdgeInsets.zero,
+                                      contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 12),
                                     ),
                                     onChanged: (_) {
                                       _saveContent();

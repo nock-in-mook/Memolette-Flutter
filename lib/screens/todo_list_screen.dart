@@ -1132,7 +1132,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         decoration: const InputDecoration(
           isDense: true,
           border: InputBorder.none,
-          contentPadding: EdgeInsets.zero,
+          contentPadding: EdgeInsets.symmetric(horizontal: 12),
         ),
         onSubmitted: (_) => _saveTitle(),
         onTapOutside: (_) => _saveTitle(),
@@ -2766,7 +2766,7 @@ class _EditingItemFieldState extends State<_EditingItemField> {
       decoration: const InputDecoration(
         isDense: true,
         border: InputBorder.none,
-        contentPadding: EdgeInsets.zero,
+        contentPadding: EdgeInsets.symmetric(horizontal: 10),
       ),
       onTap: TextMenuDismisser.wrap(null),
       contextMenuBuilder: TextMenuDismisser.builder,
@@ -2865,7 +2865,7 @@ class _MemoEditFieldState extends State<_MemoEditField> {
       decoration: InputDecoration(
         isDense: true,
         border: InputBorder.none,
-        contentPadding: EdgeInsets.zero,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10),
         hintText: widget.placeholder,
         hintStyle: TextStyle(
           fontSize: 13,
