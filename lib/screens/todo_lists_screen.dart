@@ -35,6 +35,77 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
   /// 初期値は null（何も開いていない状態）。ユーザーがリストをタップして初めて開く。
   String? _selectedListId;
 
+  /// 結合モード中のタップ順序（最大5）。モードOFFのとき常に空。
+  bool _isMergeMode = false;
+  final List<String> _mergeOrder = <String>[];
+  static const int _mergeMax = 5;
+
+  void _enterMergeMode() {
+    setState(() {
+      _isMergeMode = true;
+      _mergeOrder.clear();
+      _selectedListId = null; // 右カラムは閉じる
+    });
+  }
+
+  void _exitMergeMode() {
+    setState(() {
+      _isMergeMode = false;
+      _mergeOrder.clear();
+    });
+  }
+
+  /// 結合モード時のカード左上バッジ。選択中は青塗り+番号、未選択は空円。
+  Widget _mergeBadge(String id) {
+    final idx = _mergeOrder.indexOf(id);
+    final selected = idx >= 0;
+    const accent = Color(0xFF007AFF);
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        color: selected ? accent : Colors.white.withValues(alpha: 0.85),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: selected ? accent : Colors.grey.shade500,
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      alignment: Alignment.center,
+      child: selected
+          ? Text(
+              '${idx + 1}',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                fontFamily: 'Hiragino Sans',
+                height: 1.0,
+              ),
+            )
+          : null,
+    );
+  }
+
+  void _toggleMergeSelection(String id) {
+    setState(() {
+      if (_mergeOrder.contains(id)) {
+        _mergeOrder.remove(id);
+      } else if (_mergeOrder.length < _mergeMax) {
+        _mergeOrder.add(id);
+      } else {
+        showToast(context, '結合できるのは最大$_mergeMax個までです');
+      }
+    });
+  }
+
   Stream<List<TodoList>> _watchLists() {
     final db = ref.read(databaseProvider);
     return (db.select(db.todoLists)
@@ -239,7 +310,8 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
             padding: const EdgeInsets.only(bottom: 8),
             child: GestureDetector(
             onTap: () => _openList(list.id),
-            onLongPress: () => _showListActions(list),
+            onLongPress:
+                _isMergeMode ? null : () => _showListActions(list),
             behavior: HitTestBehavior.opaque,
             child: StreamBuilder<List<TodoItem>>(
               stream: _watchRootItems(list.id),
@@ -392,6 +464,26 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
                           ],
                         ),
                       ),
+                    // 結合モード時の番号バッジ（左上）
+                    if (_isMergeMode)
+                      Positioned(
+                        left: 6,
+                        top: 6,
+                        child: _mergeBadge(list.id),
+                      ),
+                    // 結合モード中、未選択カードを薄く
+                    if (_isMergeMode &&
+                        !_mergeOrder.contains(list.id))
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.4),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 );
               },
@@ -460,6 +552,11 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
   }
 
   void _openList(String id) {
+    // 結合モード中は選択トグル
+    if (_isMergeMode) {
+      _toggleMergeSelection(id);
+      return;
+    }
     // iPad 横画面は右カラムで開く（画面遷移しない）
     if (Responsive.isWide(context)) {
       setState(() => _selectedListId = id);
@@ -475,6 +572,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
   }
 
   Widget _buildToolbar() {
+    if (_isMergeMode) return _buildMergeToolbar();
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
       child: Row(
@@ -500,6 +598,37 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
             ),
           ),
           const Spacer(),
+          // 結合モード起動
+          GestureDetector(
+            onTap: _enterMergeMode,
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                    color: const Color(0xFF007AFF), width: 1.5),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.merge_type,
+                      size: 14, color: Color(0xFF007AFF)),
+                  SizedBox(width: 4),
+                  Text(
+                    '結合',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF007AFF),
+                      fontFamily: 'Hiragino Sans',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
           // 新規ボタン（カプセル型）
           GestureDetector(
             onTap: _createListAndOpen,
@@ -532,6 +661,146 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
         ],
       ),
     );
+  }
+
+  /// 結合モード中のツールバー: キャンセル / 選択案内 / 結合実行
+  Widget _buildMergeToolbar() {
+    final canMerge = _mergeOrder.length >= 2;
+    const accent = Color(0xFF007AFF);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: _exitMergeMode,
+            behavior: HitTestBehavior.opaque,
+            child: const SizedBox(
+              height: 32,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'キャンセル',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: accent,
+                    fontFamily: 'Hiragino Sans',
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: Text(
+                _mergeOrder.isEmpty
+                    ? 'リストをタップ（最大$_mergeMax）'
+                    : '${_mergeOrder.length}個 選択中',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  fontFamily: 'Hiragino Sans',
+                  color: Color(0x993C3C43),
+                ),
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: canMerge ? _showMergeConfirmDialog : null,
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                color: canMerge
+                    ? accent.withValues(alpha: 0.1)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: canMerge
+                      ? accent
+                      : Colors.grey.withValues(alpha: 0.3),
+                  width: 1.5,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.merge_type,
+                      size: 14,
+                      color:
+                          canMerge ? accent : Colors.grey.withValues(alpha: 0.5)),
+                  const SizedBox(width: 4),
+                  Text(
+                    '結合する',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color:
+                          canMerge ? accent : Colors.grey.withValues(alpha: 0.5),
+                      fontFamily: 'Hiragino Sans',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 結合確定ダイアログ（タイトル編集 + 警告）
+  Future<void> _showMergeConfirmDialog() async {
+    if (_mergeOrder.length < 2) return;
+    final db = ref.read(databaseProvider);
+    // 選択順のリストタイトルを取得
+    final titles = <String>[];
+    for (final id in _mergeOrder) {
+      final l = await (db.select(db.todoLists)
+            ..where((t) => t.id.equals(id)))
+          .getSingleOrNull();
+      titles.add((l?.title ?? '').isEmpty ? '無題のリスト' : l!.title);
+    }
+    if (!mounted) return;
+    final defaultTitle = titles.join('-');
+
+    final result = await focusSafe(
+      context,
+      () => showGeneralDialog<String>(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: '',
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        transitionDuration: const Duration(milliseconds: 150),
+        pageBuilder: (ctx, _, _) => _MergeTitleDialog(
+          defaultTitle: defaultTitle,
+          sourceTitles: titles,
+        ),
+        transitionBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      ),
+    );
+
+    if (result == null || !mounted) return; // キャンセル
+    final newTitle = result.trim().isEmpty ? defaultTitle : result.trim();
+
+    final newList = await db.mergeTodoLists(
+      sourceListIds: _mergeOrder,
+      newTitle: newTitle,
+    );
+    if (!mounted) return;
+    setState(() {
+      _isMergeMode = false;
+      _mergeOrder.clear();
+      // 作成した新リストを右カラムで開く（iPad 横のとき）
+      if (Responsive.isWide(context)) {
+        _selectedListId = newList.id;
+      }
+    });
+    // narrow は一覧のまま（トースト通知）
+    if (mounted && !Responsive.isWide(context)) {
+      showToast(context, '「$newTitle」を作成しました');
+    }
   }
 
   /// 空状態（本家 emptyView 準拠）
@@ -828,6 +1097,191 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
                       fontFamily: 'Hiragino Sans',
                       fontWeight: FontWeight.w800,
                       color: Colors.black,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 結合確定ダイアログ（タイトル編集 + 警告）
+class _MergeTitleDialog extends StatefulWidget {
+  final String defaultTitle;
+  final List<String> sourceTitles;
+
+  const _MergeTitleDialog({
+    required this.defaultTitle,
+    required this.sourceTitles,
+  });
+
+  @override
+  State<_MergeTitleDialog> createState() => _MergeTitleDialogState();
+}
+
+class _MergeTitleDialogState extends State<_MergeTitleDialog> {
+  late final TextEditingController _controller;
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.defaultTitle);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final listsLabel = widget.sourceTitles
+        .asMap()
+        .entries
+        .map((e) => '${e.key + 1}. ${e.value}')
+        .join('\n');
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    blurRadius: 20,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'リストを結合',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Hiragino Sans',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // 結合元一覧
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      listsLabel,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'Hiragino Sans',
+                        color: Color(0x993C3C43),
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '新しいリストのタイトル',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      fontFamily: 'Hiragino Sans',
+                      color: Color(0x993C3C43),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    onTap: TextMenuDismisser.wrap(null),
+                    contextMenuBuilder: TextMenuDismisser.builder,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontFamily: 'Hiragino Sans',
+                    ),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.all(10),
+                      filled: true,
+                      fillColor: const Color(0x14787880),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    '※ 結合元のリストは残ります。タグは新リストには引き継がれません。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'Hiragino Sans',
+                      color: Colors.black.withValues(alpha: 0.4),
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // 確定
+                  GestureDetector(
+                    onTap: () =>
+                        Navigator.of(context).pop(_controller.text),
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color:
+                            const Color(0xFF007AFF).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: const Text(
+                        '結合する',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Hiragino Sans',
+                          color: Color(0xFF007AFF),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      alignment: Alignment.center,
+                      child: const Text(
+                        'キャンセル',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          fontFamily: 'Hiragino Sans',
+                          color: Color(0x993C3C43),
+                        ),
+                      ),
                     ),
                   ),
                 ],

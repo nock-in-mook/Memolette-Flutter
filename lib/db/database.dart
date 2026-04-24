@@ -118,6 +118,75 @@ class AppDatabase extends _$AppDatabase {
         .getSingle());
   }
 
+  /// 複数TODOリストをネスト結合して新リストを作成。
+  /// - 各元リストのタイトル → 新リストのルート親項目
+  /// - 元の親項目 → 子項目
+  /// - 元の子項目 → 孫項目（... 階層を1段下げる）
+  /// 元リストは削除せずそのまま残す。新リストにはタグを付けない。
+  ///
+  /// 戻り値: 作成した新 TodoList
+  Future<TodoList> mergeTodoLists({
+    required List<String> sourceListIds,
+    required String newTitle,
+  }) async {
+    final newList = await createTodoList(title: newTitle);
+
+    var rootSortOrder = 0;
+    for (final sourceId in sourceListIds) {
+      final source = await (select(todoLists)
+            ..where((t) => t.id.equals(sourceId)))
+          .getSingleOrNull();
+      if (source == null) continue;
+
+      // 各元リストのタイトルを新ルート親項目として挿入
+      final rootTitle = source.title.isEmpty ? '無題のリスト' : source.title;
+      final rootItemId = _uuid.v4();
+      await into(todoItems).insert(TodoItemsCompanion.insert(
+        id: rootItemId,
+        listId: newList.id,
+        title: Value(rootTitle),
+        parentId: const Value(null),
+        sortOrder: Value(rootSortOrder++),
+      ));
+
+      // 元リストの全アイテム取得
+      final items = await (select(todoItems)
+            ..where((t) => t.listId.equals(sourceId))
+            ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+          .get();
+
+      // BFS で階層順に処理（親が map に入ってから子を処理）
+      final idMap = <String, String>{};
+      final queue = <TodoItem>[];
+      queue.addAll(items.where((i) => i.parentId == null));
+      while (queue.isNotEmpty) {
+        final item = queue.removeAt(0);
+        // 元parentId=null → rootItem の子、それ以外 → マップで対応
+        final newParentId = item.parentId == null
+            ? rootItemId
+            : idMap[item.parentId];
+        if (newParentId == null) continue;
+
+        final newItemId = _uuid.v4();
+        await into(todoItems).insert(TodoItemsCompanion.insert(
+          id: newItemId,
+          listId: newList.id,
+          title: Value(item.title),
+          memo: Value(item.memo),
+          parentId: Value(newParentId),
+          sortOrder: Value(item.sortOrder),
+          isDone: Value(item.isDone),
+          dueDate: Value(item.dueDate),
+        ));
+        idMap[item.id] = newItemId;
+
+        // 子要素を queue に追加
+        queue.addAll(items.where((i) => i.parentId == item.id));
+      }
+    }
+    return newList;
+  }
+
   /// ToDoリスト新規作成（メモと一貫した manualSortOrder を設定）
   Future<TodoList> createTodoList({String title = ''}) async {
     final id = _uuid.v4();
