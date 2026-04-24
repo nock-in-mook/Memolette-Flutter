@@ -323,6 +323,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
                 final done = rootItems.where((i) => i.isDone).length;
                 final progress = total > 0 ? done / total : 0.0;
                 return Stack(
+                  clipBehavior: Clip.none,
                   children: [
                     Container(
                   padding: const EdgeInsets.all(12),
@@ -466,11 +467,24 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
                           ],
                         ),
                       ),
-                    // 結合モード時の番号バッジ（左上）
+                    // 結合で生成されたリスト: しおり上端寄りに配置
+                    // 結合モード中はチェックボックス(left:-6,24px→右端x=18)との
+                    // 重なりを避けるため left=22 へ右に逃がす
+                    if (list.isMerged)
+                      Positioned(
+                        left: _isMergeMode ? 22 : 12,
+                        top: 4,
+                        child: const Icon(
+                          Icons.merge_type,
+                          size: 14,
+                          color: Color(0xFF007AFF),
+                        ),
+                      ),
+                    // 結合モード時の番号バッジ（丸の直径の25% 上に浮かせる → top=-6）
                     if (_isMergeMode)
                       Positioned(
-                        left: 6,
-                        top: 6,
+                        left: -6,
+                        top: -6,
                         child: _mergeBadge(list.id),
                       ),
                     // 結合モード中、未選択カードを薄く
@@ -691,15 +705,23 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
               ),
             ),
           ),
+          // キャンセルと結合するボタンの間の余白タップで結合モードを抜ける
           Expanded(
-            child: Center(
-              child: Text(
-                _mergeOrder.isEmpty ? '' : '${_mergeOrder.length}個 選択中',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  fontFamily: 'Hiragino Sans',
-                  color: Color(0x993C3C43),
+            child: GestureDetector(
+              onTap: _exitMergeMode,
+              behavior: HitTestBehavior.opaque,
+              child: SizedBox(
+                height: 32,
+                child: Center(
+                  child: Text(
+                    _mergeOrder.isEmpty ? '' : '${_mergeOrder.length}個 選択中',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      fontFamily: 'Hiragino Sans',
+                      color: Color(0x993C3C43),
+                    ),
+                  ),
                 ),
               ),
             ),

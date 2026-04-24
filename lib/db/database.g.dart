@@ -1858,6 +1858,21 @@ class $TodoListsTable extends TodoLists
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
+  static const VerificationMeta _isMergedMeta = const VerificationMeta(
+    'isMerged',
+  );
+  @override
+  late final GeneratedColumn<bool> isMerged = GeneratedColumn<bool>(
+    'is_merged',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_merged" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1867,6 +1882,7 @@ class $TodoListsTable extends TodoLists
     manualSortOrder,
     createdAt,
     updatedAt,
+    isMerged,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1924,6 +1940,12 @@ class $TodoListsTable extends TodoLists
         updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
       );
     }
+    if (data.containsKey('is_merged')) {
+      context.handle(
+        _isMergedMeta,
+        isMerged.isAcceptableOrUnknown(data['is_merged']!, _isMergedMeta),
+      );
+    }
     return context;
   }
 
@@ -1961,6 +1983,10 @@ class $TodoListsTable extends TodoLists
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
       )!,
+      isMerged: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_merged'],
+      )!,
     );
   }
 
@@ -1978,6 +2004,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
   final int manualSortOrder;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final bool isMerged;
   const TodoList({
     required this.id,
     required this.title,
@@ -1986,6 +2013,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
     required this.manualSortOrder,
     required this.createdAt,
     required this.updatedAt,
+    required this.isMerged,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1997,6 +2025,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
     map['manual_sort_order'] = Variable<int>(manualSortOrder);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
+    map['is_merged'] = Variable<bool>(isMerged);
     return map;
   }
 
@@ -2009,6 +2038,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
       manualSortOrder: Value(manualSortOrder),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
+      isMerged: Value(isMerged),
     );
   }
 
@@ -2025,6 +2055,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
       manualSortOrder: serializer.fromJson<int>(json['manualSortOrder']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      isMerged: serializer.fromJson<bool>(json['isMerged']),
     );
   }
   @override
@@ -2038,6 +2069,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
       'manualSortOrder': serializer.toJson<int>(manualSortOrder),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'isMerged': serializer.toJson<bool>(isMerged),
     };
   }
 
@@ -2049,6 +2081,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
     int? manualSortOrder,
     DateTime? createdAt,
     DateTime? updatedAt,
+    bool? isMerged,
   }) => TodoList(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -2057,6 +2090,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
     manualSortOrder: manualSortOrder ?? this.manualSortOrder,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    isMerged: isMerged ?? this.isMerged,
   );
   TodoList copyWithCompanion(TodoListsCompanion data) {
     return TodoList(
@@ -2069,6 +2103,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
           : this.manualSortOrder,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      isMerged: data.isMerged.present ? data.isMerged.value : this.isMerged,
     );
   }
 
@@ -2081,7 +2116,8 @@ class TodoList extends DataClass implements Insertable<TodoList> {
           ..write('isLocked: $isLocked, ')
           ..write('manualSortOrder: $manualSortOrder, ')
           ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('isMerged: $isMerged')
           ..write(')'))
         .toString();
   }
@@ -2095,6 +2131,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
     manualSortOrder,
     createdAt,
     updatedAt,
+    isMerged,
   );
   @override
   bool operator ==(Object other) =>
@@ -2106,7 +2143,8 @@ class TodoList extends DataClass implements Insertable<TodoList> {
           other.isLocked == this.isLocked &&
           other.manualSortOrder == this.manualSortOrder &&
           other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.isMerged == this.isMerged);
 }
 
 class TodoListsCompanion extends UpdateCompanion<TodoList> {
@@ -2117,6 +2155,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
   final Value<int> manualSortOrder;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
+  final Value<bool> isMerged;
   final Value<int> rowid;
   const TodoListsCompanion({
     this.id = const Value.absent(),
@@ -2126,6 +2165,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
     this.manualSortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.isMerged = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TodoListsCompanion.insert({
@@ -2136,6 +2176,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
     this.manualSortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.isMerged = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id);
   static Insertable<TodoList> custom({
@@ -2146,6 +2187,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
     Expression<int>? manualSortOrder,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
+    Expression<bool>? isMerged,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2156,6 +2198,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
       if (manualSortOrder != null) 'manual_sort_order': manualSortOrder,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (isMerged != null) 'is_merged': isMerged,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2168,6 +2211,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
     Value<int>? manualSortOrder,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
+    Value<bool>? isMerged,
     Value<int>? rowid,
   }) {
     return TodoListsCompanion(
@@ -2178,6 +2222,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
       manualSortOrder: manualSortOrder ?? this.manualSortOrder,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      isMerged: isMerged ?? this.isMerged,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2206,6 +2251,9 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
+    if (isMerged.present) {
+      map['is_merged'] = Variable<bool>(isMerged.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2222,6 +2270,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
           ..write('manualSortOrder: $manualSortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('isMerged: $isMerged, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -5042,6 +5091,7 @@ typedef $$TodoListsTableCreateCompanionBuilder =
       Value<int> manualSortOrder,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
+      Value<bool> isMerged,
       Value<int> rowid,
     });
 typedef $$TodoListsTableUpdateCompanionBuilder =
@@ -5053,6 +5103,7 @@ typedef $$TodoListsTableUpdateCompanionBuilder =
       Value<int> manualSortOrder,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
+      Value<bool> isMerged,
       Value<int> rowid,
     });
 
@@ -5126,6 +5177,11 @@ class $$TodoListsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<bool> get isMerged => $composableBuilder(
+    column: $table.isMerged,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> todoListTagsRefs(
     Expression<bool> Function($$TodoListTagsTableFilterComposer f) f,
   ) {
@@ -5195,6 +5251,11 @@ class $$TodoListsTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get isMerged => $composableBuilder(
+    column: $table.isMerged,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TodoListsTableAnnotationComposer
@@ -5228,6 +5289,9 @@ class $$TodoListsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get isMerged =>
+      $composableBuilder(column: $table.isMerged, builder: (column) => column);
 
   Expression<T> todoListTagsRefs<T extends Object>(
     Expression<T> Function($$TodoListTagsTableAnnotationComposer a) f,
@@ -5290,6 +5354,7 @@ class $$TodoListsTableTableManager
                 Value<int> manualSortOrder = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<bool> isMerged = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TodoListsCompanion(
                 id: id,
@@ -5299,6 +5364,7 @@ class $$TodoListsTableTableManager
                 manualSortOrder: manualSortOrder,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                isMerged: isMerged,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -5310,6 +5376,7 @@ class $$TodoListsTableTableManager
                 Value<int> manualSortOrder = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<bool> isMerged = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TodoListsCompanion.insert(
                 id: id,
@@ -5319,6 +5386,7 @@ class $$TodoListsTableTableManager
                 manualSortOrder: manualSortOrder,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                isMerged: isMerged,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

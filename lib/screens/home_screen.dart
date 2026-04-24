@@ -2328,27 +2328,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
       );
     }
-    // 親タグタブ等: 左=件数(+子タグバッジ)、中央=フィルタ▼（単一ボタン、タップで直下展開）
+    // 親タグタブ等: 中央=フィルタ▼（常にバー中央固定）、左=件数(+子タグバッジ)
+    // Row + Expanded だと件数の桁数でフィルタ位置が左右に動くので、
+    // Stack で中央固定 + 左寄せオーバーレイにする
     return Container(
       height: 37,
       padding: const EdgeInsets.symmetric(horizontal: 14),
-      child: Row(
+      child: Stack(
+        alignment: Alignment.center,
         children: [
-          _MemoCountText(
-            tabKey: _selectedTabKey,
-            childTagId: _selectedChildTagId,
-            typeFilter: _typeFilter,
-          ),
-          if (_selectedChildTagId != null && parentId != null) ...[
-            const SizedBox(width: 6),
-            _ParentChildBadge(
-              parentTagId: parentId,
-              childTagId: _selectedChildTagId!,
-              tabColor: tabColor,
+          _buildFilterButton(allowUntagged: false),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _MemoCountText(
+                  tabKey: _selectedTabKey,
+                  childTagId: _selectedChildTagId,
+                  typeFilter: _typeFilter,
+                ),
+                if (_selectedChildTagId != null && parentId != null) ...[
+                  const SizedBox(width: 6),
+                  _ParentChildBadge(
+                    parentTagId: parentId,
+                    childTagId: _selectedChildTagId!,
+                    tabColor: tabColor,
+                  ),
+                ],
+              ],
             ),
-          ],
-          Expanded(
-            child: Center(child: _buildFilterButton(allowUntagged: false)),
           ),
         ],
       ),
@@ -5160,20 +5169,19 @@ class _FrequentTabContent extends ConsumerWidget {
     if (selectMode) {
       final isSelected = selectedIds.contains(memo.id);
       final isLocked = memo.isLocked;
-      final inner = Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      final inner = Stack(
+        clipBehavior: Clip.none,
         children: [
-          Center(
+          Opacity(
+            opacity: isLocked ? 0.4 : 1.0,
+            child: IgnorePointer(child: card),
+          ),
+          Positioned(
+            left: -6,
+            top: -6,
             child: buildSelectModeIcon(
               isSelected: isSelected,
               isBlocked: isLocked,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Opacity(
-              opacity: isLocked ? 0.4 : 1.0,
-              child: IgnorePointer(child: card),
             ),
           ),
         ],
@@ -5398,9 +5406,8 @@ class _MemoGridView extends StatelessWidget {
       // ロックは削除を防ぐ用なので、削除モードのときだけ操作不可扱い。
       // トップ移動モードではロック中も普通に選択できる。
       final isLockedBlocked = isDeleteSelectMode && memo.isLocked;
-      // 本家準拠: HStack { icon; MemoCard }
-      // crossAxisAlignment: stretch でカードがセル高さを満たす（縮まない）
-      // アイコンとカード両方が選択トグルのタップ対象
+      // チェックアイコンはカード左上に浮かせる（Stack + Positioned）
+      // カードは従来サイズで、アイコンだけはみ出す
       final iconWidget = buildSelectModeIcon(
         isSelected: isSelected,
         isBlocked: isLockedBlocked,
@@ -5408,28 +5415,25 @@ class _MemoGridView extends StatelessWidget {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => onToggleSelect?.call(memo),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            // アイコンは中央寄せ（縦stretch内でCenterで中央配置）
-            Center(child: iconWidget),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Opacity(
-                opacity: isLockedBlocked ? 0.4 : 1.0,
-                // IgnorePointer でカード内のGestureDetectorを無効化
-                child: IgnorePointer(
-                  child: MemoCard(
-                    memo: memo,
-                    onTap: () {},
-                    parentTagId: parentTagId,
-                    gridSize: gridSize,
-                    isHighlighted: memo.id == editingMemoId || memo.id == highlightedMemoId,
-      flashLevel: flashingItemIds.contains(memo.id) ? flashLevel : 0,
-                  ),
+            Opacity(
+              opacity: isLockedBlocked ? 0.4 : 1.0,
+              child: IgnorePointer(
+                child: MemoCard(
+                  memo: memo,
+                  onTap: () {},
+                  parentTagId: parentTagId,
+                  gridSize: gridSize,
+                  isHighlighted: memo.id == editingMemoId ||
+                      memo.id == highlightedMemoId,
+                  flashLevel:
+                      flashingItemIds.contains(memo.id) ? flashLevel : 0,
                 ),
               ),
             ),
+            Positioned(left: -6, top: -6, child: iconWidget),
           ],
         ),
       );
@@ -5508,24 +5512,22 @@ class _MemoGridView extends StatelessWidget {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => onToggleTodoSelect?.call(list),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            Center(child: iconWidget),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Opacity(
-                opacity: isLockedBlocked ? 0.4 : 1.0,
-                child: IgnorePointer(
-                  child: TodoCard(
-                    todoList: list,
-                    onTap: () {},
-                    gridSize: gridSize,
-                    flashLevel: flash,
-                  ),
+            Opacity(
+              opacity: isLockedBlocked ? 0.4 : 1.0,
+              child: IgnorePointer(
+                child: TodoCard(
+                  todoList: list,
+                  onTap: () {},
+                  gridSize: gridSize,
+                  flashLevel: flash,
+                  selectModeActive: true,
                 ),
               ),
             ),
+            Positioned(left: -6, top: -6, child: iconWidget),
           ],
         ),
       );

@@ -72,6 +72,8 @@ class TodoLists extends Table {
   IntColumn get manualSortOrder => integer().withDefault(const Constant(0))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+  // 結合で生成されたリストは true（カードに結合アイコンを表示）
+  BoolColumn get isMerged => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {id};

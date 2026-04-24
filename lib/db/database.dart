@@ -31,7 +31,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -44,6 +44,10 @@ class AppDatabase extends _$AppDatabase {
           if (from < 3) {
             // メモ画像テーブル追加（Phase 10）
             await m.createTable(memoImages);
+          }
+          if (from < 4) {
+            // TodoLists.isMerged（結合で生成されたリスト判定用）
+            await m.addColumn(todoLists, todoLists.isMerged);
           }
         },
       );
@@ -129,7 +133,7 @@ class AppDatabase extends _$AppDatabase {
     required List<String> sourceListIds,
     required String newTitle,
   }) async {
-    final newList = await createTodoList(title: newTitle);
+    final newList = await createTodoList(title: newTitle, isMerged: true);
 
     var rootSortOrder = 0;
     for (final sourceId in sourceListIds) {
@@ -188,13 +192,18 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// ToDoリスト新規作成（メモと一貫した manualSortOrder を設定）
-  Future<TodoList> createTodoList({String title = ''}) async {
+  /// [isMerged] は結合で生成されたリストのとき true（UIで結合アイコン表示）
+  Future<TodoList> createTodoList({
+    String title = '',
+    bool isMerged = false,
+  }) async {
     final id = _uuid.v4();
     final nextOrder = await nextItemSortOrder();
     final companion = TodoListsCompanion.insert(
       id: id,
       title: Value(title),
       manualSortOrder: Value(nextOrder),
+      isMerged: Value(isMerged),
     );
     await into(todoLists).insert(companion);
     return (await (select(todoLists)..where((t) => t.id.equals(id)))
@@ -765,6 +774,7 @@ class AppDatabase extends _$AppDatabase {
             isPinned: row.read<bool>('is_pinned'),
             isLocked: row.read<bool>('is_locked'),
             manualSortOrder: row.read<int>('manual_sort_order'),
+            isMerged: row.read<bool>('is_merged'),
           );
         }).toList());
   }
@@ -785,6 +795,7 @@ class AppDatabase extends _$AppDatabase {
             isPinned: row.read<bool>('is_pinned'),
             isLocked: row.read<bool>('is_locked'),
             manualSortOrder: row.read<int>('manual_sort_order'),
+            isMerged: row.read<bool>('is_merged'),
           );
         }).toList());
   }

@@ -16,6 +16,8 @@ class TodoCard extends ConsumerWidget {
   final GridSizeOption gridSize;
   // メモカードと同じ仕組みでオレンジ枠フラッシュさせる
   final double flashLevel;
+  // 外側で左上にチェックボックスが出るとき、結合マークを右へずらす
+  final bool selectModeActive;
 
   const TodoCard({
     super.key,
@@ -24,6 +26,7 @@ class TodoCard extends ConsumerWidget {
     this.isHighlighted = false,
     this.gridSize = GridSizeOption.grid2x3,
     this.flashLevel = 0,
+    this.selectModeActive = false,
   });
 
   // メモカードと完全一致のサイズ可変ロジック
@@ -101,6 +104,7 @@ class TodoCard extends ConsumerWidget {
               ],
             ),
             child: Stack(
+              clipBehavior: Clip.none,
               children: [
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -189,6 +193,24 @@ class TodoCard extends ConsumerWidget {
                               size: 8,
                               color: Colors.orange.withValues(alpha: 0.6)),
                       ],
+                    ),
+                  ),
+                // 結合で生成されたリスト: しおり上端寄り (カード上端から 3/4 位置) に配置
+                // 水平は しおり中心 x = _cardPadding + _bookmarkSize/2 (通常時)
+                // 垂直は しおり上端(y=_cardPadding)の 3/4 位置 y=_cardPadding*0.75
+                // 12px アイコンの中心をそこに合わせる → top = _cardPadding*0.75 - 6
+                // 選択モード中は外側のチェックボックス(-6,-6,24px→右端x=18)との
+                // 重なりを避けるため x=20 へ逃がす
+                if (todoList.isMerged)
+                  Positioned(
+                    left: selectModeActive
+                        ? 20
+                        : _cardPadding + _bookmarkSize / 2 - 6,
+                    top: _cardPadding * 0.75 - 6,
+                    child: const Icon(
+                      Icons.merge_type,
+                      size: 12,
+                      color: Color(0xFF007AFF),
                     ),
                   ),
               ],
