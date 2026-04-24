@@ -151,6 +151,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildToolbar(),
+        if (_isMergeMode) _buildMergeBanner(),
         _buildTodoTab(),
         Expanded(
           child: Container(
@@ -175,6 +176,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildToolbar(),
+              if (_isMergeMode) _buildMergeBanner(),
               _buildTodoTab(),
               Expanded(
                 child: Container(
@@ -692,9 +694,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
           Expanded(
             child: Center(
               child: Text(
-                _mergeOrder.isEmpty
-                    ? 'リストをタップ（最大$_mergeMax）'
-                    : '${_mergeOrder.length}個 選択中',
+                _mergeOrder.isEmpty ? '' : '${_mergeOrder.length}個 選択中',
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -742,6 +742,62 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
                   ),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 結合モード時の案内バナー（ツールバーと TodoTab の間に表示）
+  Widget _buildMergeBanner() {
+    const accent = Color(0xFF007AFF);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: accent.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.merge_type, size: 18, color: accent),
+              SizedBox(width: 6),
+              Text(
+                'リストの結合',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Hiragino Sans',
+                  color: accent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '結合したいリストを選んでください。',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              fontFamily: 'Hiragino Sans',
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '（選択順に結合、最大$_mergeMaxつまで）',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 13,
+              fontFamily: 'Hiragino Sans',
+              color: Colors.black54,
             ),
           ),
         ],
@@ -1131,10 +1187,16 @@ class _MergeTitleDialogState extends State<_MergeTitleDialog> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.defaultTitle);
+    _controller.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -1142,11 +1204,6 @@ class _MergeTitleDialogState extends State<_MergeTitleDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final listsLabel = widget.sourceTitles
-        .asMap()
-        .entries
-        .map((e) => '${e.key + 1}. ${e.value}')
-        .join('\n');
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
@@ -1155,7 +1212,7 @@ class _MergeTitleDialogState extends State<_MergeTitleDialog> {
           child: Material(
             color: Colors.transparent,
             child: Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
@@ -1172,74 +1229,91 @@ class _MergeTitleDialogState extends State<_MergeTitleDialog> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text(
-                    'リストを結合',
+                    '新しいリストのタイトル',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
                       fontFamily: 'Hiragino Sans',
+                      color: Colors.black87,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  // 結合元一覧
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      listsLabel,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontFamily: 'Hiragino Sans',
-                        color: Color(0x993C3C43),
-                        height: 1.5,
+                  const SizedBox(height: 14),
+                  // ×ボタンをStackで重ねる: TextField の右 padding を確保して
+                  // テキストが ×に重ならないようにする
+                  Stack(
+                    children: [
+                      TextField(
+                        controller: _controller,
+                        focusNode: _focusNode,
+                        onTap: TextMenuDismisser.wrap(null),
+                        contextMenuBuilder: TextMenuDismisser.builder,
+                        minLines: 1,
+                        maxLines: 2,
+                        textInputAction: TextInputAction.done,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontFamily: 'Hiragino Sans',
+                          color: Colors.black87,
+                          height: 1.35,
+                        ),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          // 右に ×分のスペースを確保（テキストは ellipsis されず
+                          // 折り返し2行までで収まるように contentPadding で制御）
+                          contentPadding: const EdgeInsets.fromLTRB(
+                              12, 12, 40, 12),
+                          filled: true,
+                          fillColor: const Color(0x14787880),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
                       ),
-                    ),
+                      if (_controller.text.isNotEmpty)
+                        Positioned(
+                          right: 8,
+                          top: 0,
+                          bottom: 0,
+                          child: Center(
+                            child: GestureDetector(
+                              onTap: _controller.clear,
+                              behavior: HitTestBehavior.opaque,
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: Icon(
+                                  CupertinoIcons.xmark_circle_fill,
+                                  size: 20,
+                                  color: Colors.grey.withValues(alpha: 0.6),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   const Text(
-                    '新しいリストのタイトル',
+                    '※ 元のリストは残ります',
                     style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
                       fontFamily: 'Hiragino Sans',
-                      color: Color(0x993C3C43),
+                      color: Colors.black87,
+                      height: 1.5,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    onTap: TextMenuDismisser.wrap(null),
-                    contextMenuBuilder: TextMenuDismisser.builder,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontFamily: 'Hiragino Sans',
-                    ),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      contentPadding: const EdgeInsets.all(10),
-                      filled: true,
-                      fillColor: const Color(0x14787880),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    '※ 結合元のリストは残ります。タグは新リストには引き継がれません。',
+                  const SizedBox(height: 2),
+                  const Text(
+                    '※ タグは新リストに引き継がれません',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 13,
                       fontFamily: 'Hiragino Sans',
-                      color: Colors.black.withValues(alpha: 0.4),
-                      height: 1.4,
+                      color: Colors.black87,
+                      height: 1.5,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 18),
                   // 確定
                   GestureDetector(
                     onTap: () =>
@@ -1247,17 +1321,17 @@ class _MergeTitleDialogState extends State<_MergeTitleDialog> {
                     behavior: HitTestBehavior.opaque,
                     child: Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
                         color:
-                            const Color(0xFF007AFF).withValues(alpha: 0.1),
+                            const Color(0xFF007AFF).withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       alignment: Alignment.center,
                       child: const Text(
                         '結合する',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 16,
                           fontWeight: FontWeight.w600,
                           fontFamily: 'Hiragino Sans',
                           color: Color(0xFF007AFF),
@@ -1265,21 +1339,21 @@ class _MergeTitleDialogState extends State<_MergeTitleDialog> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   GestureDetector(
                     onTap: () => Navigator.of(context).pop(),
                     behavior: HitTestBehavior.opaque,
                     child: Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       alignment: Alignment.center,
                       child: const Text(
                         'キャンセル',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 16,
                           fontWeight: FontWeight.w500,
                           fontFamily: 'Hiragino Sans',
-                          color: Color(0x993C3C43),
+                          color: Colors.black54,
                         ),
                       ),
                     ),

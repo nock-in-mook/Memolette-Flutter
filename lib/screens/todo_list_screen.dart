@@ -2865,7 +2865,8 @@ class _MemoEditFieldState extends State<_MemoEditField> {
       decoration: InputDecoration(
         isDense: true,
         border: InputBorder.none,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+        // 外側 Container が h:8/4 padding を持つため視覚重複回避で 0
+        contentPadding: EdgeInsets.zero,
         hintText: widget.placeholder,
         hintStyle: TextStyle(
           fontSize: 13,

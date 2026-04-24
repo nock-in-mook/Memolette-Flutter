@@ -2609,8 +2609,7 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                           ),
                           border: InputBorder.none,
                           isDense: true,
-                          // 文字の外側余白にもタッチ判定が届くように
-                          contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                          contentPadding: EdgeInsets.zero,
                         ),
                         maxLines: 1,
                         onChanged: (_) {
@@ -2696,8 +2695,10 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                                         height: 1.5,
                                       ),
                                       isDense: true,
-                                      contentPadding: EdgeInsets.symmetric(
-                                          horizontal: 12),
+                                      // 外側 SingleChildScrollView が h:12 padding を持ち、
+                                      // 外側 GestureDetector が onTap で focus するため
+                                      // タッチ判定は既に拡張されている → contentPadding は 0
+                                      contentPadding: EdgeInsets.zero,
                                     ),
                                     onChanged: (_) {
                                       _saveContent();
