@@ -64,6 +64,15 @@ Flutter 側 `ios/Runner.xcodeproj` の Team 設定は個人 Team のまま
 - GitHub: https://github.com/nock-in-mook/session-recall
 - 経緯と全フェーズ計画は `session-recall/HANDOFF.md` に詳細記載済み
 
+### claude-mem は完全撤去済み
+- `npm uninstall -g claude-mem`（グローバル npm パッケージ削除）
+- `~/.claude-mem/`（DB・設定・ログ）削除
+- `~/.claude/plugins/marketplaces/thedotmack/` および cache 削除
+- `~/.claude/settings.json` の `enabledPlugins.claude-mem@thedotmack` と `extraKnownMarketplaces.thedotmack` を削除
+- Worker プロセスも停止
+- 副産物の `~/.bun/`（claude-mem が自動導入）は残置（他で使える可能性あり、不要なら後で `rm -rf ~/.bun` で削除可）
+- 元の Claude 設定のバックアップ: `~/.claude-backup-pre-claude-mem/`（小さいので残置で問題なし）
+
 ## #26 で完了したこと
 
 ### iPad 横画面のレイアウト整備

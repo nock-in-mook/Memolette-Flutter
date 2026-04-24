@@ -613,9 +613,11 @@
 - リポジトリ: https://github.com/nock-in-mook/session-recall
 - 次セッションはこのプロジェクトで Phase 1 (Lv.0: CLAUDE.md 指示追加) から着手予定
 
-### claude-mem の現状
-- 有効化したまま残置。session-recall 完成後に撤去予定
-- バックアップ: `~/.claude-backup-pre-claude-mem/`
+### claude-mem の撤去
+- セッション終了直前に完全撤去実施（session-recall 完成を待たずに撤去）
+- 手順: `npm uninstall -g claude-mem`、`~/.claude-mem/` 削除、`~/.claude/plugins/marketplaces/thedotmack/` および cache 削除、`settings.json` の `enabledPlugins.claude-mem@thedotmack` と `extraKnownMarketplaces.thedotmack` 削除、worker プロセス停止
+- バックアップ `~/.claude-backup-pre-claude-mem/` は残置（保険）
+- 副産物の `~/.bun/`（claude-mem が自動導入）は残置、他用途で使えるので不要時のみ削除
 
 ### 学び
 - claude-mem の数字（GitHub 6.6万スター、v12.3.9）は実際には盛られていなかった。一次情報で確認して判断すべき
