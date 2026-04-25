@@ -6436,11 +6436,12 @@ class _WigglingReorderTabState extends State<_WigglingReorderTab>
       duration: const Duration(milliseconds: 180),
       vsync: this,
     )..repeat(reverse: true);
-    // 偶数/奇数で位相をずらしてバラつきを出す
-    final offset = widget.index.isEven ? 0.0 : 0.5;
+    // 偶数/奇数で振れ方向を反転して位相 180° ずれを表現する
+    // （以前は両端を offset で寄せて振れ幅 0 になり一部タブが静止していた）
+    final isEven = widget.index.isEven;
     _wiggleAnimation = Tween<double>(
-      begin: -0.025 + offset * 0.05,
-      end: 0.025 - offset * 0.05,
+      begin: isEven ? -0.025 : 0.025,
+      end: isEven ? 0.025 : -0.025,
     ).animate(CurvedAnimation(
       parent: _wiggleController,
       curve: Curves.easeInOut,
