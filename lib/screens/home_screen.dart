@@ -1188,7 +1188,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return Container(
       color: (_isSearchActive || _isInFolderSearch)
           ? const Color(0xFFE0E8F0) // 検索モード用の薄水色
-          : currentColor,
+          : _isCalendarTab
+              ? Colors.white // カレンダーは背景を白にしてシンプルに
+              : currentColor,
       child: Stack(
         // 閉じるボタンを上方向にはみ出させるためクリップ無効
         clipBehavior: Clip.none,
