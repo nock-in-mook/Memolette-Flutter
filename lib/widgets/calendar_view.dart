@@ -64,6 +64,26 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
     }
   }
 
+  Future<void> _handleAddTap(DateTime day) async {
+    final type = await showModalBottomSheet<_AddType>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _AddActionSheet(day: day),
+    );
+    if (type == null || !mounted) return;
+    final db = ref.read(databaseProvider);
+    switch (type) {
+      case _AddType.memo:
+        final memo = await db.createMemo(eventDate: day);
+        if (!mounted) return;
+        widget.onMemoTap(memo);
+      case _AddType.todoList:
+        final list = await db.createTodoList(eventDate: day);
+        if (!mounted) return;
+        widget.onTodoListTap(list);
+    }
+  }
+
   void _showDaySheet(DateTime day) {
     showModalBottomSheet<void>(
       context: context,
@@ -161,6 +181,7 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
         today: _today,
         selectedDay: _selectedDay,
         onDayTap: _handleDayTap,
+        onDayAdd: _handleAddTap,
       ),
     );
   }
@@ -172,12 +193,14 @@ class _MonthBlock extends ConsumerWidget {
   final DateTime today;
   final DateTime? selectedDay;
   final ValueChanged<DateTime> onDayTap;
+  final ValueChanged<DateTime> onDayAdd;
 
   const _MonthBlock({
     required this.month,
     required this.today,
     required this.selectedDay,
     required this.onDayTap,
+    required this.onDayAdd,
   });
 
   @override
@@ -224,6 +247,7 @@ class _MonthBlock extends ConsumerWidget {
             isToday: isToday,
             isSelected: isSelected,
             onTap: () => onDayTap(day),
+            onAdd: () => onDayAdd(day),
           ),
         ));
       }
@@ -360,6 +384,7 @@ class _DayCell extends StatelessWidget {
   final bool isToday;
   final bool isSelected;
   final VoidCallback? onTap;
+  final VoidCallback? onAdd;
 
   const _DayCell({
     required this.day,
@@ -367,6 +392,7 @@ class _DayCell extends StatelessWidget {
     required this.isToday,
     this.isSelected = false,
     this.onTap,
+    this.onAdd,
   });
 
   @override
@@ -446,14 +472,21 @@ class _DayCell extends StatelessWidget {
                 ),
               ),
             ),
-          // 「+」ボタン（右下、Step 6 で onTap 配線）
+          // 「+」ボタン（右下）
           Positioned(
-            bottom: 2,
-            right: 2,
-            child: Icon(
-              Icons.add_circle_outline,
-              size: 16,
-              color: Colors.grey.shade500,
+            bottom: 0,
+            right: 0,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onAdd,
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Icon(
+                  Icons.add_circle_outline,
+                  size: 16,
+                  color: Colors.grey.shade500,
+                ),
+              ),
             ),
           ),
         ],
@@ -465,6 +498,119 @@ class _DayCell extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: cell,
+    );
+  }
+}
+
+enum _AddType { memo, todoList }
+
+/// 「+」タップで出るアクションシート: メモ作成 / ToDoリスト作成 を選ぶ
+class _AddActionSheet extends StatelessWidget {
+  final DateTime day;
+  const _AddActionSheet({required this.day});
+
+  @override
+  Widget build(BuildContext context) {
+    final dateStr = '${day.year}年${day.month}月${day.day}日';
+    return SafeArea(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                    child: Row(
+                      children: [
+                        Text(
+                          '$dateStr に作成',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            fontFamily: 'Hiragino Sans',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  _AddOption(
+                    icon: Icons.note_outlined,
+                    iconColor: Colors.amber.shade700,
+                    label: 'メモ作成',
+                    onTap: () => Navigator.of(context).pop(_AddType.memo),
+                  ),
+                  const Divider(height: 1, indent: 56),
+                  _AddOption(
+                    icon: Icons.checklist,
+                    iconColor: Colors.green.shade600,
+                    label: 'ToDoリスト作成',
+                    onTap: () => Navigator.of(context).pop(_AddType.todoList),
+                  ),
+                  const Divider(height: 1),
+                  _AddOption(
+                    icon: Icons.close,
+                    iconColor: Colors.grey,
+                    label: 'キャンセル',
+                    isCancel: true,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AddOption extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final bool isCancel;
+  final VoidCallback onTap;
+
+  const _AddOption({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.onTap,
+    this.isCancel = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, size: 22, color: iconColor),
+            const SizedBox(width: 14),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: isCancel ? FontWeight.w600 : FontWeight.w700,
+                fontFamily: 'Hiragino Sans',
+                color: isCancel ? Colors.grey.shade700 : Colors.black87,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
