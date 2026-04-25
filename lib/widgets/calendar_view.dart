@@ -101,19 +101,19 @@ class _MonthBlock extends ConsumerWidget {
         clipBehavior: Clip.antiAlias,
         child: Stack(
           children: [
-            // 背景の大きな月数字（薄く右上、装飾）
-            Positioned(
-              top: -22,
-              right: 14,
+            // 背景の大きな月数字（中央に配置、薄く透けて装飾）
+            Positioned.fill(
               child: IgnorePointer(
-                child: Text(
-                  '${month.month}',
-                  style: TextStyle(
-                    fontSize: 140,
-                    fontWeight: FontWeight.w900,
-                    fontFamily: 'Hiragino Sans',
-                    color: Colors.black.withValues(alpha: 0.05),
-                    height: 1.0,
+                child: Center(
+                  child: Text(
+                    '${month.month}',
+                    style: TextStyle(
+                      fontSize: 220,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Hiragino Sans',
+                      color: Colors.black.withValues(alpha: 0.06),
+                      height: 1.0,
+                    ),
                   ),
                 ),
               ),
@@ -123,7 +123,7 @@ class _MonthBlock extends ConsumerWidget {
               children: [
                 // 月見出し
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
                   child: Text(
                     '${month.year}年 ${month.month}月',
                     style: const TextStyle(
@@ -135,14 +135,14 @@ class _MonthBlock extends ConsumerWidget {
                 ),
                 // 曜日ヘッダ（密着配置）
                 const _WeekdayHeader(),
-                // 日付グリッド (7 列)
+                // 日付グリッド (7 列、高さ固定で曜日と密着)
                 GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   gridDelegate:
                       const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 7,
-                    childAspectRatio: 0.9,
+                    mainAxisExtent: 56,
                   ),
                   itemCount: firstDayWeekday + daysInMonth,
                   itemBuilder: (ctx, i) {
