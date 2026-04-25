@@ -632,23 +632,25 @@ class _AddSquareButton extends StatelessWidget {
             ),
             borderRadius: BorderRadius.circular(12),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 28, color: iconColor),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'Hiragino Sans',
-                  color: Colors.black87,
+              Icon(icon, size: 26, color: iconColor),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'Hiragino Sans',
+                    color: Colors.black87,
+                  ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               // 丸で囲まれた + マーク
               Container(
                 padding: const EdgeInsets.all(2),
@@ -660,7 +662,7 @@ class _AddSquareButton extends StatelessWidget {
                 ),
                 child: Icon(
                   Icons.add,
-                  size: 14,
+                  size: 13,
                   color: Colors.black.withValues(alpha: 0.55),
                 ),
               ),
