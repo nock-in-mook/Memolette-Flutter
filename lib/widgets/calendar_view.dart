@@ -99,44 +99,67 @@ class _MonthBlock extends ConsumerWidget {
           ],
         ),
         clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
           children: [
-            // 月見出し
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-              child: Text(
-                '${month.year}年 ${month.month}月',
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  fontFamily: 'Hiragino Sans',
+            // 背景の大きな月数字（薄く右上、装飾）
+            Positioned(
+              top: -22,
+              right: 14,
+              child: IgnorePointer(
+                child: Text(
+                  '${month.month}',
+                  style: TextStyle(
+                    fontSize: 140,
+                    fontWeight: FontWeight.w900,
+                    fontFamily: 'Hiragino Sans',
+                    color: Colors.black.withValues(alpha: 0.05),
+                    height: 1.0,
+                  ),
                 ),
               ),
             ),
-            // 曜日ヘッダ
-            const _WeekdayHeader(),
-            // 日付グリッド (7 列)
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 7,
-                childAspectRatio: 0.9,
-              ),
-              itemCount: firstDayWeekday + daysInMonth,
-              itemBuilder: (ctx, i) {
-                if (i < firstDayWeekday) {
-                  return const _EmptyDayCell();
-                }
-                final dayNum = i - firstDayWeekday + 1;
-                final day = DateTime(month.year, month.month, dayNum);
-                final count = counts[day] ?? 0;
-                final isToday = day.year == today.year &&
-                    day.month == today.month &&
-                    day.day == today.day;
-                return _DayCell(day: day, count: count, isToday: isToday);
-              },
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 月見出し
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
+                  child: Text(
+                    '${month.year}年 ${month.month}月',
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      fontFamily: 'Hiragino Sans',
+                    ),
+                  ),
+                ),
+                // 曜日ヘッダ（密着配置）
+                const _WeekdayHeader(),
+                // 日付グリッド (7 列)
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 7,
+                    childAspectRatio: 0.9,
+                  ),
+                  itemCount: firstDayWeekday + daysInMonth,
+                  itemBuilder: (ctx, i) {
+                    if (i < firstDayWeekday) {
+                      return const _EmptyDayCell();
+                    }
+                    final dayNum = i - firstDayWeekday + 1;
+                    final day = DateTime(month.year, month.month, dayNum);
+                    final count = counts[day] ?? 0;
+                    final isToday = day.year == today.year &&
+                        day.month == today.month &&
+                        day.day == today.day;
+                    return _DayCell(
+                        day: day, count: count, isToday: isToday);
+                  },
+                ),
+              ],
             ),
           ],
         ),
@@ -152,25 +175,22 @@ class _WeekdayHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     const labels = ['日', '月', '火', '水', '木', '金', '土'];
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.fromLTRB(4, 2, 4, 2),
       child: Row(
         children: labels
             .map((l) => Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Center(
-                      child: Text(
-                        l,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          fontFamily: 'Hiragino Sans',
-                          color: l == '日'
-                              ? Colors.red.shade400
-                              : l == '土'
-                                  ? Colors.blue.shade400
-                                  : Colors.black54,
-                        ),
+                  child: Center(
+                    child: Text(
+                      l,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Hiragino Sans',
+                        color: l == '日'
+                            ? Colors.red.shade400
+                            : l == '土'
+                                ? Colors.blue.shade400
+                                : Colors.black54,
                       ),
                     ),
                   ),
