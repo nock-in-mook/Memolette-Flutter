@@ -572,7 +572,7 @@ class _AddActionSheet extends StatelessWidget {
                           children: [
                             Expanded(
                               child: _AddSquareButton(
-                                icon: Icons.note_outlined,
+                                icon: Icons.note_add_outlined,
                                 iconColor: Colors.amber.shade700,
                                 label: 'メモ',
                                 onTap: () => Navigator.of(context)
@@ -582,7 +582,7 @@ class _AddActionSheet extends StatelessWidget {
                             const SizedBox(width: 10),
                             Expanded(
                               child: _AddSquareButton(
-                                icon: Icons.checklist,
+                                icon: Icons.playlist_add,
                                 iconColor: Colors.green.shade600,
                                 label: 'ToDoリスト',
                                 onTap: () => Navigator.of(context)
@@ -632,16 +632,16 @@ class _AddSquareButton extends StatelessWidget {
             ),
             borderRadius: BorderRadius.circular(12),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 12),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 36, color: iconColor),
-              const SizedBox(height: 10),
+              Icon(icon, size: 28, color: iconColor),
+              const SizedBox(height: 6),
               Text(
                 label,
                 style: const TextStyle(
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                   fontFamily: 'Hiragino Sans',
                   color: Colors.black87,
