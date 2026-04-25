@@ -1955,7 +1955,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 // 親タグだけDBに保存（特殊タブはメモリのみ）
                 final parentIds = newOrder
                     .where((k) =>
-                        k != kAllTabKey && k != kUntaggedTabKey)
+                        k != kAllTabKey &&
+                        k != kUntaggedTabKey &&
+                        k != kCalendarTabKey)
                     .toList();
                 await ref
                     .read(databaseProvider)
@@ -1972,6 +1974,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       ref.watch(allTabColorIndexProvider),
                   untaggedColorIndex:
                       ref.watch(untaggedTabColorIndexProvider),
+                  calendarColorIndex:
+                      ref.watch(calendarTabColorIndexProvider),
                   onTouch: () {
                     if (_selectedTabKey != key) {
                       setState(() {
@@ -6402,6 +6406,7 @@ class _WigglingReorderTab extends StatefulWidget {
   final List<Tag> parentTags;
   final int allTabColorIndex;
   final int untaggedColorIndex;
+  final int calendarColorIndex;
   final VoidCallback onTouch;
 
   const _WigglingReorderTab({
@@ -6411,6 +6416,7 @@ class _WigglingReorderTab extends StatefulWidget {
     required this.parentTags,
     required this.allTabColorIndex,
     required this.untaggedColorIndex,
+    required this.calendarColorIndex,
     required this.onTouch,
   });
 
@@ -6460,6 +6466,9 @@ class _WigglingReorderTabState extends State<_WigglingReorderTab>
     } else if (widget.tabKey == kUntaggedTabKey) {
       color = TagColors.getColor(widget.untaggedColorIndex);
       label = 'タグなし';
+    } else if (widget.tabKey == kCalendarTabKey) {
+      color = TagColors.getColor(widget.calendarColorIndex);
+      label = '全カレンダー';
     } else {
       final tag = widget.parentTags
           .where((t) => t.id == widget.tabKey)
