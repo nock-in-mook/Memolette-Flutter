@@ -85,6 +85,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 const String kAllTabKey = '__all__';
 const String kUntaggedTabKey = '__untagged__';
 const String kFrequentTabKey = '__frequent__';
+const String kCalendarTabKey = '__calendar__';
 
 /// 「すべて」タブ内のサブフィルタ（表示軸: 全件 / よく見る / 最近見た）
 enum _AllTabSubFilter {
@@ -114,7 +115,7 @@ enum _TypeFilter {
 enum _SelectMode { none, delete, moveToTop }
 
 // 特殊タブの種類（長押しメニュー・色変更で使う）
-enum _SpecialKind { all, untagged, frequent }
+enum _SpecialKind { all, untagged, frequent, calendar }
 
 class _HomeScreenState extends ConsumerState<HomeScreen>
     with SingleTickerProviderStateMixin {
@@ -167,6 +168,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   int get _selectedCount => _selectedMemoIds.length + _selectedTodoIds.length;
   bool get _isFrequentTab => _selectedTabKey == kFrequentTabKey;
   bool get _isAllTab => _selectedTabKey == kAllTabKey;
+  bool get _isCalendarTab => _selectedTabKey == kCalendarTabKey;
 
   /// setStateブロック内で呼ぶ前提。選択モード解除＋選択集合クリア。
   void _resetSelection() {
@@ -485,16 +487,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   /// 親タグリストと既存の_tabOrderを同期して新しいタブ順序を返す
   /// 「よく見る」「タグなし」タブは「すべて」タブ内のサブフィルタに統合したため削除
+  /// 「全カレンダー」は Phase 15 で追加された特殊タブ（並び替え可能、削除不可）
   List<String> _syncTabOrder(List<Tag> parentTags) {
     final tagIds = parentTags.map((t) => t.id).toSet();
     final existing = _tabOrder ?? <String>[];
     // 既存リストから消えたタグ・統合済みの特殊タブ（よく見る/タグなし）を除く
     final result = existing
-        .where((k) => k == kAllTabKey || tagIds.contains(k))
+        .where((k) =>
+            k == kAllTabKey || k == kCalendarTabKey || tagIds.contains(k))
         .toList();
     // 「すべて」が無ければ先頭に追加
     if (!result.contains(kAllTabKey)) {
       result.insert(0, kAllTabKey);
+    }
+    // 「全カレンダー」が無ければ「すべて」の直後に追加（既存ユーザーへの新登場として）
+    if (!result.contains(kCalendarTabKey)) {
+      final allIdx = result.indexOf(kAllTabKey);
+      result.insert(allIdx + 1, kCalendarTabKey);
     }
     // 新しいタグを末尾に追加
     for (final id in tagIds) {
@@ -1244,20 +1253,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       child: Column(
                         children: [
                           if (!_isEditingCompact) ...[
-                            // 「すべて」タブは件数+サブフィルタを1行で、それ以外は件数バー
-                            if (_isAllTab)
-                              _buildAllTabSubFilterBar()
-                            else
-                              _buildCountBar(parentTags),
-                            Expanded(
-                              child: parentTagsAsync.when(
-                                data: (tags) => _buildMemoGrid(tags),
-                                loading: () => const Center(
-                                    child: CircularProgressIndicator()),
-                                error: (e, _) =>
-                                    Center(child: Text('エラー: $e')),
+                            if (_isCalendarTab)
+                              const Expanded(
+                                child: _CalendarPlaceholder(),
+                              )
+                            else ...[
+                              // 「すべて」タブは件数+サブフィルタを1行で、それ以外は件数バー
+                              if (_isAllTab)
+                                _buildAllTabSubFilterBar()
+                              else
+                                _buildCountBar(parentTags),
+                              Expanded(
+                                child: parentTagsAsync.when(
+                                  data: (tags) => _buildMemoGrid(tags),
+                                  loading: () => const Center(
+                                      child: CircularProgressIndicator()),
+                                  error: (e, _) =>
+                                      Center(child: Text('エラー: $e')),
+                                ),
                               ),
-                            ),
+                            ],
                           ],
                         ],
                       ),
@@ -1352,6 +1367,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
     if (_selectedTabKey == kFrequentTabKey) {
       return TagColors.getColor(ref.read(frequentTabColorIndexProvider));
+    }
+    if (_selectedTabKey == kCalendarTabKey) {
+      return TagColors.getColor(ref.read(calendarTabColorIndexProvider));
     }
     final tag = parentTags.where((t) => t.id == _selectedTabKey).firstOrNull;
     if (tag == null) return TagColors.palette[0];
@@ -1813,6 +1831,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             });
             _animateDrawer(false);
             _showSpecialTabActions(ctx, specialKind: _SpecialKind.all);
+          },
+        ),
+      );
+    }
+    if (key == kCalendarTabKey) {
+      final colorIdx = ref.watch(calendarTabColorIndexProvider);
+      return Builder(
+        key: tabKey,
+        builder: (ctx) => _buildTab(
+          label: '全カレンダー',
+          color: TagColors.getColor(colorIdx),
+          isSelected: _selectedTabKey == kCalendarTabKey,
+          onTap: () {
+            setState(() {
+              _selectedTabKey = kCalendarTabKey;
+              _childDrawerOpen = false;
+              _selectedChildTagId = null;
+              _resetSelection();
+            });
+            _animateDrawer(false);
+          },
+          onLongPress: () {
+            setState(() {
+              _selectedTabKey = kCalendarTabKey;
+              _childDrawerOpen = false;
+              _selectedChildTagId = null;
+              _resetSelection();
+            });
+            _animateDrawer(false);
+            _showSpecialTabActions(ctx, specialKind: _SpecialKind.calendar);
           },
         ),
       );
@@ -3013,6 +3061,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   Widget _buildFloatingBottomBar(List<Tag> parentTags) {
     if (_isSelectMode) return _buildSelectModeBottomBar();
+    // 「全カレンダー」タブは月切替バーを別途持つので bottombar は非表示
+    if (_isCalendarTab) return const SizedBox.shrink();
     // 「よく見る」タブは特殊: トップに移動 / メモ作成 ボタンを出さない
     final hideMoveToTop = _isFrequentTab;
     final hideCreate = _isFrequentTab || _isAllTab;
@@ -3420,6 +3470,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       _SpecialKind.all => 'すべて',
       _SpecialKind.untagged => 'タグなし',
       _SpecialKind.frequent => 'よく見る',
+      _SpecialKind.calendar => '全カレンダー',
     };
 
     final action = await focusSafe(
@@ -3462,6 +3513,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       _SpecialKind.all => ref.read(allTabColorIndexProvider),
       _SpecialKind.untagged => ref.read(untaggedTabColorIndexProvider),
       _SpecialKind.frequent => ref.read(frequentTabColorIndexProvider),
+      _SpecialKind.calendar => ref.read(calendarTabColorIndexProvider),
     };
     // 0未満（デフォルト）の場合はパレット先頭を初期表示にする
     final initial = current < 0 ? 0 : current;
@@ -3469,6 +3521,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       _SpecialKind.all => 'すべて',
       _SpecialKind.untagged => 'タグなし',
       _SpecialKind.frequent => 'よく見る',
+      _SpecialKind.calendar => '全カレンダー',
     };
     await NewTagSheet.show(
       context: context,
@@ -3482,6 +3535,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ref.read(untaggedTabColorIndexProvider.notifier).state = picked;
           case _SpecialKind.frequent:
             ref.read(frequentTabColorIndexProvider.notifier).state = picked;
+          case _SpecialKind.calendar:
+            ref.read(calendarTabColorIndexProvider.notifier).state = picked;
         }
       },
     );
@@ -6892,4 +6947,43 @@ Widget buildSelectModeIcon({
             ? accent
             : Colors.grey.shade700,
   );
+}
+
+/// 「全カレンダー」タブの暫定プレースホルダ（Step 4 で本実装に差し替え）
+class _CalendarPlaceholder extends StatelessWidget {
+  const _CalendarPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.calendar_month, size: 56, color: Colors.black38),
+            SizedBox(height: 12),
+            Text(
+              'カレンダー（実装中）',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: Colors.black54,
+              ),
+            ),
+            SizedBox(height: 6),
+            Text(
+              '縦スクロール月別カレンダーが\nここに表示されます',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.black45,
+                height: 1.6,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
