@@ -91,6 +91,7 @@ class AppDatabase extends _$AppDatabase {
     String content = '',
     bool isMarkdown = false,
     int bgColorIndex = 0,
+    DateTime? eventDate,
   }) async {
     final id = _uuid.v4();
     final now = DateTime.now();
@@ -104,6 +105,7 @@ class AppDatabase extends _$AppDatabase {
       manualSortOrder: Value(nextOrder),
       createdAt: Value(now),
       updatedAt: Value(now),
+      eventDate: Value(eventDate),
     );
     await into(memos).insert(companion);
     return (await getMemoById(id))!;
@@ -116,6 +118,7 @@ class AppDatabase extends _$AppDatabase {
     String? memo,
     String? parentId,
     int? sortOrder,
+    DateTime? eventDate,
   }) async {
     final id = _uuid.v4();
     final companion = TodoItemsCompanion.insert(
@@ -125,6 +128,7 @@ class AppDatabase extends _$AppDatabase {
       memo: Value(memo),
       parentId: Value(parentId),
       sortOrder: Value(sortOrder ?? 0),
+      eventDate: Value(eventDate),
     );
     await into(todoItems).insert(companion);
     return (await (select(todoItems)..where((t) => t.id.equals(id)))
@@ -205,6 +209,7 @@ class AppDatabase extends _$AppDatabase {
   Future<TodoList> createTodoList({
     String title = '',
     bool isMerged = false,
+    DateTime? eventDate,
   }) async {
     final id = _uuid.v4();
     final nextOrder = await nextItemSortOrder();
@@ -213,6 +218,7 @@ class AppDatabase extends _$AppDatabase {
       title: Value(title),
       manualSortOrder: Value(nextOrder),
       isMerged: Value(isMerged),
+      eventDate: Value(eventDate),
     );
     await into(todoLists).insert(companion);
     return (await (select(todoLists)..where((t) => t.id.equals(id)))
@@ -849,6 +855,139 @@ class AppDatabase extends _$AppDatabase {
     return (select(tagHistories)
           ..orderBy([(t) => OrderingTerm.desc(t.usedAt)]))
         .get();
+  }
+
+  // ========================================
+  // カレンダー（Phase 15）
+  // ========================================
+
+  /// メモのカレンダー紐付け日を設定（null でクリア）
+  Future<void> setMemoEventDate(String id, DateTime? eventDate) {
+    return (update(memos)..where((t) => t.id.equals(id))).write(
+      MemosCompanion(
+        eventDate: Value(eventDate),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  /// ToDoリストのカレンダー紐付け日を設定（null でクリア）
+  Future<void> setTodoListEventDate(String id, DateTime? eventDate) {
+    return (update(todoLists)..where((t) => t.id.equals(id))).write(
+      TodoListsCompanion(
+        eventDate: Value(eventDate),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  /// ToDoアイテムのカレンダー紐付け日を設定（null でクリア）
+  Future<void> setTodoItemEventDate(String id, DateTime? eventDate) {
+    return (update(todoItems)..where((t) => t.id.equals(id))).write(
+      TodoItemsCompanion(
+        eventDate: Value(eventDate),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  /// 指定範囲 [start, end) で eventDate を持つアイテムの日別件数を返す。
+  /// メモ + ToDoリスト + ToDoアイテム の合計（混合カウント）。
+  /// 返り値の Map のキーはローカル日付 (時刻 00:00:00)。
+  Stream<Map<DateTime, int>> watchEventCountsForRange({
+    required DateTime start,
+    required DateTime end,
+  }) {
+    return customSelect(
+      '''
+      SELECT day, SUM(cnt) AS total FROM (
+        SELECT date(event_date, 'unixepoch', 'localtime') AS day, COUNT(*) AS cnt
+          FROM memos
+          WHERE event_date IS NOT NULL AND event_date >= ?1 AND event_date < ?2
+          GROUP BY day
+        UNION ALL
+        SELECT date(event_date, 'unixepoch', 'localtime') AS day, COUNT(*) AS cnt
+          FROM todo_lists
+          WHERE event_date IS NOT NULL AND event_date >= ?1 AND event_date < ?2
+          GROUP BY day
+        UNION ALL
+        SELECT date(event_date, 'unixepoch', 'localtime') AS day, COUNT(*) AS cnt
+          FROM todo_items
+          WHERE event_date IS NOT NULL AND event_date >= ?1 AND event_date < ?2
+          GROUP BY day
+      )
+      GROUP BY day
+      ''',
+      variables: [
+        Variable<DateTime>(start),
+        Variable<DateTime>(end),
+      ],
+      readsFrom: {memos, todoLists, todoItems},
+    ).watch().map((rows) {
+      final result = <DateTime, int>{};
+      for (final row in rows) {
+        final dayStr = row.read<String>('day');
+        final parts = dayStr.split('-');
+        final day = DateTime(
+          int.parse(parts[0]),
+          int.parse(parts[1]),
+          int.parse(parts[2]),
+        );
+        result[day] = row.read<int>('total');
+      }
+      return result;
+    });
+  }
+
+  /// その日のメモ取得（eventDate が day と同じ日）
+  Stream<List<Memo>> watchMemosForDay(DateTime day) {
+    final start = DateTime(day.year, day.month, day.day);
+    final end = start.add(const Duration(days: 1));
+    return (select(memos)
+          ..where((t) =>
+              t.eventDate.isNotNull() &
+              t.eventDate.isBiggerOrEqualValue(start) &
+              t.eventDate.isSmallerThanValue(end))
+          ..orderBy([
+            (t) => OrderingTerm(
+                expression: t.isPinned, mode: OrderingMode.desc),
+            (t) => OrderingTerm(
+                expression: t.createdAt, mode: OrderingMode.desc),
+          ]))
+        .watch();
+  }
+
+  /// その日のToDoリスト取得
+  Stream<List<TodoList>> watchTodoListsForDay(DateTime day) {
+    final start = DateTime(day.year, day.month, day.day);
+    final end = start.add(const Duration(days: 1));
+    return (select(todoLists)
+          ..where((t) =>
+              t.eventDate.isNotNull() &
+              t.eventDate.isBiggerOrEqualValue(start) &
+              t.eventDate.isSmallerThanValue(end))
+          ..orderBy([
+            (t) => OrderingTerm(
+                expression: t.isPinned, mode: OrderingMode.desc),
+            (t) => OrderingTerm(
+                expression: t.createdAt, mode: OrderingMode.desc),
+          ]))
+        .watch();
+  }
+
+  /// その日のToDoアイテム取得（sortOrder 昇順）
+  Stream<List<TodoItem>> watchTodoItemsForDay(DateTime day) {
+    final start = DateTime(day.year, day.month, day.day);
+    final end = start.add(const Duration(days: 1));
+    return (select(todoItems)
+          ..where((t) =>
+              t.eventDate.isNotNull() &
+              t.eventDate.isBiggerOrEqualValue(start) &
+              t.eventDate.isSmallerThanValue(end))
+          ..orderBy([
+            (t) => OrderingTerm.asc(t.sortOrder),
+          ]))
+        .watch();
   }
 
   // ========================================

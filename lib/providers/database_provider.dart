@@ -177,3 +177,39 @@ final tagsForTodoListStreamProvider =
 final allTabColorIndexProvider = StateProvider<int>((ref) => -1); // -1 = TagColors.allTabColor を使う
 final untaggedTabColorIndexProvider = StateProvider<int>((ref) => 0); // 0 = palette[0]
 final frequentTabColorIndexProvider = StateProvider<int>((ref) => 8); // 薄い水色系
+final calendarTabColorIndexProvider = StateProvider<int>((ref) => 36); // 薄紫系（時間/予定の連想）
+
+// ========================================
+// カレンダー（Phase 15）
+// ========================================
+
+/// 指定範囲 [start, end) で eventDate を持つアイテムの日別件数。
+/// メモ + ToDoリスト + ToDoアイテム の合計。月切替で複数月またぐ場合は
+/// 月単位の Provider を複数 watch して結合する想定。
+final eventCountsForRangeProvider = StreamProvider.family<
+    Map<DateTime, int>,
+    ({DateTime start, DateTime end})>((ref, range) {
+  final db = ref.watch(databaseProvider);
+  return db.watchEventCountsForRange(start: range.start, end: range.end);
+});
+
+/// その日のメモを購読
+final memosForDayProvider =
+    StreamProvider.family<List<Memo>, DateTime>((ref, day) {
+  final db = ref.watch(databaseProvider);
+  return db.watchMemosForDay(day);
+});
+
+/// その日のToDoリストを購読
+final todoListsForDayProvider =
+    StreamProvider.family<List<TodoList>, DateTime>((ref, day) {
+  final db = ref.watch(databaseProvider);
+  return db.watchTodoListsForDay(day);
+});
+
+/// その日のToDoアイテムを購読
+final todoItemsForDayProvider =
+    StreamProvider.family<List<TodoItem>, DateTime>((ref, day) {
+  final db = ref.watch(databaseProvider);
+  return db.watchTodoItemsForDay(day);
+});
