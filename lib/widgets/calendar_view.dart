@@ -584,7 +584,7 @@ class _AddActionSheet extends StatelessWidget {
                               child: _AddSquareButton(
                                 icon: Icons.checklist,
                                 iconColor: Colors.green.shade600,
-                                label: 'ToDoリスト',
+                                label: 'ToDo',
                                 onTap: () => Navigator.of(context)
                                     .pop(_AddType.todoList),
                               ),
