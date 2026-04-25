@@ -76,11 +76,30 @@ class DayItemsPanel extends ConsumerWidget {
                 ),
               ),
               const Spacer(),
+              // メモ件数（アイコン + 数字）
+              Icon(Icons.note_outlined,
+                  size: 15, color: Colors.amber.shade700),
+              const SizedBox(width: 3),
               Text(
-                '$totalCount件',
+                '${memos.length}',
                 style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.black54,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black87,
+                  fontFamily: 'Hiragino Sans',
+                ),
+              ),
+              const SizedBox(width: 10),
+              // ToDo 件数（リスト + アイテムの合算）
+              Icon(Icons.checklist,
+                  size: 15, color: Colors.green.shade600),
+              const SizedBox(width: 3),
+              Text(
+                '${todoLists.length + todoItems.length}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black87,
                   fontFamily: 'Hiragino Sans',
                 ),
               ),
