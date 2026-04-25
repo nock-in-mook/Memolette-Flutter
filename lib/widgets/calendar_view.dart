@@ -55,7 +55,7 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
 
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.only(bottom: 80),
+      padding: const EdgeInsets.fromLTRB(0, 4, 0, 80),
       itemCount: months.length,
       itemBuilder: (ctx, i) => _MonthBlock(month: months[i], today: _today),
     );
@@ -84,46 +84,63 @@ class _MonthBlock extends ConsumerWidget {
     // DateTime.weekday は 1=月曜, ..., 7=日曜
     final firstDayWeekday = monthStart.weekday % 7;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // 月見出し
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
-          child: Text(
-            '${month.year}年 ${month.month}月',
-            style: const TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-              fontFamily: 'Hiragino Sans',
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
             ),
-          ),
+          ],
         ),
-        // 曜日ヘッダ
-        const _WeekdayHeader(),
-        // 日付グリッド (7 列)
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 7,
-            childAspectRatio: 0.9,
-          ),
-          itemCount: firstDayWeekday + daysInMonth,
-          itemBuilder: (ctx, i) {
-            if (i < firstDayWeekday) {
-              return const _EmptyDayCell();
-            }
-            final dayNum = i - firstDayWeekday + 1;
-            final day = DateTime(month.year, month.month, dayNum);
-            final count = counts[day] ?? 0;
-            final isToday = day.year == today.year &&
-                day.month == today.month &&
-                day.day == today.day;
-            return _DayCell(day: day, count: count, isToday: isToday);
-          },
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 月見出し
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+              child: Text(
+                '${month.year}年 ${month.month}月',
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  fontFamily: 'Hiragino Sans',
+                ),
+              ),
+            ),
+            // 曜日ヘッダ
+            const _WeekdayHeader(),
+            // 日付グリッド (7 列)
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                childAspectRatio: 0.9,
+              ),
+              itemCount: firstDayWeekday + daysInMonth,
+              itemBuilder: (ctx, i) {
+                if (i < firstDayWeekday) {
+                  return const _EmptyDayCell();
+                }
+                final dayNum = i - firstDayWeekday + 1;
+                final day = DateTime(month.year, month.month, dayNum);
+                final count = counts[day] ?? 0;
+                final isToday = day.year == today.year &&
+                    day.month == today.month &&
+                    day.day == today.day;
+                return _DayCell(day: day, count: count, isToday: isToday);
+              },
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
