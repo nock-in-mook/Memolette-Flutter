@@ -294,11 +294,14 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  /// タイトル・本文が空のメモをまとめて削除（起動時セーフティネット）
+  /// タイトル・本文・eventDate がすべて空のメモをまとめて削除（起動時セーフティネット）
   /// 返り値: 削除件数
   Future<int> purgeEmptyMemos() async {
     final emptyIds = await (select(memos)
-          ..where((t) => t.title.equals('') & t.content.equals('')))
+          ..where((t) =>
+              t.title.equals('') &
+              t.content.equals('') &
+              t.eventDate.isNull()))
         .map((m) => m.id)
         .get();
     if (emptyIds.isEmpty) return 0;

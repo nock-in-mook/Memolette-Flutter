@@ -14,11 +14,13 @@ import 'day_items_panel.dart';
 class CalendarView extends ConsumerStatefulWidget {
   final ValueChanged<Memo> onMemoTap;
   final ValueChanged<TodoList> onTodoListTap;
+  final ValueChanged<Memo> onMemoCreated;
 
   const CalendarView({
     super.key,
     required this.onMemoTap,
     required this.onTodoListTap,
+    required this.onMemoCreated,
   });
 
   @override
@@ -76,7 +78,7 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
       case _AddType.memo:
         final memo = await db.createMemo(eventDate: day);
         if (!mounted) return;
-        widget.onMemoTap(memo);
+        widget.onMemoCreated(memo);
       case _AddType.todoList:
         final list = await db.createTodoList(eventDate: day);
         if (!mounted) return;

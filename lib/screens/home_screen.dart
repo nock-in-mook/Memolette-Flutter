@@ -1259,6 +1259,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                 child: CalendarView(
                                   onMemoTap: _openMemo,
                                   onTodoListTap: _openTodoList,
+                                  onMemoCreated: _openNewlyCreatedMemo,
                                 ),
                               )
                             else ...[
@@ -2714,13 +2715,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return src.whenData(_excludeEmptyMemos);
   }
 
-  /// 未入力（title/content/bgColor すべて空）のメモを除外する
+  /// 未入力（title/content/bgColor/eventDate すべて空）のメモを除外する
+  /// eventDate を持つメモはカレンダー紐付けがあるので「空」扱いしない
   List<Memo> _excludeEmptyMemos(List<Memo> list) {
     return list
         .where((m) =>
             m.title.isNotEmpty ||
             m.content.isNotEmpty ||
-            m.bgColorIndex != 0)
+            m.bgColorIndex != 0 ||
+            m.eventDate != null)
         .toList();
   }
 
@@ -3432,6 +3435,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         _wideTodoListId = null; // メモ優先
       });
     }
+  }
+
+  /// カレンダーから「+」で新規作成したメモを編集モードで開く
+  /// 通常の _openMemo は閲覧優先でフォーカスしないが、新規作成は即フォーカスが必要
+  void _openNewlyCreatedMemo(Memo memo) {
+    if (_isSelectMode || _isReorderMode) return;
+    _clearSearchIfActive();
+    _inputAreaKey.currentState?.loadMemoDirectly(memo);
+    setState(() {
+      _editingMemoId = memo.id;
+      _highlightedMemoId = memo.id;
+      _focusInputTrigger++;
+      _wideTodoListId = null;
+    });
   }
 
   /// MemoCard タップのエントリポイント。onDoubleTap を外して kDoubleTapTimeout
