@@ -1255,8 +1255,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         children: [
                           if (!_isEditingCompact) ...[
                             if (_isCalendarTab)
-                              const Expanded(
-                                child: CalendarView(),
+                              Expanded(
+                                child: CalendarView(
+                                  onMemoTap: _openMemo,
+                                  onTodoListTap: _openTodoList,
+                                ),
                               )
                             else ...[
                               // 「すべて」タブは件数+サブフィルタを1行で、それ以外は件数バー

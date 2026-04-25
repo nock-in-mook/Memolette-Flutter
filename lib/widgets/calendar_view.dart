@@ -1,27 +1,38 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/responsive.dart';
+import 'day_items_panel.dart';
 
 /// 「全カレンダー」タブ本体。縦スクロール月別カレンダー。
-/// 各日付セルに件数バッジ + 「+」ボタン（タップ動作は Step 6 で配線）。
+/// - 日付セルタップ:
+///   - iPad 横画面: 右カラムの DayItemsPanel に選択日を反映
+///   - 縦画面: showModalBottomSheet で当日アイテム一覧を表示
+/// 「+」ボタンの動作配線は Step 6。
 class CalendarView extends ConsumerStatefulWidget {
-  const CalendarView({super.key});
+  final ValueChanged<Memo> onMemoTap;
+  final ValueChanged<TodoList> onTodoListTap;
+
+  const CalendarView({
+    super.key,
+    required this.onMemoTap,
+    required this.onTodoListTap,
+  });
 
   @override
   ConsumerState<CalendarView> createState() => _CalendarViewState();
 }
 
 class _CalendarViewState extends ConsumerState<CalendarView> {
-  // 表示範囲: 当月の前後何ヶ月分を出すか（Lazy 拡張は後フェーズ）
   static const int _monthsBefore = 6;
   static const int _monthsAfter = 12;
-
-  // 各月ブロックの高さ概算（曜日ヘッダ込み・週数で変動するためあくまで初期スクロール用）
   static const double _approxMonthHeight = 360;
 
   late final ScrollController _scrollController;
   late final DateTime _today;
+  DateTime? _selectedDay; // iPad 横画面で右カラムに表示する日
 
   @override
   void initState() {
@@ -29,7 +40,6 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
     final now = DateTime.now();
     _today = DateTime(now.year, now.month, now.day);
     _scrollController = ScrollController();
-    // 起動時に当月までスクロール
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
       final offset = _approxMonthHeight * _monthsBefore;
@@ -46,8 +56,97 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
     super.dispose();
   }
 
+  void _handleDayTap(DateTime day) {
+    if (Responsive.isWide(context)) {
+      setState(() => _selectedDay = day);
+    } else {
+      _showDaySheet(day);
+    }
+  }
+
+  void _showDaySheet(DateTime day) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, scrollController) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: Column(
+              children: [
+                // ドラッグハンドル
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 4),
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: PrimaryScrollController(
+                    controller: scrollController,
+                    child: DayItemsPanel(
+                      day: day,
+                      onMemoTap: (m) {
+                        Navigator.of(ctx).pop();
+                        widget.onMemoTap(m);
+                      },
+                      onTodoListTap: (l) {
+                        Navigator.of(ctx).pop();
+                        widget.onTodoListTap(l);
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final calendarList = _buildCalendarList();
+    if (Responsive.isWide(context)) {
+      // 横画面では右カラムに常時 DayItemsPanel
+      _selectedDay ??= _today;
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(flex: 5, child: calendarList),
+          Container(
+            width: 1,
+            color: Colors.black.withValues(alpha: 0.06),
+          ),
+          Expanded(
+            flex: 3,
+            child: DayItemsPanel(
+              day: _selectedDay!,
+              onMemoTap: widget.onMemoTap,
+              onTodoListTap: widget.onTodoListTap,
+            ),
+          ),
+        ],
+      );
+    }
+    return calendarList;
+  }
+
+  Widget _buildCalendarList() {
     final months = <DateTime>[];
     for (int i = -_monthsBefore; i <= _monthsAfter; i++) {
       months.add(DateTime(_today.year, _today.month + i));
@@ -57,7 +156,12 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
       controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(0, 4, 0, 80),
       itemCount: months.length,
-      itemBuilder: (ctx, i) => _MonthBlock(month: months[i], today: _today),
+      itemBuilder: (ctx, i) => _MonthBlock(
+        month: months[i],
+        today: _today,
+        selectedDay: _selectedDay,
+        onDayTap: _handleDayTap,
+      ),
     );
   }
 }
@@ -66,8 +170,15 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
 class _MonthBlock extends ConsumerWidget {
   final DateTime month; // その月の1日
   final DateTime today;
+  final DateTime? selectedDay;
+  final ValueChanged<DateTime> onDayTap;
 
-  const _MonthBlock({required this.month, required this.today});
+  const _MonthBlock({
+    required this.month,
+    required this.today,
+    required this.selectedDay,
+    required this.onDayTap,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -102,8 +213,18 @@ class _MonthBlock extends ConsumerWidget {
         final isToday = day.year == today.year &&
             day.month == today.month &&
             day.day == today.day;
+        final isSelected = selectedDay != null &&
+            day.year == selectedDay!.year &&
+            day.month == selectedDay!.month &&
+            day.day == selectedDay!.day;
         cells.add(Expanded(
-          child: _DayCell(day: day, count: count, isToday: isToday),
+          child: _DayCell(
+            day: day,
+            count: count,
+            isToday: isToday,
+            isSelected: isSelected,
+            onTap: () => onDayTap(day),
+          ),
         ));
       }
       rows.add(SizedBox(
@@ -237,11 +358,15 @@ class _DayCell extends StatelessWidget {
   final DateTime day;
   final int count;
   final bool isToday;
+  final bool isSelected;
+  final VoidCallback? onTap;
 
   const _DayCell({
     required this.day,
     required this.count,
     required this.isToday,
+    this.isSelected = false,
+    this.onTap,
   });
 
   @override
@@ -252,13 +377,19 @@ class _DayCell extends StatelessWidget {
             ? Colors.blue.shade400
             : Colors.black87;
 
-    return Container(
+    final cell = Container(
       decoration: BoxDecoration(
         border: Border.all(
-          color: Colors.black.withValues(alpha: 0.08),
-          width: 0.5,
+          color: isSelected
+              ? Colors.blue.withValues(alpha: 0.6)
+              : Colors.black.withValues(alpha: 0.08),
+          width: isSelected ? 1.5 : 0.5,
         ),
-        color: isToday ? Colors.blue.withValues(alpha: 0.06) : null,
+        color: isSelected
+            ? Colors.blue.withValues(alpha: 0.10)
+            : isToday
+                ? Colors.blue.withValues(alpha: 0.06)
+                : null,
       ),
       child: Stack(
         children: [
@@ -327,6 +458,13 @@ class _DayCell extends StatelessWidget {
           ),
         ],
       ),
+    );
+
+    if (onTap == null) return cell;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: cell,
     );
   }
 }
