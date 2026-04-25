@@ -147,7 +147,7 @@ class _AddButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
         border: Border(
@@ -156,29 +156,37 @@ class _AddButton extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: Material(
-          color: Colors.blue.shade600,
-          borderRadius: BorderRadius.circular(10),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(10),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.add, size: 18, color: Colors.white),
-                  SizedBox(width: 6),
-                  Text(
-                    'メモ・ToDoを追加',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                      fontFamily: 'Hiragino Sans',
-                    ),
+        // iPad 横幅でボタンが間延びしないよう中央寄せ＋上限幅
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 260),
+            child: Material(
+              color: Colors.blue.shade600,
+              borderRadius: BorderRadius.circular(20),
+              child: InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(20),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(
+                      vertical: 8, horizontal: 16),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.add_circle,
+                          size: 16, color: Colors.white),
+                      SizedBox(width: 6),
+                      Text(
+                        '新規追加',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          fontFamily: 'Hiragino Sans',
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
