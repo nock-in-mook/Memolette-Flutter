@@ -623,3 +623,75 @@
 - claude-mem の数字（GitHub 6.6万スター、v12.3.9）は実際には盛られていなかった。一次情報で確認して判断すべき
 - 上流が急速に発展中（4日で 7 リリース）で critical バグ多数の時期は時期尚早。数週間待つのも手
 - のっくりさんの手動メンテドキュメント資産は claude-mem の自動要約より情報密度が圧倒的に高い
+
+---
+## #28 (2026-04-25 〜 26): iPad 実機検証 → Phase 15 カレンダービュー Step 1〜6 実装
+
+### iPad 実機検証（main で実施）
+- iPad 実機 (のっくりのiPad / iOS 26.2.1) を USB 接続して `flutter run --release`
+- セッション #25〜#27 で入った変更（iPad 横分割・横幅制限・ToDo 結合 UI 等）を 9 項目チェック → 全 OK
+- 機能バー入口アイコン（爆速 / ToDo）のタップ判定が 22pt しかなくシビア → 44pt のヒットエリアに拡張（main にコミット済）
+
+### ROADMAP に Phase 15 追加 → ブランチ `feat/calendar-view`
+- 「カレンダービュー」の機能要望（フォルダタイプの 1 つとして縦スクロール月別カレンダー、日付ごとに +ボタン）
+- 仕様確定: 対象 = メモ + ToDoリスト + ToDoアイテム / 別カラム `eventDate` 新設 / 「全カレンダー」特別フォルダ 1 つに集約
+- Plan エージェントで 9 ステップの詳細実装計画を作成
+- 大物機能なので `feat/calendar-view` で作業
+
+### Step 1: DB Migration v5
+- Memos / TodoLists に `eventDate (DateTime?)` 追加
+- TodoItems の `dueDate`（UI 未使用だった）を `eventDate` にリネームして統合
+- `customStatement` で `ALTER TABLE ... RENAME COLUMN` （Drift 高レベル API に rename なし）
+- iPad 実機で migration 動作確認、既存メモ・ToDo データ保持
+
+### Step 2: CRUD ヘルパ + Riverpod Provider
+- `createMemo` / `createTodoList` / `createTodoItem` に `eventDate` 引数
+- `setMemoEventDate` / `setTodoListEventDate` / `setTodoItemEventDate`
+- `watchEventCountsForRange`（3テーブル UNION ALL の raw SQL、ローカル日付グルーピング、空アイテム除外）
+- `watchMemosForDay` / `watchTodoListsForDay` / `watchTodoItemsForDay`
+- `eventCountsForRangeProvider` 等の Provider、`calendarTabColorIndexProvider`
+
+### Step 3: 「全カレンダー」特殊タブ追加
+- `kCalendarTabKey`、`_SpecialKind.calendar`、`_isCalendarTab`
+- `_syncTabOrder` で「すべて」直後に強制保持（並び替え可・削除不可）
+- `_buildTabFromKey` / `_currentTabColor` / `_showSpecialTabActions` / `_changeSpecialTabColor` に分岐
+- 並び替えモードで一部タブが振動しないバグも発見・修正（`_WigglingReorderTab` の Tween 式が奇数 index で振れ幅 0 になっていた）
+
+### Step 4: 月別カレンダー Widget
+- 新規 `lib/widgets/calendar_view.dart`
+- 縦スクロール ListView（前 6 ヶ月〜後 12 ヶ月）、起動時は当月までスクロール
+- 月見出し + 曜日ヘッダ + 7 列日付グリッド
+- **`GridView` で曜日と日付の間に謎余白が出続けたので、Row × N の手動レイアウトに切替**（Flutter の罠メモ）
+- 月カードは白角丸 + 上下左右にタブ色フレーム、各カード中央に大きな月数字を透かし表示
+
+### Step 5: 当日アイテム一覧（シート/カラム）
+- 新規 `lib/widgets/day_items_panel.dart`
+- 縦画面 = `showModalBottomSheet` + `DraggableScrollableSheet`
+- iPad 横画面 = `Row(flex: 5 + divider + flex: 3)` で右カラム常時
+- ヘッダ「2026年4月25日(水)」+ メモ/ToDo 件数アイコン + 数字
+- 3 セクション（メモ / ToDoリスト / ToDoアイテム）に分けて表示
+
+### Step 6: 「+」アクション → eventDate プリセット
+- 当初は全日付セルに「+」を置いたが、ノイズなので撤去
+- 0件タップ → 直接アクションシート（メモ / ToDo の 2 ボタン）
+- 1件以上タップ → 当日アイテムシート（下部に「メモ・ToDoを追加」ボタン）
+- アクションシートは枠外タップ + `focusSafe` で閉じる、キャンセルボタン削除
+- 「アイコン ラベル +」を 1 行横並びに収めた `_AddSquareButton`
+- 新規メモは `_openNewlyCreatedMemo` で先行作成 + `_focusInputTrigger++` 即フォーカス
+- 空メモ/空ToDoガード `purgeEmptyMemos` / `purgeEmptyTodoLists` を整備（eventDate のみのアイテムは消える仕様）
+
+### 仕様メモ（次セッション以降で重要）
+- 件数バッジは「内容あり」のみカウント（メモ: title/content/bgColor、ToDoリスト: title or アイテム1件以上、ToDoアイテム: title）
+- eventDate のみのアイテムは「中身なし」扱いで非表示・自動削除
+- iPad 横幅対策はデフォルトで（auto memory に feedback 保存済）
+
+### 動作確認
+- iPhone 15 Pro Max 実機（wireless、ヘッダ修正版まで）
+- iPad のっくりのiPad 実機（wireless、Step 6 fix まで）
+- iPhone 15 Pro Max シミュ + iPad Pro 13-inch (M5) シミュで最新版動作確認
+
+### 次セッション
+- `feat/calendar-view` ブランチ継続
+- シート（DayItemsPanel）の細部調整続き
+- Step 7（メモ入力UIに日付欄）/ Step 8（ToDoに日付欄）/ Step 9（仕上げ）
+- 完了したら main マージ → release タグ → TestFlight 配布

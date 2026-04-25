@@ -38,11 +38,138 @@ Flutter 側 `ios/Runner.xcodeproj` の Team 設定は個人 Team のまま
 
 ## 現在の状況
 
-- **セッション#27 完了**（2026-04-24）
-- ブランチ: `main`
-- 最終コミット: `cecb85a` 結合マーク位置とチェックボックス配置の調整 + フィルタボタンを中央固定
-- iPhone 15 Pro Max **実機 (wireless)** + iPad Pro 13-inch シミュで動作確認済
-- 今回は wireless デプロイ安定、devicectl 経由で問題なし
+- **セッション#28 完了**（2026-04-25 〜 26）
+- ブランチ: **`feat/calendar-view`**（main にマージ前、未完）
+- 最終コミット: `e69971b` シート日付ヘッダ右端にメモ/ToDo件数をアイコン付きで表示
+- セッション#27 から +27 コミット（Phase 15 カレンダービュー実装中）
+- iPhone/iPad シミュ + iPad/iPhone 実機（wireless）で動作確認進めた
+
+## #28 のサマリ: Phase 15 カレンダービュー Step 1〜6 完了 + UI 調整
+
+新規ファイル
+- `lib/widgets/calendar_view.dart` — 「全カレンダー」タブ本体（縦スクロール月別 + iPad 横スプリット）
+- `lib/widgets/day_items_panel.dart` — 当日アイテム一覧パネル
+
+ブランチ運用: 大物機能なので `feat/calendar-view` で作業中。次セッションで仕上げ→main マージ予定。
+
+### Step 1: DB Migration v5
+- Memos / TodoLists に `eventDate (DateTime?)` 追加
+- TodoItems の `dueDate` を `eventDate` にリネーム（カレンダー紐付け日に統合、UIで未使用だった dueDate を流用）
+- `customStatement` で `ALTER TABLE ... RENAME COLUMN`
+- iPad 実機で migration 動作確認済
+
+### Step 2: CRUD ヘルパ + Riverpod Provider
+- `createMemo` / `createTodoList` / `createTodoItem` に `eventDate` 引数追加
+- `setMemoEventDate` / `setTodoListEventDate` / `setTodoItemEventDate` 新設
+- `watchEventCountsForRange` （3テーブル UNION ALL の raw SQL、ローカル日付で GROUP BY、空アイテム除外）
+- `watchMemosForDay` / `watchTodoListsForDay` / `watchTodoItemsForDay`
+- `eventCountsForRangeProvider`、`memosForDayProvider`、`todoListsForDayProvider`、`todoItemsForDayProvider`
+- `calendarTabColorIndexProvider` (StateProvider, default 36 = 薄紫)
+
+### Step 3: 「全カレンダー」特殊タブ追加
+- `kCalendarTabKey = '__calendar__'`、`_SpecialKind.calendar`、`_isCalendarTab`
+- `_syncTabOrder` で「すべて」直後に強制保持（並び替え可能・削除不可）
+- `_buildTabFromKey` / `_currentTabColor` / `_showSpecialTabActions` / `_changeSpecialTabColor` に分岐追加
+- `_buildFloatingBottomBar` は calendar タブで非表示
+
+#### #28 副次バグ修正
+- `_WigglingReorderTab` の Tween 式が奇数 index で振れ幅 0 になっていたバグ修正
+  （並び替えモードで一部タブがプルプルしない問題）
+- 機能バー入口アイコン（爆速/ToDo）のタップ判定を 22pt → 44pt に拡張
+
+### Step 4: 月別カレンダー Widget
+- 縦スクロール ListView（前 6 ヶ月〜後 12 ヶ月）
+- 月見出し + 曜日ヘッダ + 7 列日付グリッド
+- **GridView は shrinkWrap 下で曜日ヘッダと日付グリッドの間に謎余白が出たので、Row × N の手動レイアウトに変更**（重要な判断）
+- 各セル: 日付数字（土日色分け）+ 件数バッジ（オレンジ）+ 「+」アイコン → Step 6 で動作配線後に「+」削除
+- 当日セル: 青円 + 背景色強調
+- 月カードは白角丸、上下左右にタブ色のフレームを見せる
+- 各月カードの中央に `fontSize 200` の月数字を `Positioned.fill + Center + IgnorePointer` で透かし表示
+
+### Step 5: 当日アイテム一覧（シート/カラム）
+- `DayItemsPanel`: 日付タップで当日のメモ/ToDoリスト/ToDoアイテムを 3 セクションで表示
+- iPad 横画面: `Row(flex: 5 + 1px divider + flex: 3)` で右カラム常時表示
+- 縦画面: `showModalBottomSheet` + `DraggableScrollableSheet`
+- アイテムタップで既存遷移（メモは `_openMemo`、ToDoリストは `_openTodoList`）
+- ToDoアイテム個別の親リスト紐付けジャンプは将来対応（Step 5b）
+
+### Step 6: 「+」アクション → eventDate プリセット
+- 当初は全日付セルに「+」アイコンがあった → ノイズなので **撤去**
+- 0件の日タップ → 直接アクションシート（メモ作成 / ToDo作成）
+- 1件以上の日タップ → 当日アイテムシート（下部に「メモ・ToDoを追加」ボタン）
+- iPad 横スプリットでも右カラム下部に追加ボタン常時
+- アクションシート（`_AddActionSheet`）は枠外タップ + `focusSafe` で閉じる、キャンセルボタン削除
+- 「アイコン ラベル +」を 1 行横並びにした `_AddSquareButton`（メモ ↔ ToDo の 2 ボタン）
+- ヘッダ表記は「2026年4月25日(水)」形式、土日色分け（赤/青）
+- シート右端にメモ/ToDo 件数をアイコン+数字で表示
+- `_openNewlyCreatedMemo` を home_screen.dart に新設（`_focusInputTrigger++` で即フォーカス）
+- 空メモ/空ToDoリストガードに `purgeEmptyTodoLists` を追加
+- **eventDate のみのメモは「中身なし」扱いで非表示／自動削除**（仕様確定）
+  - 件数バッジは入力後に増える、空のまま放置すると消えるのが正解
+
+## 次のアクション（次セッション）
+
+### Phase 15 続き（feat/calendar-view ブランチ継続）
+- **シート（DayItemsPanel）の調整続き** — ヘッダ件数アイコン以外の細部
+- **Step 7: メモ入力UIに日付指定欄追加**
+  - `memo_input_area.dart` のフッターツールバーに日付ボタン
+  - カスタム日付ピッカーシート（標準 showDatePicker は禁止ルール）
+  - キーボード閉じてからピッカー（バグ #20 回避）
+- **Step 8: ToDoリスト/アイテム編集に日付欄追加**
+  - リストヘッダに「リスト全体の日付」、各アイテム行に日付アイコン
+  - Step 7 のピッカーシートを共通化して再利用
+- **Step 9: 仕上げ・整合性**
+  - メモカードに eventDate バッジ表示（grid1x2/grid1flex でのみ）
+  - ToDo 結合 (`mergeTodoLists`) で eventDate もコピー（既に対応済）
+  - Undo/Redo スナップショットに eventDate 含める
+  - 文字列定数を集約
+
+### Phase 15 完了後
+- main へマージ → release タグ
+- TestFlight 内部配布セットアップ
+- 爆速整理モードの iPad 対応
+
+## 技術メモ（#28 で蓄積）
+
+### Drift Migration: ALTER TABLE RENAME COLUMN
+- Drift の Migrator API には rename 用の高レベルメソッドは無い
+- `customStatement('ALTER TABLE todo_items RENAME COLUMN due_date TO event_date')` で対応
+- SQLite 3.25+ で利用可、iOS 26 系は対応済み
+
+### GridView の余白挙動
+- `GridView.builder(shrinkWrap: true, mainAxisExtent: ...)` で日付セルを並べたら、曜日ヘッダと最初の行の間に **謎の大きな余白** が出ていた
+- `childAspectRatio` でも同様の挙動
+- 確実に制御したいときは Row × N の手動レイアウトの方が安定（calendar_view.dart の `_MonthBlock`）
+
+### 件数バッジ集計の SQL（3 テーブル UNION ALL）
+- `customSelect` で raw SQL 書く
+- `date(event_date, 'unixepoch', 'localtime')` でローカル日付に変換
+- `Variable<DateTime>(start)` で DateTime をパラメータに渡す（Drift デフォルトは Unix seconds 保存）
+- 各テーブルで「内容あり」フィルタを SQL 側でかける（メモ: title/content/bgColor、ToDoリスト: title or アイテム1件以上、ToDoアイテム: title）
+
+### iPhone wireless ビルドの取り扱い（再確認）
+- `flutter run --release` で「Could not run」が初回 → リトライで Installing 完了 → 「Error running application」で flutter run プロセス自体は exit 2
+- でも **iPhone にはアプリインストール済み**（2回目の Installing が成功している）
+- ホーム画面のアプリアイコンから手動起動すれば最新版が動く
+
+### Xcode 並列ビルドの DerivedData 衝突
+- 4 デバイス並列で `flutter run` すると Xcode の DerivedData VFS yaml が壊れて `Could not write file ... -VFS-iphonesimulator/all-product-headers.yaml` エラー
+- 対処: `rm -rf ~/Library/Developer/Xcode/DerivedData/Runner-*` でクリア後、シリアル or 2 並列までに抑える
+- 自動リトライは効くが時間が伸びる
+
+### `_focusInputTrigger` パターン
+- `MemoInputArea` の `focusRequest: int` を `setState` でインクリメントするとフォーカス発火
+- 新規メモ作成→編集モード突入の標準パス
+- カレンダーから「+」で先行作成したメモを開くときに使う（`_openNewlyCreatedMemo`）
+
+### showModalBottomSheet 閉時の編集モード突入問題
+- Navigator の自動フォーカス復元で、シート閉時に MemoInputArea の TextField にフォーカスが戻る → キーボード出る → 編集モード突入
+- 対処: `focusSafe` でラップ、または手動で `FocusManager.instance.primaryFocus?.unfocus()` を開閉前後に呼ぶ
+
+### iPad 横幅対策はデフォルトで（auto memory にも保存）
+- 新機能のダイアログ・シート・パネルは最初から `maxWidth` 制限する
+- ボタン類が間延びしないよう `Center + ConstrainedBox` で囲む
+- 後追いで直すより設計時に入れるほうがコスパ良い
 
 ## #27 で完了したこと
 
