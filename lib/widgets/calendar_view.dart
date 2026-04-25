@@ -84,86 +84,98 @@ class _MonthBlock extends ConsumerWidget {
     // DateTime.weekday は 1=月曜, ..., 7=日曜
     final firstDayWeekday = monthStart.weekday % 7;
 
+    // 7 列 × N 行を手動レイアウト（GridView は shrinkWrap 下で余白挙動が読めなかった）
+    final totalCells = firstDayWeekday + daysInMonth;
+    final weeksCount = (totalCells / 7).ceil();
+    final rows = <Widget>[];
+    for (int week = 0; week < weeksCount; week++) {
+      final cells = <Widget>[];
+      for (int col = 0; col < 7; col++) {
+        final cellIndex = week * 7 + col;
+        if (cellIndex >= totalCells || cellIndex < firstDayWeekday) {
+          cells.add(const Expanded(child: _EmptyDayCell()));
+          continue;
+        }
+        final dayNum = cellIndex - firstDayWeekday + 1;
+        final day = DateTime(month.year, month.month, dayNum);
+        final count = counts[day] ?? 0;
+        final isToday = day.year == today.year &&
+            day.month == today.month &&
+            day.day == today.day;
+        cells.add(Expanded(
+          child: _DayCell(day: day, count: count, isToday: isToday),
+        ));
+      }
+      rows.add(SizedBox(
+        height: 56,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: cells,
+        ),
+      ));
+    }
+
+    final mainContent = Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 月見出し
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+            child: Text(
+              '${month.year}年 ${month.month}月',
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'Hiragino Sans',
+              ),
+            ),
+          ),
+          // 曜日ヘッダ（密着配置）
+          const _WeekdayHeader(),
+          // 日付グリッド: Row × N (手動レイアウト)
+          ...rows,
+        ],
+      ),
+    );
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 4,
-              offset: const Offset(0, 1),
-            ),
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(
           children: [
-            // 月見出しエリア（背景に大きな月数字を装飾として重ねる）
-            SizedBox(
-              height: 64,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  // 背景の月数字（中央寄り、薄く）
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: Align(
-                        alignment: Alignment.center,
-                        child: Text(
-                          '${month.month}',
-                          style: TextStyle(
-                            fontSize: 90,
-                            fontWeight: FontWeight.w900,
-                            fontFamily: 'Hiragino Sans',
-                            color: Colors.black.withValues(alpha: 0.07),
-                            height: 1.0,
-                          ),
-                        ),
-                      ),
+            // メインカード（Stack のサイズはこの Column で決まる）
+            mainContent,
+            // 大きな月数字を中央透かしとして重ねる（IgnorePointer でクリック素通し）
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: Text(
+                    '${month.month}',
+                    style: TextStyle(
+                      fontSize: 200,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Hiragino Sans',
+                      color: Colors.black.withValues(alpha: 0.06),
+                      height: 1.0,
                     ),
                   ),
-                  // 月見出し（前面、左上）
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                    child: Text(
-                      '${month.year}年 ${month.month}月',
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        fontFamily: 'Hiragino Sans',
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-            // 曜日ヘッダ（密着配置）
-            const _WeekdayHeader(),
-            // 日付グリッド (7 列、高さ固定で曜日と密着)
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 7,
-                mainAxisExtent: 56,
-              ),
-              itemCount: firstDayWeekday + daysInMonth,
-              itemBuilder: (ctx, i) {
-                if (i < firstDayWeekday) {
-                  return const _EmptyDayCell();
-                }
-                final dayNum = i - firstDayWeekday + 1;
-                final day = DateTime(month.year, month.month, dayNum);
-                final count = counts[day] ?? 0;
-                final isToday = day.year == today.year &&
-                    day.month == today.month &&
-                    day.day == today.day;
-                return _DayCell(day: day, count: count, isToday: isToday);
-              },
             ),
           ],
         ),
