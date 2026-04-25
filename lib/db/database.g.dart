@@ -155,6 +155,17 @@ class $MemosTable extends Memos with TableInfo<$MemosTable, Memo> {
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _eventDateMeta = const VerificationMeta(
+    'eventDate',
+  );
+  @override
+  late final GeneratedColumn<DateTime> eventDate = GeneratedColumn<DateTime>(
+    'event_date',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -169,6 +180,7 @@ class $MemosTable extends Memos with TableInfo<$MemosTable, Memo> {
     lastViewedAt,
     isLocked,
     bgColorIndex,
+    eventDate,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -262,6 +274,12 @@ class $MemosTable extends Memos with TableInfo<$MemosTable, Memo> {
         ),
       );
     }
+    if (data.containsKey('event_date')) {
+      context.handle(
+        _eventDateMeta,
+        eventDate.isAcceptableOrUnknown(data['event_date']!, _eventDateMeta),
+      );
+    }
     return context;
   }
 
@@ -319,6 +337,10 @@ class $MemosTable extends Memos with TableInfo<$MemosTable, Memo> {
         DriftSqlType.int,
         data['${effectivePrefix}bg_color_index'],
       )!,
+      eventDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}event_date'],
+      ),
     );
   }
 
@@ -341,6 +363,7 @@ class Memo extends DataClass implements Insertable<Memo> {
   final DateTime? lastViewedAt;
   final bool isLocked;
   final int bgColorIndex;
+  final DateTime? eventDate;
   const Memo({
     required this.id,
     required this.content,
@@ -354,6 +377,7 @@ class Memo extends DataClass implements Insertable<Memo> {
     this.lastViewedAt,
     required this.isLocked,
     required this.bgColorIndex,
+    this.eventDate,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -372,6 +396,9 @@ class Memo extends DataClass implements Insertable<Memo> {
     }
     map['is_locked'] = Variable<bool>(isLocked);
     map['bg_color_index'] = Variable<int>(bgColorIndex);
+    if (!nullToAbsent || eventDate != null) {
+      map['event_date'] = Variable<DateTime>(eventDate);
+    }
     return map;
   }
 
@@ -391,6 +418,9 @@ class Memo extends DataClass implements Insertable<Memo> {
           : Value(lastViewedAt),
       isLocked: Value(isLocked),
       bgColorIndex: Value(bgColorIndex),
+      eventDate: eventDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(eventDate),
     );
   }
 
@@ -412,6 +442,7 @@ class Memo extends DataClass implements Insertable<Memo> {
       lastViewedAt: serializer.fromJson<DateTime?>(json['lastViewedAt']),
       isLocked: serializer.fromJson<bool>(json['isLocked']),
       bgColorIndex: serializer.fromJson<int>(json['bgColorIndex']),
+      eventDate: serializer.fromJson<DateTime?>(json['eventDate']),
     );
   }
   @override
@@ -430,6 +461,7 @@ class Memo extends DataClass implements Insertable<Memo> {
       'lastViewedAt': serializer.toJson<DateTime?>(lastViewedAt),
       'isLocked': serializer.toJson<bool>(isLocked),
       'bgColorIndex': serializer.toJson<int>(bgColorIndex),
+      'eventDate': serializer.toJson<DateTime?>(eventDate),
     };
   }
 
@@ -446,6 +478,7 @@ class Memo extends DataClass implements Insertable<Memo> {
     Value<DateTime?> lastViewedAt = const Value.absent(),
     bool? isLocked,
     int? bgColorIndex,
+    Value<DateTime?> eventDate = const Value.absent(),
   }) => Memo(
     id: id ?? this.id,
     content: content ?? this.content,
@@ -459,6 +492,7 @@ class Memo extends DataClass implements Insertable<Memo> {
     lastViewedAt: lastViewedAt.present ? lastViewedAt.value : this.lastViewedAt,
     isLocked: isLocked ?? this.isLocked,
     bgColorIndex: bgColorIndex ?? this.bgColorIndex,
+    eventDate: eventDate.present ? eventDate.value : this.eventDate,
   );
   Memo copyWithCompanion(MemosCompanion data) {
     return Memo(
@@ -482,6 +516,7 @@ class Memo extends DataClass implements Insertable<Memo> {
       bgColorIndex: data.bgColorIndex.present
           ? data.bgColorIndex.value
           : this.bgColorIndex,
+      eventDate: data.eventDate.present ? data.eventDate.value : this.eventDate,
     );
   }
 
@@ -499,7 +534,8 @@ class Memo extends DataClass implements Insertable<Memo> {
           ..write('viewCount: $viewCount, ')
           ..write('lastViewedAt: $lastViewedAt, ')
           ..write('isLocked: $isLocked, ')
-          ..write('bgColorIndex: $bgColorIndex')
+          ..write('bgColorIndex: $bgColorIndex, ')
+          ..write('eventDate: $eventDate')
           ..write(')'))
         .toString();
   }
@@ -518,6 +554,7 @@ class Memo extends DataClass implements Insertable<Memo> {
     lastViewedAt,
     isLocked,
     bgColorIndex,
+    eventDate,
   );
   @override
   bool operator ==(Object other) =>
@@ -534,7 +571,8 @@ class Memo extends DataClass implements Insertable<Memo> {
           other.viewCount == this.viewCount &&
           other.lastViewedAt == this.lastViewedAt &&
           other.isLocked == this.isLocked &&
-          other.bgColorIndex == this.bgColorIndex);
+          other.bgColorIndex == this.bgColorIndex &&
+          other.eventDate == this.eventDate);
 }
 
 class MemosCompanion extends UpdateCompanion<Memo> {
@@ -550,6 +588,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
   final Value<DateTime?> lastViewedAt;
   final Value<bool> isLocked;
   final Value<int> bgColorIndex;
+  final Value<DateTime?> eventDate;
   final Value<int> rowid;
   const MemosCompanion({
     this.id = const Value.absent(),
@@ -564,6 +603,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
     this.lastViewedAt = const Value.absent(),
     this.isLocked = const Value.absent(),
     this.bgColorIndex = const Value.absent(),
+    this.eventDate = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MemosCompanion.insert({
@@ -579,6 +619,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
     this.lastViewedAt = const Value.absent(),
     this.isLocked = const Value.absent(),
     this.bgColorIndex = const Value.absent(),
+    this.eventDate = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id);
   static Insertable<Memo> custom({
@@ -594,6 +635,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
     Expression<DateTime>? lastViewedAt,
     Expression<bool>? isLocked,
     Expression<int>? bgColorIndex,
+    Expression<DateTime>? eventDate,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -609,6 +651,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
       if (lastViewedAt != null) 'last_viewed_at': lastViewedAt,
       if (isLocked != null) 'is_locked': isLocked,
       if (bgColorIndex != null) 'bg_color_index': bgColorIndex,
+      if (eventDate != null) 'event_date': eventDate,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -626,6 +669,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
     Value<DateTime?>? lastViewedAt,
     Value<bool>? isLocked,
     Value<int>? bgColorIndex,
+    Value<DateTime?>? eventDate,
     Value<int>? rowid,
   }) {
     return MemosCompanion(
@@ -641,6 +685,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
       lastViewedAt: lastViewedAt ?? this.lastViewedAt,
       isLocked: isLocked ?? this.isLocked,
       bgColorIndex: bgColorIndex ?? this.bgColorIndex,
+      eventDate: eventDate ?? this.eventDate,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -684,6 +729,9 @@ class MemosCompanion extends UpdateCompanion<Memo> {
     if (bgColorIndex.present) {
       map['bg_color_index'] = Variable<int>(bgColorIndex.value);
     }
+    if (eventDate.present) {
+      map['event_date'] = Variable<DateTime>(eventDate.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -705,6 +753,7 @@ class MemosCompanion extends UpdateCompanion<Memo> {
           ..write('lastViewedAt: $lastViewedAt, ')
           ..write('isLocked: $isLocked, ')
           ..write('bgColorIndex: $bgColorIndex, ')
+          ..write('eventDate: $eventDate, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1267,12 +1316,12 @@ class $TodoItemsTable extends TodoItems
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
-  static const VerificationMeta _dueDateMeta = const VerificationMeta(
-    'dueDate',
+  static const VerificationMeta _eventDateMeta = const VerificationMeta(
+    'eventDate',
   );
   @override
-  late final GeneratedColumn<DateTime> dueDate = GeneratedColumn<DateTime>(
-    'due_date',
+  late final GeneratedColumn<DateTime> eventDate = GeneratedColumn<DateTime>(
+    'event_date',
     aliasedName,
     true,
     type: DriftSqlType.dateTime,
@@ -1297,7 +1346,7 @@ class $TodoItemsTable extends TodoItems
     sortOrder,
     createdAt,
     updatedAt,
-    dueDate,
+    eventDate,
     memo,
   ];
   @override
@@ -1361,10 +1410,10 @@ class $TodoItemsTable extends TodoItems
         updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
       );
     }
-    if (data.containsKey('due_date')) {
+    if (data.containsKey('event_date')) {
       context.handle(
-        _dueDateMeta,
-        dueDate.isAcceptableOrUnknown(data['due_date']!, _dueDateMeta),
+        _eventDateMeta,
+        eventDate.isAcceptableOrUnknown(data['event_date']!, _eventDateMeta),
       );
     }
     if (data.containsKey('memo')) {
@@ -1414,9 +1463,9 @@ class $TodoItemsTable extends TodoItems
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
       )!,
-      dueDate: attachedDatabase.typeMapping.read(
+      eventDate: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
-        data['${effectivePrefix}due_date'],
+        data['${effectivePrefix}event_date'],
       ),
       memo: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -1440,7 +1489,7 @@ class TodoItem extends DataClass implements Insertable<TodoItem> {
   final int sortOrder;
   final DateTime createdAt;
   final DateTime updatedAt;
-  final DateTime? dueDate;
+  final DateTime? eventDate;
   final String? memo;
   const TodoItem({
     required this.id,
@@ -1451,7 +1500,7 @@ class TodoItem extends DataClass implements Insertable<TodoItem> {
     required this.sortOrder,
     required this.createdAt,
     required this.updatedAt,
-    this.dueDate,
+    this.eventDate,
     this.memo,
   });
   @override
@@ -1467,8 +1516,8 @@ class TodoItem extends DataClass implements Insertable<TodoItem> {
     map['sort_order'] = Variable<int>(sortOrder);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
-    if (!nullToAbsent || dueDate != null) {
-      map['due_date'] = Variable<DateTime>(dueDate);
+    if (!nullToAbsent || eventDate != null) {
+      map['event_date'] = Variable<DateTime>(eventDate);
     }
     if (!nullToAbsent || memo != null) {
       map['memo'] = Variable<String>(memo);
@@ -1488,9 +1537,9 @@ class TodoItem extends DataClass implements Insertable<TodoItem> {
       sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
-      dueDate: dueDate == null && nullToAbsent
+      eventDate: eventDate == null && nullToAbsent
           ? const Value.absent()
-          : Value(dueDate),
+          : Value(eventDate),
       memo: memo == null && nullToAbsent ? const Value.absent() : Value(memo),
     );
   }
@@ -1509,7 +1558,7 @@ class TodoItem extends DataClass implements Insertable<TodoItem> {
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
-      dueDate: serializer.fromJson<DateTime?>(json['dueDate']),
+      eventDate: serializer.fromJson<DateTime?>(json['eventDate']),
       memo: serializer.fromJson<String?>(json['memo']),
     );
   }
@@ -1525,7 +1574,7 @@ class TodoItem extends DataClass implements Insertable<TodoItem> {
       'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
-      'dueDate': serializer.toJson<DateTime?>(dueDate),
+      'eventDate': serializer.toJson<DateTime?>(eventDate),
       'memo': serializer.toJson<String?>(memo),
     };
   }
@@ -1539,7 +1588,7 @@ class TodoItem extends DataClass implements Insertable<TodoItem> {
     int? sortOrder,
     DateTime? createdAt,
     DateTime? updatedAt,
-    Value<DateTime?> dueDate = const Value.absent(),
+    Value<DateTime?> eventDate = const Value.absent(),
     Value<String?> memo = const Value.absent(),
   }) => TodoItem(
     id: id ?? this.id,
@@ -1550,7 +1599,7 @@ class TodoItem extends DataClass implements Insertable<TodoItem> {
     sortOrder: sortOrder ?? this.sortOrder,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
-    dueDate: dueDate.present ? dueDate.value : this.dueDate,
+    eventDate: eventDate.present ? eventDate.value : this.eventDate,
     memo: memo.present ? memo.value : this.memo,
   );
   TodoItem copyWithCompanion(TodoItemsCompanion data) {
@@ -1563,7 +1612,7 @@ class TodoItem extends DataClass implements Insertable<TodoItem> {
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
-      dueDate: data.dueDate.present ? data.dueDate.value : this.dueDate,
+      eventDate: data.eventDate.present ? data.eventDate.value : this.eventDate,
       memo: data.memo.present ? data.memo.value : this.memo,
     );
   }
@@ -1579,7 +1628,7 @@ class TodoItem extends DataClass implements Insertable<TodoItem> {
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('dueDate: $dueDate, ')
+          ..write('eventDate: $eventDate, ')
           ..write('memo: $memo')
           ..write(')'))
         .toString();
@@ -1595,7 +1644,7 @@ class TodoItem extends DataClass implements Insertable<TodoItem> {
     sortOrder,
     createdAt,
     updatedAt,
-    dueDate,
+    eventDate,
     memo,
   );
   @override
@@ -1610,7 +1659,7 @@ class TodoItem extends DataClass implements Insertable<TodoItem> {
           other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
-          other.dueDate == this.dueDate &&
+          other.eventDate == this.eventDate &&
           other.memo == this.memo);
 }
 
@@ -1623,7 +1672,7 @@ class TodoItemsCompanion extends UpdateCompanion<TodoItem> {
   final Value<int> sortOrder;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
-  final Value<DateTime?> dueDate;
+  final Value<DateTime?> eventDate;
   final Value<String?> memo;
   final Value<int> rowid;
   const TodoItemsCompanion({
@@ -1635,7 +1684,7 @@ class TodoItemsCompanion extends UpdateCompanion<TodoItem> {
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
-    this.dueDate = const Value.absent(),
+    this.eventDate = const Value.absent(),
     this.memo = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -1648,7 +1697,7 @@ class TodoItemsCompanion extends UpdateCompanion<TodoItem> {
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
-    this.dueDate = const Value.absent(),
+    this.eventDate = const Value.absent(),
     this.memo = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
@@ -1662,7 +1711,7 @@ class TodoItemsCompanion extends UpdateCompanion<TodoItem> {
     Expression<int>? sortOrder,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
-    Expression<DateTime>? dueDate,
+    Expression<DateTime>? eventDate,
     Expression<String>? memo,
     Expression<int>? rowid,
   }) {
@@ -1675,7 +1724,7 @@ class TodoItemsCompanion extends UpdateCompanion<TodoItem> {
       if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
-      if (dueDate != null) 'due_date': dueDate,
+      if (eventDate != null) 'event_date': eventDate,
       if (memo != null) 'memo': memo,
       if (rowid != null) 'rowid': rowid,
     });
@@ -1690,7 +1739,7 @@ class TodoItemsCompanion extends UpdateCompanion<TodoItem> {
     Value<int>? sortOrder,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
-    Value<DateTime?>? dueDate,
+    Value<DateTime?>? eventDate,
     Value<String?>? memo,
     Value<int>? rowid,
   }) {
@@ -1703,7 +1752,7 @@ class TodoItemsCompanion extends UpdateCompanion<TodoItem> {
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
-      dueDate: dueDate ?? this.dueDate,
+      eventDate: eventDate ?? this.eventDate,
       memo: memo ?? this.memo,
       rowid: rowid ?? this.rowid,
     );
@@ -1736,8 +1785,8 @@ class TodoItemsCompanion extends UpdateCompanion<TodoItem> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
-    if (dueDate.present) {
-      map['due_date'] = Variable<DateTime>(dueDate.value);
+    if (eventDate.present) {
+      map['event_date'] = Variable<DateTime>(eventDate.value);
     }
     if (memo.present) {
       map['memo'] = Variable<String>(memo.value);
@@ -1759,7 +1808,7 @@ class TodoItemsCompanion extends UpdateCompanion<TodoItem> {
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('dueDate: $dueDate, ')
+          ..write('eventDate: $eventDate, ')
           ..write('memo: $memo, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -1873,6 +1922,17 @@ class $TodoListsTable extends TodoLists
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _eventDateMeta = const VerificationMeta(
+    'eventDate',
+  );
+  @override
+  late final GeneratedColumn<DateTime> eventDate = GeneratedColumn<DateTime>(
+    'event_date',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1883,6 +1943,7 @@ class $TodoListsTable extends TodoLists
     createdAt,
     updatedAt,
     isMerged,
+    eventDate,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1946,6 +2007,12 @@ class $TodoListsTable extends TodoLists
         isMerged.isAcceptableOrUnknown(data['is_merged']!, _isMergedMeta),
       );
     }
+    if (data.containsKey('event_date')) {
+      context.handle(
+        _eventDateMeta,
+        eventDate.isAcceptableOrUnknown(data['event_date']!, _eventDateMeta),
+      );
+    }
     return context;
   }
 
@@ -1987,6 +2054,10 @@ class $TodoListsTable extends TodoLists
         DriftSqlType.bool,
         data['${effectivePrefix}is_merged'],
       )!,
+      eventDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}event_date'],
+      ),
     );
   }
 
@@ -2005,6 +2076,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
   final DateTime createdAt;
   final DateTime updatedAt;
   final bool isMerged;
+  final DateTime? eventDate;
   const TodoList({
     required this.id,
     required this.title,
@@ -2014,6 +2086,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
     required this.createdAt,
     required this.updatedAt,
     required this.isMerged,
+    this.eventDate,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2026,6 +2099,9 @@ class TodoList extends DataClass implements Insertable<TodoList> {
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     map['is_merged'] = Variable<bool>(isMerged);
+    if (!nullToAbsent || eventDate != null) {
+      map['event_date'] = Variable<DateTime>(eventDate);
+    }
     return map;
   }
 
@@ -2039,6 +2115,9 @@ class TodoList extends DataClass implements Insertable<TodoList> {
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       isMerged: Value(isMerged),
+      eventDate: eventDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(eventDate),
     );
   }
 
@@ -2056,6 +2135,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       isMerged: serializer.fromJson<bool>(json['isMerged']),
+      eventDate: serializer.fromJson<DateTime?>(json['eventDate']),
     );
   }
   @override
@@ -2070,6 +2150,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'isMerged': serializer.toJson<bool>(isMerged),
+      'eventDate': serializer.toJson<DateTime?>(eventDate),
     };
   }
 
@@ -2082,6 +2163,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? isMerged,
+    Value<DateTime?> eventDate = const Value.absent(),
   }) => TodoList(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -2091,6 +2173,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     isMerged: isMerged ?? this.isMerged,
+    eventDate: eventDate.present ? eventDate.value : this.eventDate,
   );
   TodoList copyWithCompanion(TodoListsCompanion data) {
     return TodoList(
@@ -2104,6 +2187,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       isMerged: data.isMerged.present ? data.isMerged.value : this.isMerged,
+      eventDate: data.eventDate.present ? data.eventDate.value : this.eventDate,
     );
   }
 
@@ -2117,7 +2201,8 @@ class TodoList extends DataClass implements Insertable<TodoList> {
           ..write('manualSortOrder: $manualSortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('isMerged: $isMerged')
+          ..write('isMerged: $isMerged, ')
+          ..write('eventDate: $eventDate')
           ..write(')'))
         .toString();
   }
@@ -2132,6 +2217,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
     createdAt,
     updatedAt,
     isMerged,
+    eventDate,
   );
   @override
   bool operator ==(Object other) =>
@@ -2144,7 +2230,8 @@ class TodoList extends DataClass implements Insertable<TodoList> {
           other.manualSortOrder == this.manualSortOrder &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
-          other.isMerged == this.isMerged);
+          other.isMerged == this.isMerged &&
+          other.eventDate == this.eventDate);
 }
 
 class TodoListsCompanion extends UpdateCompanion<TodoList> {
@@ -2156,6 +2243,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<bool> isMerged;
+  final Value<DateTime?> eventDate;
   final Value<int> rowid;
   const TodoListsCompanion({
     this.id = const Value.absent(),
@@ -2166,6 +2254,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.isMerged = const Value.absent(),
+    this.eventDate = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TodoListsCompanion.insert({
@@ -2177,6 +2266,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.isMerged = const Value.absent(),
+    this.eventDate = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id);
   static Insertable<TodoList> custom({
@@ -2188,6 +2278,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<bool>? isMerged,
+    Expression<DateTime>? eventDate,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2199,6 +2290,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (isMerged != null) 'is_merged': isMerged,
+      if (eventDate != null) 'event_date': eventDate,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2212,6 +2304,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<bool>? isMerged,
+    Value<DateTime?>? eventDate,
     Value<int>? rowid,
   }) {
     return TodoListsCompanion(
@@ -2223,6 +2316,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isMerged: isMerged ?? this.isMerged,
+      eventDate: eventDate ?? this.eventDate,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2254,6 +2348,9 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
     if (isMerged.present) {
       map['is_merged'] = Variable<bool>(isMerged.value);
     }
+    if (eventDate.present) {
+      map['event_date'] = Variable<DateTime>(eventDate.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2271,6 +2368,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('isMerged: $isMerged, ')
+          ..write('eventDate: $eventDate, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3651,6 +3749,7 @@ typedef $$MemosTableCreateCompanionBuilder =
       Value<DateTime?> lastViewedAt,
       Value<bool> isLocked,
       Value<int> bgColorIndex,
+      Value<DateTime?> eventDate,
       Value<int> rowid,
     });
 typedef $$MemosTableUpdateCompanionBuilder =
@@ -3667,6 +3766,7 @@ typedef $$MemosTableUpdateCompanionBuilder =
       Value<DateTime?> lastViewedAt,
       Value<bool> isLocked,
       Value<int> bgColorIndex,
+      Value<DateTime?> eventDate,
       Value<int> rowid,
     });
 
@@ -3777,6 +3877,11 @@ class $$MemosTableFilterComposer extends Composer<_$AppDatabase, $MemosTable> {
 
   ColumnFilters<int> get bgColorIndex => $composableBuilder(
     column: $table.bgColorIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get eventDate => $composableBuilder(
+    column: $table.eventDate,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3899,6 +4004,11 @@ class $$MemosTableOrderingComposer
     column: $table.bgColorIndex,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<DateTime> get eventDate => $composableBuilder(
+    column: $table.eventDate,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MemosTableAnnotationComposer
@@ -3953,6 +4063,9 @@ class $$MemosTableAnnotationComposer
     column: $table.bgColorIndex,
     builder: (column) => column,
   );
+
+  GeneratedColumn<DateTime> get eventDate =>
+      $composableBuilder(column: $table.eventDate, builder: (column) => column);
 
   Expression<T> memoTagsRefs<T extends Object>(
     Expression<T> Function($$MemoTagsTableAnnotationComposer a) f,
@@ -4045,6 +4158,7 @@ class $$MemosTableTableManager
                 Value<DateTime?> lastViewedAt = const Value.absent(),
                 Value<bool> isLocked = const Value.absent(),
                 Value<int> bgColorIndex = const Value.absent(),
+                Value<DateTime?> eventDate = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MemosCompanion(
                 id: id,
@@ -4059,6 +4173,7 @@ class $$MemosTableTableManager
                 lastViewedAt: lastViewedAt,
                 isLocked: isLocked,
                 bgColorIndex: bgColorIndex,
+                eventDate: eventDate,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -4075,6 +4190,7 @@ class $$MemosTableTableManager
                 Value<DateTime?> lastViewedAt = const Value.absent(),
                 Value<bool> isLocked = const Value.absent(),
                 Value<int> bgColorIndex = const Value.absent(),
+                Value<DateTime?> eventDate = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MemosCompanion.insert(
                 id: id,
@@ -4089,6 +4205,7 @@ class $$MemosTableTableManager
                 lastViewedAt: lastViewedAt,
                 isLocked: isLocked,
                 bgColorIndex: bgColorIndex,
+                eventDate: eventDate,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -4693,7 +4810,7 @@ typedef $$TodoItemsTableCreateCompanionBuilder =
       Value<int> sortOrder,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
-      Value<DateTime?> dueDate,
+      Value<DateTime?> eventDate,
       Value<String?> memo,
       Value<int> rowid,
     });
@@ -4707,7 +4824,7 @@ typedef $$TodoItemsTableUpdateCompanionBuilder =
       Value<int> sortOrder,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
-      Value<DateTime?> dueDate,
+      Value<DateTime?> eventDate,
       Value<String?> memo,
       Value<int> rowid,
     });
@@ -4787,8 +4904,8 @@ class $$TodoItemsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<DateTime> get dueDate => $composableBuilder(
-    column: $table.dueDate,
+  ColumnFilters<DateTime> get eventDate => $composableBuilder(
+    column: $table.eventDate,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4872,8 +4989,8 @@ class $$TodoItemsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<DateTime> get dueDate => $composableBuilder(
-    column: $table.dueDate,
+  ColumnOrderings<DateTime> get eventDate => $composableBuilder(
+    column: $table.eventDate,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -4916,8 +5033,8 @@ class $$TodoItemsTableAnnotationComposer
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get dueDate =>
-      $composableBuilder(column: $table.dueDate, builder: (column) => column);
+  GeneratedColumn<DateTime> get eventDate =>
+      $composableBuilder(column: $table.eventDate, builder: (column) => column);
 
   GeneratedColumn<String> get memo =>
       $composableBuilder(column: $table.memo, builder: (column) => column);
@@ -4984,7 +5101,7 @@ class $$TodoItemsTableTableManager
                 Value<int> sortOrder = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
-                Value<DateTime?> dueDate = const Value.absent(),
+                Value<DateTime?> eventDate = const Value.absent(),
                 Value<String?> memo = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TodoItemsCompanion(
@@ -4996,7 +5113,7 @@ class $$TodoItemsTableTableManager
                 sortOrder: sortOrder,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
-                dueDate: dueDate,
+                eventDate: eventDate,
                 memo: memo,
                 rowid: rowid,
               ),
@@ -5010,7 +5127,7 @@ class $$TodoItemsTableTableManager
                 Value<int> sortOrder = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
-                Value<DateTime?> dueDate = const Value.absent(),
+                Value<DateTime?> eventDate = const Value.absent(),
                 Value<String?> memo = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TodoItemsCompanion.insert(
@@ -5022,7 +5139,7 @@ class $$TodoItemsTableTableManager
                 sortOrder: sortOrder,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
-                dueDate: dueDate,
+                eventDate: eventDate,
                 memo: memo,
                 rowid: rowid,
               ),
@@ -5092,6 +5209,7 @@ typedef $$TodoListsTableCreateCompanionBuilder =
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<bool> isMerged,
+      Value<DateTime?> eventDate,
       Value<int> rowid,
     });
 typedef $$TodoListsTableUpdateCompanionBuilder =
@@ -5104,6 +5222,7 @@ typedef $$TodoListsTableUpdateCompanionBuilder =
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<bool> isMerged,
+      Value<DateTime?> eventDate,
       Value<int> rowid,
     });
 
@@ -5182,6 +5301,11 @@ class $$TodoListsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<DateTime> get eventDate => $composableBuilder(
+    column: $table.eventDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> todoListTagsRefs(
     Expression<bool> Function($$TodoListTagsTableFilterComposer f) f,
   ) {
@@ -5256,6 +5380,11 @@ class $$TodoListsTableOrderingComposer
     column: $table.isMerged,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<DateTime> get eventDate => $composableBuilder(
+    column: $table.eventDate,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TodoListsTableAnnotationComposer
@@ -5292,6 +5421,9 @@ class $$TodoListsTableAnnotationComposer
 
   GeneratedColumn<bool> get isMerged =>
       $composableBuilder(column: $table.isMerged, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get eventDate =>
+      $composableBuilder(column: $table.eventDate, builder: (column) => column);
 
   Expression<T> todoListTagsRefs<T extends Object>(
     Expression<T> Function($$TodoListTagsTableAnnotationComposer a) f,
@@ -5355,6 +5487,7 @@ class $$TodoListsTableTableManager
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<bool> isMerged = const Value.absent(),
+                Value<DateTime?> eventDate = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TodoListsCompanion(
                 id: id,
@@ -5365,6 +5498,7 @@ class $$TodoListsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 isMerged: isMerged,
+                eventDate: eventDate,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -5377,6 +5511,7 @@ class $$TodoListsTableTableManager
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<bool> isMerged = const Value.absent(),
+                Value<DateTime?> eventDate = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TodoListsCompanion.insert(
                 id: id,
@@ -5387,6 +5522,7 @@ class $$TodoListsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 isMerged: isMerged,
+                eventDate: eventDate,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

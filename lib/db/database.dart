@@ -31,7 +31,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -48,6 +48,15 @@ class AppDatabase extends _$AppDatabase {
           if (from < 4) {
             // TodoLists.isMerged（結合で生成されたリスト判定用）
             await m.addColumn(todoLists, todoLists.isMerged);
+          }
+          if (from < 5) {
+            // Phase 15 カレンダービュー: eventDate を 3 テーブルに統一
+            // Memos / TodoLists は新規追加、TodoItems の dueDate は eventDate にリネーム
+            await m.addColumn(memos, memos.eventDate);
+            await m.addColumn(todoLists, todoLists.eventDate);
+            await customStatement(
+              'ALTER TABLE todo_items RENAME COLUMN due_date TO event_date',
+            );
           }
         },
       );
@@ -180,7 +189,7 @@ class AppDatabase extends _$AppDatabase {
           parentId: Value(newParentId),
           sortOrder: Value(item.sortOrder),
           isDone: Value(item.isDone),
-          dueDate: Value(item.dueDate),
+          eventDate: Value(item.eventDate),
         ));
         idMap[item.id] = newItemId;
 

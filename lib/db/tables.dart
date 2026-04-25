@@ -18,6 +18,8 @@ class Memos extends Table {
   BoolColumn get isLocked => boolean().withDefault(const Constant(false))();
   // メモ背景色インデックス（0=なし/白、1-72=タグカラーパレットの色）
   IntColumn get bgColorIndex => integer().withDefault(const Constant(0))();
+  // カレンダー紐付け日（任意）。日付指定があれば「全カレンダー」タブの該当日に出る
+  DateTimeColumn get eventDate => dateTime().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -54,7 +56,8 @@ class TodoItems extends Table {
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
-  DateTimeColumn get dueDate => dateTime().nullable()();
+  // カレンダー紐付け日（任意）。旧 dueDate はリネームしてこれに統合（schema v5）
+  DateTimeColumn get eventDate => dateTime().nullable()();
   TextColumn get memo => text().nullable()();
 
   @override
@@ -74,6 +77,8 @@ class TodoLists extends Table {
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
   // 結合で生成されたリストは true（カードに結合アイコンを表示）
   BoolColumn get isMerged => boolean().withDefault(const Constant(false))();
+  // カレンダー紐付け日（任意）。リスト全体の日付指定
+  DateTimeColumn get eventDate => dateTime().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
