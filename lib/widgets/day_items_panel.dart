@@ -60,7 +60,7 @@ class DayItemsPanel extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '${day.year}年${day.month}月${day.day}',
+                '${day.year}年${day.month}月${day.day}日',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,

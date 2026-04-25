@@ -511,7 +511,11 @@ class _AddActionSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     const weekdayLabels = ['月', '火', '水', '木', '金', '土', '日'];
     final wd = weekdayLabels[day.weekday - 1];
-    final dateStr = '${day.year}年${day.month}月${day.day}($wd)';
+    final wdColor = day.weekday == DateTime.sunday
+        ? Colors.red.shade400
+        : day.weekday == DateTime.saturday
+            ? Colors.blue.shade400
+            : Colors.black87;
     return GestureDetector(
       // 枠外タップでシートを閉じる
       behavior: HitTestBehavior.opaque,
@@ -538,12 +542,24 @@ class _AddActionSheet extends StatelessWidget {
                         padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
                         child: Row(
                           children: [
-                            Text(
-                              dateStr,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                                fontFamily: 'Hiragino Sans',
+                            Text.rich(
+                              TextSpan(
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  fontFamily: 'Hiragino Sans',
+                                  color: Colors.black87,
+                                ),
+                                children: [
+                                  TextSpan(
+                                    text:
+                                        '${day.year}年${day.month}月${day.day}日',
+                                  ),
+                                  TextSpan(
+                                    text: '($wd)',
+                                    style: TextStyle(color: wdColor),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
