@@ -12,6 +12,7 @@ class DayItemsPanel extends ConsumerWidget {
   final ValueChanged<Memo> onMemoTap;
   final ValueChanged<TodoList> onTodoListTap;
   final ValueChanged<TodoItem>? onTodoItemTap;
+  final VoidCallback? onAddTap;
 
   const DayItemsPanel({
     super.key,
@@ -19,6 +20,7 @@ class DayItemsPanel extends ConsumerWidget {
     required this.onMemoTap,
     required this.onTodoListTap,
     this.onTodoItemTap,
+    this.onAddTap,
   });
 
   static const _weekdayLabels = ['月', '火', '水', '木', '金', '土', '日'];
@@ -86,42 +88,103 @@ class DayItemsPanel extends ConsumerWidget {
             ],
           ),
         ),
-        // アイテム一覧
+        // アイテム一覧 + 追加ボタン
         Expanded(
           child: Container(
             color: Colors.grey.shade50,
-            child: totalCount == 0
-                ? const _EmptyState()
-                : ListView(
-                    padding: const EdgeInsets.all(8),
-                    children: [
-                      if (memos.isNotEmpty) ...[
-                        _SectionHeader(label: 'メモ', count: memos.length),
-                        for (final m in memos)
-                          _MemoTile(memo: m, onTap: () => onMemoTap(m)),
-                      ],
-                      if (todoLists.isNotEmpty) ...[
-                        _SectionHeader(
-                            label: 'ToDoリスト', count: todoLists.length),
-                        for (final l in todoLists)
-                          _TodoListTile(list: l, onTap: () => onTodoListTap(l)),
-                      ],
-                      if (todoItems.isNotEmpty) ...[
-                        _SectionHeader(
-                            label: 'ToDoアイテム', count: todoItems.length),
-                        for (final it in todoItems)
-                          _TodoItemTile(
-                            item: it,
-                            onTap: onTodoItemTap == null
-                                ? null
-                                : () => onTodoItemTap!(it),
-                          ),
-                      ],
-                    ],
-                  ),
+            child: Column(
+              children: [
+                Expanded(
+                  child: totalCount == 0
+                      ? const _EmptyState()
+                      : ListView(
+                          padding: const EdgeInsets.all(8),
+                          children: [
+                            if (memos.isNotEmpty) ...[
+                              _SectionHeader(
+                                  label: 'メモ', count: memos.length),
+                              for (final m in memos)
+                                _MemoTile(
+                                    memo: m, onTap: () => onMemoTap(m)),
+                            ],
+                            if (todoLists.isNotEmpty) ...[
+                              _SectionHeader(
+                                  label: 'ToDoリスト',
+                                  count: todoLists.length),
+                              for (final l in todoLists)
+                                _TodoListTile(
+                                    list: l, onTap: () => onTodoListTap(l)),
+                            ],
+                            if (todoItems.isNotEmpty) ...[
+                              _SectionHeader(
+                                  label: 'ToDoアイテム',
+                                  count: todoItems.length),
+                              for (final it in todoItems)
+                                _TodoItemTile(
+                                  item: it,
+                                  onTap: onTodoItemTap == null
+                                      ? null
+                                      : () => onTodoItemTap!(it),
+                                ),
+                            ],
+                          ],
+                        ),
+                ),
+                if (onAddTap != null) _AddButton(onTap: onAddTap!),
+              ],
+            ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _AddButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _AddButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        border: Border(
+          top: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Material(
+          color: Colors.blue.shade600,
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(10),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.add, size: 18, color: Colors.white),
+                  SizedBox(width: 6),
+                  Text(
+                    'メモ・ToDoを追加',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      fontFamily: 'Hiragino Sans',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -58,13 +58,18 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
     super.dispose();
   }
 
-  void _handleDayTap(DateTime day) {
+  void _handleDayTap(DateTime day, int count) {
     if (Responsive.isWide(context)) {
       setState(() => _selectedDay = day);
+      return;
+    }
+    // メモ入力欄のフォーカスを外しておかないと、シート閉時に
+    // フォーカス復元で勝手に編集モードに突入する
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (count == 0) {
+      // 何もない日は新規作成アクションに直行
+      _handleAddTap(day);
     } else {
-      // メモ入力欄のフォーカスを外しておかないと、シート閉時に
-      // フォーカス復元で勝手に編集モードに突入する
-      FocusManager.instance.primaryFocus?.unfocus();
       _showDaySheet(day);
     }
   }
@@ -134,6 +139,10 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
                         Navigator.of(ctx).pop();
                         widget.onTodoListTap(l);
                       },
+                      onAddTap: () {
+                        Navigator.of(ctx).pop();
+                        _handleAddTap(day);
+                      },
                     ),
                   ),
                 ),
@@ -165,6 +174,7 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
               day: _selectedDay!,
               onMemoTap: widget.onMemoTap,
               onTodoListTap: widget.onTodoListTap,
+              onAddTap: () => _handleAddTap(_selectedDay!),
             ),
           ),
         ],
@@ -188,7 +198,6 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
         today: _today,
         selectedDay: _selectedDay,
         onDayTap: _handleDayTap,
-        onDayAdd: _handleAddTap,
       ),
     );
   }
@@ -199,15 +208,14 @@ class _MonthBlock extends ConsumerWidget {
   final DateTime month; // その月の1日
   final DateTime today;
   final DateTime? selectedDay;
-  final ValueChanged<DateTime> onDayTap;
-  final ValueChanged<DateTime> onDayAdd;
+  // 引数: タップされた day と当日件数（0なら新規作成シートに直行）
+  final void Function(DateTime day, int count) onDayTap;
 
   const _MonthBlock({
     required this.month,
     required this.today,
     required this.selectedDay,
     required this.onDayTap,
-    required this.onDayAdd,
   });
 
   @override
@@ -253,8 +261,7 @@ class _MonthBlock extends ConsumerWidget {
             count: count,
             isToday: isToday,
             isSelected: isSelected,
-            onTap: () => onDayTap(day),
-            onAdd: () => onDayAdd(day),
+            onTap: () => onDayTap(day, count),
           ),
         ));
       }
@@ -391,7 +398,6 @@ class _DayCell extends StatelessWidget {
   final bool isToday;
   final bool isSelected;
   final VoidCallback? onTap;
-  final VoidCallback? onAdd;
 
   const _DayCell({
     required this.day,
@@ -399,7 +405,6 @@ class _DayCell extends StatelessWidget {
     required this.isToday,
     this.isSelected = false,
     this.onTap,
-    this.onAdd,
   });
 
   @override
@@ -479,23 +484,6 @@ class _DayCell extends StatelessWidget {
                 ),
               ),
             ),
-          // 「+」ボタン（右下）
-          Positioned(
-            bottom: 0,
-            right: 0,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onAdd,
-              child: Padding(
-                padding: const EdgeInsets.all(6),
-                child: Icon(
-                  Icons.add_circle_outline,
-                  size: 16,
-                  color: Colors.grey.shade500,
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
