@@ -135,7 +135,6 @@ Flutter 側 `ios/Runner.xcodeproj` の Team 設定は個人 Team のまま
 ## 次のアクション（次セッション）
 
 ### Memolette 本体
-- **ToDo 画面に検索窓追加**（メモ側と同等）
 - **iPad 実機で全体動作確認**
 - **iPhone 実機で ⌘1-9 動作確認**（シミュでは Window メニューが横取り）
 
