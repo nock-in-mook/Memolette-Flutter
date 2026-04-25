@@ -17,6 +17,7 @@ import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
+import '../widgets/calendar_view.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/memo_card.dart';
 import '../widgets/memo_input_area.dart';
@@ -1255,7 +1256,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           if (!_isEditingCompact) ...[
                             if (_isCalendarTab)
                               const Expanded(
-                                child: _CalendarPlaceholder(),
+                                child: CalendarView(),
                               )
                             else ...[
                               // 「すべて」タブは件数+サブフィルタを1行で、それ以外は件数バー
@@ -6959,41 +6960,3 @@ Widget buildSelectModeIcon({
   );
 }
 
-/// 「全カレンダー」タブの暫定プレースホルダ（Step 4 で本実装に差し替え）
-class _CalendarPlaceholder extends StatelessWidget {
-  const _CalendarPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.calendar_month, size: 56, color: Colors.black38),
-            SizedBox(height: 12),
-            Text(
-              'カレンダー（実装中）',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Colors.black54,
-              ),
-            ),
-            SizedBox(height: 6),
-            Text(
-              '縦スクロール月別カレンダーが\nここに表示されます',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.black45,
-                height: 1.6,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
