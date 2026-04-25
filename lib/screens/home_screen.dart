@@ -2715,15 +2715,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return src.whenData(_excludeEmptyMemos);
   }
 
-  /// 未入力（title/content/bgColor/eventDate すべて空）のメモを除外する
-  /// eventDate を持つメモはカレンダー紐付けがあるので「空」扱いしない
+  /// 未入力（title/content/bgColor すべて空）のメモを除外する
+  /// eventDate のみのメモも非表示（ユーザーが入力するまでカレンダー件数にも出ない）
   List<Memo> _excludeEmptyMemos(List<Memo> list) {
     return list
         .where((m) =>
             m.title.isNotEmpty ||
             m.content.isNotEmpty ||
-            m.bgColorIndex != 0 ||
-            m.eventDate != null)
+            m.bgColorIndex != 0)
         .toList();
   }
 

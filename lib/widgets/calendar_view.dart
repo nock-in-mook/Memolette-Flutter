@@ -62,11 +62,16 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
     if (Responsive.isWide(context)) {
       setState(() => _selectedDay = day);
     } else {
+      // メモ入力欄のフォーカスを外しておかないと、シート閉時に
+      // フォーカス復元で勝手に編集モードに突入する
+      FocusManager.instance.primaryFocus?.unfocus();
       _showDaySheet(day);
     }
   }
 
   Future<void> _handleAddTap(DateTime day) async {
+    // シート閉時のフォーカス復元で編集モード突入を防ぐため事前に外す
+    FocusManager.instance.primaryFocus?.unfocus();
     final type = await showModalBottomSheet<_AddType>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -514,59 +519,70 @@ class _AddActionSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dateStr = '${day.year}年${day.month}月${day.day}日';
-    return SafeArea(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 440),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-                    child: Row(
-                      children: [
-                        Text(
-                          '$dateStr に作成',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            fontFamily: 'Hiragino Sans',
-                          ),
+    return GestureDetector(
+      // 枠外タップでシートを閉じる
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(context).pop(),
+      child: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: GestureDetector(
+                // ダイアログ本体内のタップは外側に伝搬させない
+                onTap: () {},
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                        child: Row(
+                          children: [
+                            Text(
+                              '$dateStr に作成',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                fontFamily: 'Hiragino Sans',
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                      const Divider(height: 1),
+                      _AddOption(
+                        icon: Icons.note_outlined,
+                        iconColor: Colors.amber.shade700,
+                        label: 'メモ作成',
+                        onTap: () =>
+                            Navigator.of(context).pop(_AddType.memo),
+                      ),
+                      const Divider(height: 1, indent: 56),
+                      _AddOption(
+                        icon: Icons.checklist,
+                        iconColor: Colors.green.shade600,
+                        label: 'ToDoリスト作成',
+                        onTap: () =>
+                            Navigator.of(context).pop(_AddType.todoList),
+                      ),
+                      const Divider(height: 1),
+                      _AddOption(
+                        icon: Icons.close,
+                        iconColor: Colors.grey,
+                        label: 'キャンセル',
+                        isCancel: true,
+                        onTap: () => Navigator.of(context).pop(),
+                      ),
+                    ],
                   ),
-                  const Divider(height: 1),
-                  _AddOption(
-                    icon: Icons.note_outlined,
-                    iconColor: Colors.amber.shade700,
-                    label: 'メモ作成',
-                    onTap: () => Navigator.of(context).pop(_AddType.memo),
-                  ),
-                  const Divider(height: 1, indent: 56),
-                  _AddOption(
-                    icon: Icons.checklist,
-                    iconColor: Colors.green.shade600,
-                    label: 'ToDoリスト作成',
-                    onTap: () => Navigator.of(context).pop(_AddType.todoList),
-                  ),
-                  const Divider(height: 1),
-                  _AddOption(
-                    icon: Icons.close,
-                    iconColor: Colors.grey,
-                    label: 'キャンセル',
-                    isCancel: true,
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                ],
+                ),
               ),
             ),
           ),

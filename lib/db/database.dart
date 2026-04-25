@@ -294,19 +294,42 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  /// タイトル・本文・eventDate がすべて空のメモをまとめて削除（起動時セーフティネット）
+  /// タイトル・本文が空のメモをまとめて削除（起動時セーフティネット）
+  /// eventDate のみ持つメモも入力されなければ消える（仕様）
   /// 返り値: 削除件数
   Future<int> purgeEmptyMemos() async {
     final emptyIds = await (select(memos)
-          ..where((t) =>
-              t.title.equals('') &
-              t.content.equals('') &
-              t.eventDate.isNull()))
+          ..where((t) => t.title.equals('') & t.content.equals('')))
         .map((m) => m.id)
         .get();
     if (emptyIds.isEmpty) return 0;
     await deleteMemos(emptyIds);
     return emptyIds.length;
+  }
+
+  /// タイトルが空で、かつ配下にアイテムが 1 件もない ToDoリストを削除
+  /// 返り値: 削除件数
+  Future<int> purgeEmptyTodoLists() async {
+    final emptyTitleLists = await (select(todoLists)
+          ..where((t) => t.title.equals('')))
+        .get();
+    if (emptyTitleLists.isEmpty) return 0;
+    final removed = <String>[];
+    for (final list in emptyTitleLists) {
+      final hasItems = await (selectOnly(todoItems)
+            ..addColumns([todoItems.id.count()])
+            ..where(todoItems.listId.equals(list.id)))
+          .getSingle();
+      final cnt = hasItems.read(todoItems.id.count()) ?? 0;
+      if (cnt == 0) removed.add(list.id);
+    }
+    if (removed.isEmpty) return 0;
+    await transaction(() async {
+      await (delete(todoListTags)..where((t) => t.todoListId.isIn(removed)))
+          .go();
+      await (delete(todoLists)..where((t) => t.id.isIn(removed))).go();
+    });
+    return removed.length;
   }
 
   /// 複数メモをまとめて削除（memo_tags / memo_images もカスケード削除、画像ファイルも削除）
@@ -896,6 +919,7 @@ class AppDatabase extends _$AppDatabase {
 
   /// 指定範囲 [start, end) で eventDate を持つアイテムの日別件数を返す。
   /// メモ + ToDoリスト + ToDoアイテム の合計（混合カウント）。
+  /// 「内容あり」のみカウント: 空メモ/空リスト/空アイテムは件数バッジに含めない。
   /// 返り値の Map のキーはローカル日付 (時刻 00:00:00)。
   Stream<Map<DateTime, int>> watchEventCountsForRange({
     required DateTime start,
@@ -907,16 +931,20 @@ class AppDatabase extends _$AppDatabase {
         SELECT date(event_date, 'unixepoch', 'localtime') AS day, COUNT(*) AS cnt
           FROM memos
           WHERE event_date IS NOT NULL AND event_date >= ?1 AND event_date < ?2
+            AND (title != '' OR content != '' OR bg_color_index != 0)
           GROUP BY day
         UNION ALL
         SELECT date(event_date, 'unixepoch', 'localtime') AS day, COUNT(*) AS cnt
           FROM todo_lists
           WHERE event_date IS NOT NULL AND event_date >= ?1 AND event_date < ?2
+            AND (title != ''
+                 OR id IN (SELECT DISTINCT list_id FROM todo_items))
           GROUP BY day
         UNION ALL
         SELECT date(event_date, 'unixepoch', 'localtime') AS day, COUNT(*) AS cnt
           FROM todo_items
           WHERE event_date IS NOT NULL AND event_date >= ?1 AND event_date < ?2
+            AND title != ''
           GROUP BY day
       )
       GROUP BY day
@@ -942,7 +970,7 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
-  /// その日のメモ取得（eventDate が day と同じ日）
+  /// その日のメモ取得（eventDate が day と同じ日、空メモは除外）
   Stream<List<Memo>> watchMemosForDay(DateTime day) {
     final start = DateTime(day.year, day.month, day.day);
     final end = start.add(const Duration(days: 1));
@@ -950,7 +978,10 @@ class AppDatabase extends _$AppDatabase {
           ..where((t) =>
               t.eventDate.isNotNull() &
               t.eventDate.isBiggerOrEqualValue(start) &
-              t.eventDate.isSmallerThanValue(end))
+              t.eventDate.isSmallerThanValue(end) &
+              (t.title.equals('').not() |
+                  t.content.equals('').not() |
+                  t.bgColorIndex.equals(0).not()))
           ..orderBy([
             (t) => OrderingTerm(
                 expression: t.isPinned, mode: OrderingMode.desc),
@@ -960,25 +991,40 @@ class AppDatabase extends _$AppDatabase {
         .watch();
   }
 
-  /// その日のToDoリスト取得
+  /// その日のToDoリスト取得（タイトル空でアイテム無しのリストは除外）
   Stream<List<TodoList>> watchTodoListsForDay(DateTime day) {
     final start = DateTime(day.year, day.month, day.day);
     final end = start.add(const Duration(days: 1));
-    return (select(todoLists)
-          ..where((t) =>
-              t.eventDate.isNotNull() &
-              t.eventDate.isBiggerOrEqualValue(start) &
-              t.eventDate.isSmallerThanValue(end))
-          ..orderBy([
-            (t) => OrderingTerm(
-                expression: t.isPinned, mode: OrderingMode.desc),
-            (t) => OrderingTerm(
-                expression: t.createdAt, mode: OrderingMode.desc),
-          ]))
-        .watch();
+    return customSelect(
+      '''
+      SELECT * FROM todo_lists
+      WHERE event_date IS NOT NULL
+        AND event_date >= ?1 AND event_date < ?2
+        AND (title != ''
+             OR id IN (SELECT DISTINCT list_id FROM todo_items))
+      ORDER BY is_pinned DESC, created_at DESC
+      ''',
+      variables: [
+        Variable<DateTime>(start),
+        Variable<DateTime>(end),
+      ],
+      readsFrom: {todoLists, todoItems},
+    ).watch().map((rows) => rows.map((row) {
+          return TodoList(
+            id: row.read<String>('id'),
+            title: row.read<String>('title'),
+            createdAt: row.read<DateTime>('created_at'),
+            updatedAt: row.read<DateTime>('updated_at'),
+            isPinned: row.read<bool>('is_pinned'),
+            isLocked: row.read<bool>('is_locked'),
+            manualSortOrder: row.read<int>('manual_sort_order'),
+            isMerged: row.read<bool>('is_merged'),
+            eventDate: row.readNullable<DateTime>('event_date'),
+          );
+        }).toList());
   }
 
-  /// その日のToDoアイテム取得（sortOrder 昇順）
+  /// その日のToDoアイテム取得（sortOrder 昇順、空タイトルは除外）
   Stream<List<TodoItem>> watchTodoItemsForDay(DateTime day) {
     final start = DateTime(day.year, day.month, day.day);
     final end = start.add(const Duration(days: 1));
@@ -986,7 +1032,8 @@ class AppDatabase extends _$AppDatabase {
           ..where((t) =>
               t.eventDate.isNotNull() &
               t.eventDate.isBiggerOrEqualValue(start) &
-              t.eventDate.isSmallerThanValue(end))
+              t.eventDate.isSmallerThanValue(end) &
+              t.title.equals('').not())
           ..orderBy([
             (t) => OrderingTerm.asc(t.sortOrder),
           ]))
