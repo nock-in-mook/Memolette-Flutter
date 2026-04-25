@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/responsive.dart';
+import '../utils/safe_dialog.dart';
 import 'day_items_panel.dart';
 
 /// 「全カレンダー」タブ本体。縦スクロール月別カレンダー。
@@ -75,12 +76,14 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
   }
 
   Future<void> _handleAddTap(DateTime day) async {
-    // シート閉時のフォーカス復元で編集モード突入を防ぐため事前に外す
-    FocusManager.instance.primaryFocus?.unfocus();
-    final type = await showModalBottomSheet<_AddType>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _AddActionSheet(day: day),
+    // 開閉前後で unfocus してフォーカス復元による編集モード突入を防ぐ
+    final type = await focusSafe<_AddType>(
+      context,
+      () => showModalBottomSheet<_AddType>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => _AddActionSheet(day: day),
+      ),
     );
     if (type == null || !mounted) return;
     final db = ref.read(databaseProvider);
@@ -506,7 +509,9 @@ class _AddActionSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateStr = '${day.year}年${day.month}月${day.day}日';
+    const weekdayLabels = ['月', '火', '水', '木', '金', '土', '日'];
+    final wd = weekdayLabels[day.weekday - 1];
+    final dateStr = '${day.year}年${day.month}月${day.day}($wd)';
     return GestureDetector(
       // 枠外タップでシートを閉じる
       behavior: HitTestBehavior.opaque,
@@ -534,7 +539,7 @@ class _AddActionSheet extends StatelessWidget {
                         child: Row(
                           children: [
                             Text(
-                              '$dateStr に作成',
+                              dateStr,
                               style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w800,
@@ -545,28 +550,31 @@ class _AddActionSheet extends StatelessWidget {
                         ),
                       ),
                       const Divider(height: 1),
-                      _AddOption(
-                        icon: Icons.note_outlined,
-                        iconColor: Colors.amber.shade700,
-                        label: 'メモ作成',
-                        onTap: () =>
-                            Navigator.of(context).pop(_AddType.memo),
-                      ),
-                      const Divider(height: 1, indent: 56),
-                      _AddOption(
-                        icon: Icons.checklist,
-                        iconColor: Colors.green.shade600,
-                        label: 'ToDoリスト作成',
-                        onTap: () =>
-                            Navigator.of(context).pop(_AddType.todoList),
-                      ),
-                      const Divider(height: 1),
-                      _AddOption(
-                        icon: Icons.close,
-                        iconColor: Colors.grey,
-                        label: 'キャンセル',
-                        isCancel: true,
-                        onTap: () => Navigator.of(context).pop(),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _AddSquareButton(
+                                icon: Icons.note_outlined,
+                                iconColor: Colors.amber.shade700,
+                                label: 'メモ',
+                                onTap: () => Navigator.of(context)
+                                    .pop(_AddType.memo),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _AddSquareButton(
+                                icon: Icons.checklist,
+                                iconColor: Colors.green.shade600,
+                                label: 'ToDoリスト',
+                                onTap: () => Navigator.of(context)
+                                    .pop(_AddType.todoList),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -580,41 +588,51 @@ class _AddActionSheet extends StatelessWidget {
   }
 }
 
-class _AddOption extends StatelessWidget {
+class _AddSquareButton extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
   final String label;
-  final bool isCancel;
   final VoidCallback onTap;
 
-  const _AddOption({
+  const _AddSquareButton({
     required this.icon,
     required this.iconColor,
     required this.label,
     required this.onTap,
-    this.isCancel = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Icon(icon, size: 22, color: iconColor),
-            const SizedBox(width: 14),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: isCancel ? FontWeight.w600 : FontWeight.w700,
-                fontFamily: 'Hiragino Sans',
-                color: isCancel ? Colors.grey.shade700 : Colors.black87,
-              ),
+    return Material(
+      color: Colors.grey.shade50,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: Colors.black.withValues(alpha: 0.08),
             ),
-          ],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 36, color: iconColor),
+              const SizedBox(height: 10),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Hiragino Sans',
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
