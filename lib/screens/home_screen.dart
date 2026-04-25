@@ -1500,24 +1500,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         children: [
           // 爆速モード
           GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onTap: () => Navigator.of(context)
                 .push(_FastMaterialPageRoute(
                   builder: (_) => const QuickSortScreen(),
                 ))
                 .then((_) => FocusManager.instance.primaryFocus?.unfocus()),
-            child: Icon(Icons.bolt, size: 22,
-                color: Colors.orange.withValues(alpha: 0.7)),
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Center(
+                child: Icon(Icons.bolt, size: 22,
+                    color: Colors.orange.withValues(alpha: 0.7)),
+              ),
+            ),
           ),
-          const SizedBox(width: 12),
           // ToDoリスト
           GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onTap: () => Navigator.of(context)
                 .push(_FastMaterialPageRoute(
                   builder: (_) => const TodoListsScreen(),
                 ))
                 .then((_) => FocusManager.instance.primaryFocus?.unfocus()),
-            child: Icon(Icons.checklist, size: 22,
-                color: Colors.green.withValues(alpha: 0.8)),
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Center(
+                child: Icon(Icons.checklist, size: 22,
+                    color: Colors.green.withValues(alpha: 0.8)),
+              ),
+            ),
           ),
           const Spacer(),
           // 中央: 上シェブロン（フォルダ引き上げ）
@@ -1535,8 +1548,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
             ),
             const Spacer(),
-            // 右のスペーサー（左右バランス用: 爆速22+間隔12+ToDo22=56pt）
-            const SizedBox(width: 56),
+            // 右のスペーサー（左右バランス用: 爆速44 + ToDo44 = 88pt）
+            const SizedBox(width: 88),
           ],
         ],
       ),
