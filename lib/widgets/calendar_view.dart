@@ -572,7 +572,7 @@ class _AddActionSheet extends StatelessWidget {
                           children: [
                             Expanded(
                               child: _AddSquareButton(
-                                icon: Icons.note_add_outlined,
+                                icon: Icons.note_outlined,
                                 iconColor: Colors.amber.shade700,
                                 label: 'メモ',
                                 onTap: () => Navigator.of(context)
@@ -582,7 +582,7 @@ class _AddActionSheet extends StatelessWidget {
                             const SizedBox(width: 10),
                             Expanded(
                               child: _AddSquareButton(
-                                icon: Icons.playlist_add,
+                                icon: Icons.checklist,
                                 iconColor: Colors.green.shade600,
                                 label: 'ToDoリスト',
                                 onTap: () => Navigator.of(context)
@@ -632,19 +632,41 @@ class _AddSquareButton extends StatelessWidget {
             ),
             borderRadius: BorderRadius.circular(12),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 28, color: iconColor),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'Hiragino Sans',
-                  color: Colors.black87,
+              // アイコン + ラベル を横並び
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 20, color: iconColor),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Hiragino Sans',
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // 丸で囲まれた + マーク
+              Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      width: 1.2),
+                ),
+                child: Icon(
+                  Icons.add,
+                  size: 12,
+                  color: Colors.black.withValues(alpha: 0.55),
                 ),
               ),
             ],
