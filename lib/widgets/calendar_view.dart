@@ -99,67 +99,71 @@ class _MonthBlock extends ConsumerWidget {
           ],
         ),
         clipBehavior: Clip.antiAlias,
-        child: Stack(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 背景の大きな月数字（中央に配置、薄く透けて装飾）
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Center(
-                  child: Text(
-                    '${month.month}',
-                    style: TextStyle(
-                      fontSize: 220,
-                      fontWeight: FontWeight.w900,
-                      fontFamily: 'Hiragino Sans',
-                      color: Colors.black.withValues(alpha: 0.06),
-                      height: 1.0,
+            // 月見出しエリア（背景に大きな月数字を装飾として重ねる）
+            SizedBox(
+              height: 64,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // 背景の月数字（中央寄り、薄く）
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: Text(
+                          '${month.month}',
+                          style: TextStyle(
+                            fontSize: 90,
+                            fontWeight: FontWeight.w900,
+                            fontFamily: 'Hiragino Sans',
+                            color: Colors.black.withValues(alpha: 0.07),
+                            height: 1.0,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  // 月見出し（前面、左上）
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                    child: Text(
+                      '${month.year}年 ${month.month}月',
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        fontFamily: 'Hiragino Sans',
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 月見出し
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
-                  child: Text(
-                    '${month.year}年 ${month.month}月',
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                      fontFamily: 'Hiragino Sans',
-                    ),
-                  ),
-                ),
-                // 曜日ヘッダ（密着配置）
-                const _WeekdayHeader(),
-                // 日付グリッド (7 列、高さ固定で曜日と密着)
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 7,
-                    mainAxisExtent: 56,
-                  ),
-                  itemCount: firstDayWeekday + daysInMonth,
-                  itemBuilder: (ctx, i) {
-                    if (i < firstDayWeekday) {
-                      return const _EmptyDayCell();
-                    }
-                    final dayNum = i - firstDayWeekday + 1;
-                    final day = DateTime(month.year, month.month, dayNum);
-                    final count = counts[day] ?? 0;
-                    final isToday = day.year == today.year &&
-                        day.month == today.month &&
-                        day.day == today.day;
-                    return _DayCell(
-                        day: day, count: count, isToday: isToday);
-                  },
-                ),
-              ],
+            // 曜日ヘッダ（密着配置）
+            const _WeekdayHeader(),
+            // 日付グリッド (7 列、高さ固定で曜日と密着)
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                mainAxisExtent: 56,
+              ),
+              itemCount: firstDayWeekday + daysInMonth,
+              itemBuilder: (ctx, i) {
+                if (i < firstDayWeekday) {
+                  return const _EmptyDayCell();
+                }
+                final dayNum = i - firstDayWeekday + 1;
+                final day = DateTime(month.year, month.month, dayNum);
+                final count = counts[day] ?? 0;
+                final isToday = day.year == today.year &&
+                    day.month == today.month &&
+                    day.day == today.day;
+                return _DayCell(day: day, count: count, isToday: isToday);
+              },
             ),
           ],
         ),
