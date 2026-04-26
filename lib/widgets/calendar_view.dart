@@ -632,38 +632,59 @@ class _AddSquareButton extends StatelessWidget {
             ),
             borderRadius: BorderRadius.circular(12),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 26, color: iconColor),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: 'Hiragino Sans',
-                    color: Colors.black87,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 36, color: iconColor),
+                  const SizedBox(width: 10),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Hiragino Sans',
+                      color: Colors.black87,
+                    ),
                   ),
-                ),
+                ],
               ),
-              const SizedBox(width: 8),
-              // 丸で囲まれた + マーク
+              const SizedBox(height: 10),
+              // グレー丸 + 白抜き + ボタン
               Container(
-                padding: const EdgeInsets.all(2),
+                padding: const EdgeInsets.all(5),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(
-                      color: Colors.black.withValues(alpha: 0.45),
-                      width: 1.2),
+                  color: Colors.grey.shade400,
                 ),
-                child: Icon(
-                  Icons.add,
-                  size: 13,
-                  color: Colors.black.withValues(alpha: 0.55),
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        width: 18,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      Container(
+                        width: 4,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
