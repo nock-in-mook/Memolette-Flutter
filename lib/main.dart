@@ -123,6 +123,7 @@ class MemolettApp extends StatefulWidget {
 class _MemolettAppState extends State<MemolettApp>
     with WidgetsBindingObserver {
   Orientation? _prevOrientation;
+  final NavigatorObserver _unfocusOnPopObserver = _UnfocusOnPopObserver();
 
   @override
   void initState() {
@@ -158,6 +159,7 @@ class _MemolettAppState extends State<MemolettApp>
     return MaterialApp(
       title: 'Memolette',
       debugShowCheckedModeBanner: false,
+      navigatorObservers: [_unfocusOnPopObserver],
       builder: (context, child) {
         // システムのテキストスケールを無視してアプリ内は1.0固定
         return MediaQuery(
@@ -177,5 +179,26 @@ class _MemolettAppState extends State<MemolettApp>
       ),
       home: const HomeScreen(),
     );
+  }
+}
+
+/// Route が pop されるたびに primaryFocus を強制的に外す Observer。
+///
+/// Flutter の Navigator はモーダル/画面が閉じた直後に、開く前の
+/// FocusNode にフォーカスを自動復元する。Memolette ではこれが
+/// 「シート/画面を閉じたらメモ入力欄にフォーカスが戻る → キーボード
+/// 起動 → 編集モード突入」の根本原因になっていた（HANDOFF.md 参照）。
+///
+/// 個別箇所での `focusSafe` ラップに加えて、保険として全 pop で unfocus する。
+/// 副作用として「編集中にダイアログを出して閉じてもカーソルが戻らない」が
+/// 発生し得るが、その種の編集続行が必要な場面は HANDOFF.md「ダイアログ
+/// 設計の定石（#24）」に従って `_isDialogOpen` フラグ等で個別対応する。
+class _UnfocusOnPopObserver extends NavigatorObserver {
+  @override
+  void didPop(Route route, Route? previousRoute) {
+    super.didPop(route, previousRoute);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    });
   }
 }
