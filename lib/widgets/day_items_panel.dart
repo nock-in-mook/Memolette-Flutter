@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,7 +13,8 @@ class DayItemsPanel extends ConsumerWidget {
   final ValueChanged<Memo> onMemoTap;
   final ValueChanged<TodoList> onTodoListTap;
   final ValueChanged<TodoItem>? onTodoItemTap;
-  final VoidCallback? onAddTap;
+  final VoidCallback? onAddMemo;
+  final VoidCallback? onAddTodoList;
 
   const DayItemsPanel({
     super.key,
@@ -20,7 +22,8 @@ class DayItemsPanel extends ConsumerWidget {
     required this.onMemoTap,
     required this.onTodoListTap,
     this.onTodoItemTap,
-    this.onAddTap,
+    this.onAddMemo,
+    this.onAddTodoList,
   });
 
   static const _weekdayLabels = ['月', '火', '水', '木', '金', '土', '日'];
@@ -106,7 +109,7 @@ class DayItemsPanel extends ConsumerWidget {
             ],
           ),
         ),
-        // アイテム一覧 + 追加ボタン
+        // アイテム一覧（スクロール）+ 追加バー（固定）
         Expanded(
           child: Container(
             color: Colors.grey.shade50,
@@ -118,37 +121,27 @@ class DayItemsPanel extends ConsumerWidget {
                       : ListView(
                           padding: const EdgeInsets.all(8),
                           children: [
-                            if (memos.isNotEmpty) ...[
-                              _SectionHeader(
-                                  label: 'メモ', count: memos.length),
-                              for (final m in memos)
-                                _MemoTile(
-                                    memo: m, onTap: () => onMemoTap(m)),
-                            ],
-                            if (todoLists.isNotEmpty) ...[
-                              _SectionHeader(
-                                  label: 'ToDoリスト',
-                                  count: todoLists.length),
-                              for (final l in todoLists)
-                                _TodoListTile(
-                                    list: l, onTap: () => onTodoListTap(l)),
-                            ],
-                            if (todoItems.isNotEmpty) ...[
-                              _SectionHeader(
-                                  label: 'ToDoアイテム',
-                                  count: todoItems.length),
-                              for (final it in todoItems)
-                                _TodoItemTile(
-                                  item: it,
-                                  onTap: onTodoItemTap == null
-                                      ? null
-                                      : () => onTodoItemTap!(it),
-                                ),
-                            ],
+                            for (final m in memos)
+                              _MemoTile(
+                                  memo: m, onTap: () => onMemoTap(m)),
+                            for (final l in todoLists)
+                              _TodoListTile(
+                                  list: l, onTap: () => onTodoListTap(l)),
+                            for (final it in todoItems)
+                              _TodoItemTile(
+                                item: it,
+                                onTap: onTodoItemTap == null
+                                    ? null
+                                    : () => onTodoItemTap!(it),
+                              ),
                           ],
                         ),
                 ),
-                if (onAddTap != null) _AddButton(onTap: onAddTap!),
+                if (onAddMemo != null && onAddTodoList != null)
+                  _AddBar(
+                    onAddMemo: onAddMemo!,
+                    onAddTodoList: onAddTodoList!,
+                  ),
               ],
             ),
           ),
@@ -158,15 +151,16 @@ class DayItemsPanel extends ConsumerWidget {
   }
 }
 
-class _AddButton extends StatelessWidget {
-  final VoidCallback onTap;
+class _AddBar extends StatelessWidget {
+  final VoidCallback onAddMemo;
+  final VoidCallback onAddTodoList;
 
-  const _AddButton({required this.onTap});
+  const _AddBar({required this.onAddMemo, required this.onAddTodoList});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
         border: Border(
@@ -175,31 +169,114 @@ class _AddButton extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: Material(
-          color: Colors.blue.shade600,
-          borderRadius: BorderRadius.circular(10),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(10),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.add, size: 18, color: Colors.white),
-                  SizedBox(width: 6),
-                  Text(
-                    'メモ・ToDoを追加',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                      fontFamily: 'Hiragino Sans',
-                    ),
-                  ),
-                ],
+        child: Row(
+          children: [
+            Expanded(
+              child: _AddRowButton(
+                icon: Icons.note_outlined,
+                iconColor: Colors.amber.shade700,
+                label: 'メモ',
+                onTap: onAddMemo,
               ),
             ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _AddRowButton(
+                icon: Icons.checklist,
+                iconColor: Colors.green.shade600,
+                label: 'ToDo',
+                onTap: onAddTodoList,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AddRowButton extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final VoidCallback onTap;
+
+  const _AddRowButton({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.grey.shade50,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: Colors.black.withValues(alpha: 0.08),
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(icon, size: 22, color: iconColor),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'Hiragino Sans',
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              // グレー丸 + 白抜き + ボタン（小さめ）
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.grey.shade400,
+                ),
+                child: SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        width: 12,
+                        height: 2.5,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(1.5),
+                        ),
+                      ),
+                      Container(
+                        width: 2.5,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(1.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -236,43 +313,6 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  final String label;
-  final int count;
-
-  const _SectionHeader({required this.label, required this.count});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 12, 8, 6),
-      child: Row(
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: Colors.black54,
-              fontFamily: 'Hiragino Sans',
-            ),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            '$count',
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: Colors.black38,
-              fontFamily: 'Hiragino Sans',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _MemoTile extends StatelessWidget {
   final Memo memo;
   final VoidCallback onTap;
@@ -281,33 +321,129 @@ class _MemoTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title =
-        memo.title.isEmpty ? (memo.content.isEmpty ? '無題' : memo.content) : memo.title;
+    final hasTitle = memo.title.isNotEmpty;
+    final title = hasTitle
+        ? memo.title
+        : (memo.content.isEmpty ? '無題' : memo.content.split('\n').first);
+    final subtitle = hasTitle ? memo.content : null;
     return _Tile(
       icon: Icons.note_outlined,
       iconColor: Colors.amber.shade700,
       title: title,
-      subtitle: memo.title.isNotEmpty && memo.content.isNotEmpty
-          ? memo.content
-          : null,
+      subtitle: (subtitle != null && subtitle.isNotEmpty) ? subtitle : null,
+      maxSubtitleLines: 3,
       onTap: onTap,
     );
   }
 }
 
-class _TodoListTile extends StatelessWidget {
+class _TodoListTile extends ConsumerWidget {
   final TodoList list;
   final VoidCallback onTap;
 
   const _TodoListTile({required this.list, required this.onTap});
 
   @override
-  Widget build(BuildContext context) {
-    return _Tile(
-      icon: Icons.checklist,
-      iconColor: Colors.green.shade600,
-      title: list.title.isEmpty ? '無題のリスト' : list.title,
-      onTap: onTap,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final db = ref.read(databaseProvider);
+    // ルート直下のアイテムのみ対象（深い階層は表示しない）
+    final query = db.select(db.todoItems)
+      ..where((t) => t.listId.equals(list.id) & t.parentId.isNull())
+      ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)])
+      ..limit(3);
+    final stream = query.watch();
+
+    return StreamBuilder<List<TodoItem>>(
+      stream: stream,
+      builder: (context, snap) {
+        final items = snap.data ?? const <TodoItem>[];
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+          child: Material(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Icon(Icons.checklist,
+                          size: 18, color: Colors.green.shade600),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            list.title.isEmpty ? '無題のリスト' : list.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'Hiragino Sans',
+                              color: Colors.black87,
+                            ),
+                          ),
+                          for (final it in items) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  it.isDone
+                                      ? Icons.check_box
+                                      : Icons.check_box_outline_blank,
+                                  size: 14,
+                                  color: it.isDone
+                                      ? Colors.grey.shade500
+                                      : Colors.black45,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    it.title.isEmpty ? '無題' : it.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontFamily: 'Hiragino Sans',
+                                      color: it.isDone
+                                          ? Colors.black38
+                                          : Colors.black54,
+                                      decoration: it.isDone
+                                          ? TextDecoration.lineThrough
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Icon(Icons.chevron_right,
+                          size: 18,
+                          color: Colors.black.withValues(alpha: 0.3)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -324,7 +460,8 @@ class _TodoItemTile extends StatelessWidget {
       icon: item.isDone ? Icons.check_circle : Icons.radio_button_unchecked,
       iconColor: item.isDone ? Colors.grey.shade500 : Colors.green.shade400,
       title: item.title.isEmpty ? '無題' : item.title,
-      subtitle: item.memo,
+      subtitle: (item.memo == null || item.memo!.isEmpty) ? null : item.memo,
+      maxSubtitleLines: 3,
       strikethrough: item.isDone,
       onTap: onTap,
     );
@@ -336,6 +473,7 @@ class _Tile extends StatelessWidget {
   final Color iconColor;
   final String title;
   final String? subtitle;
+  final int maxSubtitleLines;
   final bool strikethrough;
   final VoidCallback? onTap;
 
@@ -344,6 +482,7 @@ class _Tile extends StatelessWidget {
     required this.iconColor,
     required this.title,
     this.subtitle,
+    this.maxSubtitleLines = 1,
     this.strikethrough = false,
     this.onTap,
   });
@@ -361,9 +500,12 @@ class _Tile extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(icon, size: 18, color: iconColor),
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: Icon(icon, size: 18, color: iconColor),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -391,7 +533,7 @@ class _Tile extends StatelessWidget {
                           padding: const EdgeInsets.only(top: 2),
                           child: Text(
                             subtitle!,
-                            maxLines: 1,
+                            maxLines: maxSubtitleLines,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 12,
@@ -403,8 +545,11 @@ class _Tile extends StatelessWidget {
                     ],
                   ),
                 ),
-                Icon(Icons.chevron_right,
-                    size: 18, color: Colors.black.withValues(alpha: 0.3)),
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: Icon(Icons.chevron_right,
+                      size: 18, color: Colors.black.withValues(alpha: 0.3)),
+                ),
               ],
             ),
           ),

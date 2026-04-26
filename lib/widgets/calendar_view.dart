@@ -86,17 +86,28 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
       ),
     );
     if (type == null || !mounted) return;
-    final db = ref.read(databaseProvider);
     switch (type) {
       case _AddType.memo:
-        final memo = await db.createMemo(eventDate: day);
-        if (!mounted) return;
-        widget.onMemoCreated(memo);
+        await _createMemoForDay(day);
       case _AddType.todoList:
-        final list = await db.createTodoList(eventDate: day);
-        if (!mounted) return;
-        widget.onTodoListTap(list);
+        await _createTodoListForDay(day);
     }
+  }
+
+  Future<void> _createMemoForDay(DateTime day) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final db = ref.read(databaseProvider);
+    final memo = await db.createMemo(eventDate: day);
+    if (!mounted) return;
+    widget.onMemoCreated(memo);
+  }
+
+  Future<void> _createTodoListForDay(DateTime day) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final db = ref.read(databaseProvider);
+    final list = await db.createTodoList(eventDate: day);
+    if (!mounted) return;
+    widget.onTodoListTap(list);
   }
 
   void _showDaySheet(DateTime day) {
@@ -142,9 +153,13 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
                         Navigator.of(ctx).pop();
                         widget.onTodoListTap(l);
                       },
-                      onAddTap: () {
+                      onAddMemo: () {
                         Navigator.of(ctx).pop();
-                        _handleAddTap(day);
+                        _createMemoForDay(day);
+                      },
+                      onAddTodoList: () {
+                        Navigator.of(ctx).pop();
+                        _createTodoListForDay(day);
                       },
                     ),
                   ),
@@ -177,7 +192,8 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
               day: _selectedDay!,
               onMemoTap: widget.onMemoTap,
               onTodoListTap: widget.onTodoListTap,
-              onAddTap: () => _handleAddTap(_selectedDay!),
+              onAddMemo: () => _createMemoForDay(_selectedDay!),
+              onAddTodoList: () => _createTodoListForDay(_selectedDay!),
             ),
           ),
         ],
