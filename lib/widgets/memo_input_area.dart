@@ -22,6 +22,7 @@ import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
 import 'block_editor.dart';
 import 'confirm_delete_dialog.dart';
+import 'date_picker_sheet.dart';
 import 'frosted_alert_dialog.dart';
 import 'markdown_text_controller.dart';
 import 'markdown_toolbar.dart';
@@ -172,6 +173,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   bool _isMarkdown = false;
   /// メモ背景色インデックス（0=なし/白、1-71=タグカラーパレット）
   int _bgColorIndex = 0;
+  /// カレンダー紐付け日（null = 通常メモ、設定済み = カレンダーに載ってる）
+  /// フッター右下に小さく表示し、タップで日付ピッカーを開く。
+  DateTime? _eventDate;
   // マークダウンプレビュー表示中か（エディタ↔プレビュー切替）
   bool _showMarkdownPreview = false;
   // メモ未作成時にルーレットで先に選んだタグの保持先（事前選択状態）
@@ -572,6 +576,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       _isMarkdown = memo.isMarkdown;
       _bgColorIndex = memo.bgColorIndex;
       _showMarkdownPreview = false;
+      _eventDate = memo.eventDate;
     });
   }
 
@@ -599,6 +604,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     setState(() {
       _hasMemo = false;
       _isViewMode = false;
+      _eventDate = null;
     });
   }
 
@@ -912,11 +918,61 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   Widget build(BuildContext context) {
     final allTagsAsync = ref.watch(allTagsProvider);
 
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // メイン入力エリア（白カード）。日付スペース分（18pt）を引いた残りを取る。
+        Expanded(child: _buildMainArea(allTagsAsync)),
+        // 日付スペース（常時 18pt 確保。eventDate 有無でレイアウトが動かないように）
+        SizedBox(
+          height: 18,
+          child: _eventDate == null
+              ? null
+              : Padding(
+                  padding: const EdgeInsets.only(right: 14),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () async {
+                        final memoId =
+                            widget.editingMemoId ?? _selfCreatedMemoId;
+                        if (memoId == null) return;
+                        await _showCalendarDatePicker(memoId);
+                      },
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.event_outlined,
+                            size: 11,
+                            color: Colors.grey.shade600,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            '${_eventDate!.year}/${_eventDate!.month.toString().padLeft(2, '0')}/${_eventDate!.day.toString().padLeft(2, '0')}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'Hiragino Sans',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMainArea(AsyncValue<List<Tag>> allTagsAsync) {
     return Container(
       key: _inputAreaKey,
       margin: const EdgeInsets.fromLTRB(10, 6, 0, 2),
-      // 通常は固定 316、最大化中は親のサイズに従う
-      height: widget.isExpanded ? null : 316,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -2298,9 +2354,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             // 多機能メニュー
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () {
-                // TODO: 多機能メニュー展開
-              },
+              onTap: _showMultiActionSheet,
               child: Icon(CupertinoIcons.ellipsis_circle,
                   size: 20, color: Colors.grey[600]),
             ),
@@ -2448,6 +2502,56 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
   /// 背景色選択ダイアログ
   /// 既存メモならDB更新、未作成なら _bgColorIndex に保持して次のメモ作成時に適用
+  /// 多機能メニュー（…ボタン）。
+  /// メモ ID 必須。閲覧モード時のみツールバーに出るので、通常 ID は確定済み。
+  Future<void> _showMultiActionSheet() async {
+    final memoId = widget.editingMemoId ?? _selfCreatedMemoId;
+    if (memoId == null) return;
+    // 既存 eventDate を取得して、メニュー項目のラベルを動的に切替
+    final db = ref.read(databaseProvider);
+    final memo = await (db.select(db.memos)
+          ..where((t) => t.id.equals(memoId)))
+        .getSingleOrNull();
+    if (!mounted) return;
+    final hasEventDate = memo?.eventDate != null;
+    final action = await focusSafe<String>(
+      context,
+      () => showModalBottomSheet<String>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => _MultiActionSheet(hasEventDate: hasEventDate),
+      ),
+    );
+    if (action == null || !mounted) return;
+    switch (action) {
+      case 'pinToCalendar':
+        await _showCalendarDatePicker(memoId);
+        break;
+    }
+  }
+
+  /// メモを「カレンダーに載せる」ためのカスタム日付ピッカー。
+  /// クリア = eventDate を null にして通常メモに戻す。
+  Future<void> _showCalendarDatePicker(String memoId) async {
+    final db = ref.read(databaseProvider);
+    final memo = await (db.select(db.memos)
+          ..where((t) => t.id.equals(memoId)))
+        .getSingleOrNull();
+    final initial = memo?.eventDate;
+    final result = await focusSafe<DatePickerResult?>(
+      context,
+      () => showCustomDatePickerSheet(context, initial: initial),
+    );
+    if (result == null || !mounted) return;
+    if (result.cleared) {
+      await db.setMemoEventDate(memoId, null);
+      if (mounted) setState(() => _eventDate = null);
+    } else if (result.date != null) {
+      await db.setMemoEventDate(memoId, result.date!);
+      if (mounted) setState(() => _eventDate = result.date);
+    }
+  }
+
   Future<void> _showBgColorPicker() async {
     final memoId = widget.editingMemoId;
     final wasEditing = _isInputFocused;
@@ -3054,4 +3158,98 @@ class _DialArcShadowPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DialArcShadowPainter old) => false;
+}
+
+/// 多機能ボタン（…）タップ時に出るアクションシート。
+/// 結果は文字列キー（e.g. 'pinToCalendar'）で pop される。null = キャンセル。
+/// hasEventDate でカレンダー項目のラベルを切り替え：
+/// - false（日付未付与）: 「カレンダーに載せる」
+/// - true（既に日付付与済み）: 「日付を変える」
+class _MultiActionSheet extends StatelessWidget {
+  final bool hasEventDate;
+  const _MultiActionSheet({required this.hasEventDate});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      // 枠外タップで閉じる
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(context).pop(),
+      child: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: GestureDetector(
+                onTap: () {},
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _MultiActionItem(
+                        icon: Icons.event_outlined,
+                        iconColor: Colors.orange,
+                        label:
+                            hasEventDate ? '日付を変える' : 'カレンダーに載せる',
+                        onTap: () =>
+                            Navigator.of(context).pop('pinToCalendar'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MultiActionItem extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final VoidCallback onTap;
+
+  const _MultiActionItem({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(icon, size: 22, color: iconColor),
+              const SizedBox(width: 12),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Hiragino Sans',
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
