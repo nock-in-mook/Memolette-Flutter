@@ -59,9 +59,6 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   // カードスライドアニメーション方向（true=右へ進む、false=左へ戻る）
   bool _slideForward = true;
 
-  // カード最大化状態
-  bool _isCardExpanded = false;
-
   // タグルーレット開閉状態
   bool _rouletteOpen = false;
 
@@ -103,11 +100,6 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
   }
   @override
   Widget build(BuildContext context) {
-    final kbVisible = MediaQuery.of(context).viewInsets.bottom > 0;
-    final showFloats = _phase == _Phase.carousel && _isCardExpanded && kbVisible;
-    final hasContent = _cardController.hasContent?.call() ?? false;
-    final isContentFocused = _cardController.isContentFocused?.call() ?? false;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       resizeToAvoidBottomInset: false,
@@ -147,13 +139,6 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
               _Phase.result => _buildResultPhase(),
             },
 
-            // 最大化+キーボード表示中: フロート消しゴムボタン（左下）
-            if (showFloats && isContentFocused)
-              Positioned(
-                left: 16,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 6,
-                child: _buildFloatingEraserButton(hasContent),
-              ),
           ],
         ),
       ),
@@ -185,6 +170,8 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
     // ルーレット用の寸法（外側Stackで使用）
     const double traySlideW = 300.0 + 19.0 + 60.0;
     final slideOffset = _rouletteOpen ? 0.0 : traySlideW;
+    // ルーレット表示位置: カード下端と操作パネル上端の絶妙な隙間に収める。
+    const rouletteBottom = 155.0;
 
     return SafeArea(
       maintainBottomViewPadding: true,
@@ -300,22 +287,20 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
               final maxH = constraints.maxHeight;
               final collapsedCardH =
                   MediaQuery.of(context).size.height * 0.29;
-              // 最大化時はカードが利用可能空間いっぱいまで広がる（日付はExpanded外で計算済み）
-              // ルーレット開時はカードを若干縮めて、下に出るルーレットのスペースを確保
-              // カード高さ（ルーレット表示時）
+              // 爆速モードはカード縮小固定（最大化撤去）。
+              // ルーレット開: 上余白 10pt、カード縮め
+              // 通常: 上余白 70pt、カードは collapsedCardH
+              final topSpacer = _rouletteOpen ? 10.0 : 70.0;
               final rouletteCardH = maxH - 238;
-              final cardH = _isCardExpanded
-                  ? maxH
-                  : _rouletteOpen
-                      ? rouletteCardH.clamp(100.0, collapsedCardH)
-                      : collapsedCardH;
-              // ルーレット用の寸法
+              final cardH = _rouletteOpen
+                  ? rouletteCardH.clamp(100.0, collapsedCardH)
+                  : collapsedCardH;
               return Column(children: [
                   // カード位置: ルーレット開時は詰める（滑らかに）
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     curve: Curves.easeOutCubic,
-                    height: _rouletteOpen ? 10 : 70,
+                    height: topSpacer,
                   ),
 
                   // メモカード（スワイプ＋スライドアニメーション）+ ロックボタン
@@ -361,9 +346,6 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                         key: ValueKey(memo.id),
                         memo: memo,
                         controller: _cardController,
-                        isExpanded: _isCardExpanded,
-                        onToggleExpanded: () =>
-                            setState(() => _isCardExpanded = !_isCardExpanded),
                         onTagged: () => _taggedMemoIds.add(memo.id),
                         onTitled: () => _titledMemoIds.add(memo.id),
                         onEdited: () => _editedMemoIds.add(memo.id),
@@ -403,7 +385,6 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
               ),
             ),
           ),
-
                   // 日付情報（AnimatedSizeで滑らかに出し入れ）
                   // カードと同じ max-width で中央寄せし、左端をカードに揃える
                   Center(
@@ -413,7 +394,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                         duration: const Duration(milliseconds: 250),
                         curve: Curves.easeInOut,
                         alignment: Alignment.topCenter,
-                        child: (_isCardExpanded || _rouletteOpen)
+                        child: _rouletteOpen
                             ? const SizedBox(width: double.infinity, height: 0)
                             : Align(
                                 alignment: Alignment.centerLeft,
@@ -447,11 +428,11 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                     ),
                   ),
 
-                  // カード下のスペース（Expanded内。最大化時に縮みカードが上下に伸びる）
+                  // カード下のスペース（ルーレット開時のみ縮める）
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 250),
                     curve: Curves.easeInOut,
-                    height: (_isCardExpanded || _rouletteOpen) ? 0 : 90,
+                    height: _rouletteOpen ? 0 : 90,
                   ),
                   ],
               );
@@ -704,7 +685,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           // ルーレット: SafeArea直下Stackに配置（操作パネルの上に右からスライド）
           Positioned(
             right: 0,
-            bottom: 182,
+            bottom: rouletteBottom,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeOutCubic,
@@ -725,7 +706,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           if (_showTagHistory && _rouletteOpen)
             Positioned(
               right: 16,
-              bottom: 182 + 45 + 8,
+              bottom: rouletteBottom + 45 + 8,
               child: _buildTagHistoryOverlay(memo),
             ),
         ],
@@ -1383,60 +1364,6 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
     );
   }
 
-  // 最大化中+キーボード表示中のフロート縮小ボタン
-  Widget _buildFloatingMinimizeButton() {
-    return GestureDetector(
-      onTap: () {
-        _cardController.unfocus?.call();
-        setState(() => _isCardExpanded = false);
-      },
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: Colors.blue.withValues(alpha: 0.7),
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.25),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: const Icon(Icons.close_fullscreen,
-            size: 18, color: Colors.white),
-      ),
-    );
-  }
-
-  // 最大化中+キーボード表示中のフロート消しゴムボタン
-  Widget _buildFloatingEraserButton(bool hasContent) {
-    return GestureDetector(
-      onTap: hasContent ? () => _cardController.clearContent?.call() : null,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: hasContent
-              ? Colors.orange.withValues(alpha: 0.6)
-              : const Color.fromRGBO(142, 142, 147, 0.15),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.15),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: const Center(child: EraserGlyph()),
-      ),
-    );
-  }
-
   // 編集モード切替（弧ボタンから呼ばれる）
   void _setEditMode(_EditMode mode) {
     switch (mode) {
@@ -2071,7 +1998,6 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
       _titledMemoIds.clear();
       _editedMemoIds.clear();
       _deleteQueue.clear();
-      _isCardExpanded = false;
     });
   }
 
@@ -2294,8 +2220,6 @@ class _DeletedReviewDialogState extends State<_DeletedReviewDialog> {
 class _QuickSortCard extends ConsumerStatefulWidget {
   final Memo memo;
   final _CardController? controller;
-  final bool isExpanded;
-  final VoidCallback? onToggleExpanded;
   final VoidCallback onTagged;
   final VoidCallback onTitled;
   final VoidCallback onEdited;
@@ -2307,8 +2231,6 @@ class _QuickSortCard extends ConsumerStatefulWidget {
     super.key,
     required this.memo,
     this.controller,
-    this.isExpanded = false,
-    this.onToggleExpanded,
     required this.onTagged,
     this.onTagFooterTap,
     required this.onTitled,
@@ -2647,15 +2569,13 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // 本文（外側Scrollable方式で scrollPadding を効かせる）
-                      // 最大化時のみキーボード追従、縮小時は固定値で上跳ねを抑制
+                      // 爆速モードはカード縮小固定（最大化撤去）。
+                      // 縮小カード内では SingleChildScrollView padding と
+                      // TextField scrollPadding は控えめでよい。
                       Expanded(
                         child: Builder(builder: (innerCtx) {
-                          final kb =
-                              MediaQuery.of(innerCtx).viewInsets.bottom;
-                          final scrollBottom =
-                              widget.isExpanded && kb > 0 ? 180 : 100;
-                          final cursorBottomBuffer =
-                              widget.isExpanded && kb > 0 ? 160 : 20;
+                          const scrollBottom = 100;
+                          const cursorBottomBuffer = 20;
                           return LayoutBuilder(
                               builder: (context, constraints) {
                             return GestureDetector(
@@ -2794,74 +2714,6 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                     ),
                   ),
 
-                  // 最大化/縮小ボタン（最大化中+キーボード時のみフロート側に切替）
-                  if (widget.onToggleExpanded != null &&
-                      !(widget.isExpanded &&
-                          MediaQuery.of(context).viewInsets.bottom > 0))
-                    Positioned(
-                      right: 8,
-                      bottom: 48,
-                      child: GestureDetector(
-                        onTap: widget.onToggleExpanded,
-                        child: Container(
-                          width: 21,
-                          height: 21,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.blue.withValues(alpha: 0.6),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.2),
-                                blurRadius: 2,
-                                offset: const Offset(-1, 1),
-                              ),
-                            ],
-                          ),
-                          child: Transform.rotate(
-                            angle: 1.5708, // 90度回転
-                            child: Icon(
-                              widget.isExpanded
-                                  ? Icons.close_fullscreen
-                                  : Icons.open_in_full,
-                              size: 11,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  // 消しゴムボタン（常時表示。最大化中+キーボード時のみフロート側に切替）
-                  if (!(widget.isExpanded &&
-                      MediaQuery.of(context).viewInsets.bottom > 0))
-                    Positioned(
-                      left: 8,
-                      bottom: 48,
-                      child: GestureDetector(
-                        onTap: _contentController.text.isNotEmpty
-                            ? _clearBodyWithConfirm
-                            : null,
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: (_contentFocus.hasFocus &&
-                                    _contentController.text.isNotEmpty)
-                                ? Colors.orange.withValues(alpha: 0.6)
-                                : const Color.fromRGBO(142, 142, 147, 0.08),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.1),
-                                blurRadius: 0.5,
-                                offset: const Offset(-0.5, 0.5),
-                              ),
-                            ],
-                          ),
-                          child: const Center(child: EraserGlyph()),
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -3154,11 +3006,26 @@ class _QuickSortFilterPhaseState
                   style: TextButton.styleFrom(foregroundColor: Colors.blue),
                 ),
                 const Spacer(),
-                TextButton(
-                  onPressed: widget.onCancel,
-                  child: const Text('閉じる',
-                      style: TextStyle(fontSize: 16, color: Colors.grey)),
-                ),
+                Builder(builder: (_) {
+                  final enabled =
+                      _anyFilterSelected && _filteredCount > 0;
+                  return TextButton(
+                    onPressed: enabled
+                        ? () => widget.onStart(_filteredMemos)
+                        : null,
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.orange,
+                      disabledForegroundColor: Colors.grey,
+                    ),
+                    child: const Text(
+                      '開始',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  );
+                }),
               ],
             ),
           ),
