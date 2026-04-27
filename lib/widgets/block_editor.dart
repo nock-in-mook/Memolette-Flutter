@@ -39,6 +39,10 @@ class BlockEditor extends ConsumerStatefulWidget {
   final VoidCallback? onTap;
   final bool isMarkdown;
   final bool readOnly;
+  /// TextField の scrollPadding 下端値。
+  /// 親側で viewInsets を考慮した値を渡す（最大化時のみキーボード分加算）。
+  /// null の場合は Flutter 標準（EdgeInsets.all(20)）の挙動。
+  final double? scrollPaddingBottom;
 
   const BlockEditor({
     super.key,
@@ -49,6 +53,7 @@ class BlockEditor extends ConsumerStatefulWidget {
     this.onTap,
     this.isMarkdown = false,
     this.readOnly = false,
+    this.scrollPaddingBottom,
   });
 
   @override
@@ -661,6 +666,10 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
       maxLines: null,
       textAlignVertical: TextAlignVertical.top,
       keyboardType: TextInputType.multiline,
+      // 親が指定した bottom を使う。null なら Flutter 標準（EdgeInsets.all(20)）。
+      scrollPadding: widget.scrollPaddingBottom != null
+          ? EdgeInsets.only(bottom: widget.scrollPaddingBottom!)
+          : const EdgeInsets.all(20),
     );
   }
 

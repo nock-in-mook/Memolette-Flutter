@@ -983,7 +983,6 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
   Widget _buildPreviewButton() {
     final isOn = _showMarkdownPreview;
-    final accent = Colors.orange;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
@@ -993,23 +992,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           _enterPreview();
         }
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-              color: isOn ? accent : Colors.grey.shade500, width: 1),
-          // ON時はオレンジ塗りつぶしで目立たせる
-          color: isOn ? accent : Colors.white,
-        ),
-        child: Text(
-          'プレビュー',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: isOn ? Colors.white : Colors.grey.shade500,
-          ),
-        ),
+      // 枠なし・他のフッターアイコン（多機能/パレット/コピー）と同じ size/color に統一。
+      // ON 時はオレンジでハイライト、OFF 時はグレー。
+      child: Icon(
+        CupertinoIcons.eye,
+        size: 22,
+        color: isOn ? Colors.orange : Colors.grey[600],
       ),
     );
   }
@@ -2128,9 +2116,17 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   }
 
   Widget _buildEditArea() {
-    return MediaQuery(
-        data: MediaQuery.of(context).copyWith(viewInsets: EdgeInsets.zero),
-        child: LayoutBuilder(builder: (context, constraints) {
+    // home_screen の Scaffold(resizeToAvoidBottomInset: false) で
+    // Flutter の自動キーボード追従が効かないため、最大化時のみ
+    // scrollPadding に viewInsets.bottom を手動加算する。
+    // 縮小時はメモ入力エリア（316pt 固定）の中で SingleChildScrollView が
+    // 閉じてるので、viewport 下端 ≒ フッター上端。viewInsets を加算すると
+    // 「画面上半分しかない iPhone」扱いになりカーソルが上端まで飛ぶ。
+    // 縮小時はキーボードとそもそも重ならないので加算不要（null = 標準）。
+    final scrollPaddingBottom = widget.isExpanded
+        ? MediaQuery.of(context).viewInsets.bottom + 20
+        : null;
+    return LayoutBuilder(builder: (context, constraints) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _updateMdToolbarOverlay();
         });
@@ -2161,6 +2157,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
                 initialContent: _contentController.text,
                 readOnly: _isViewMode,
                 isMarkdown: _isMarkdown,
+                scrollPaddingBottom: scrollPaddingBottom,
                 onTap: () {
                   // TextBlock タップ: 閲覧モードなら編集モード遷移するだけ。
                   // カーソル位置は TextField の native なタップ処理に任せる
@@ -2185,8 +2182,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             ),
           ),
         );
-      }),
-    );
+      });
   }
 
   Widget _buildToolbar({bool compact = false}) {
@@ -2280,7 +2276,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           ),
           // MD ON のときだけプレビューボタンを MD スイッチの右隣に出す
           if (_isMarkdown) ...[
-            SizedBox(width: sp(10)),
+            SizedBox(width: sp(18)),
             _buildPreviewButton(),
           ],
 
