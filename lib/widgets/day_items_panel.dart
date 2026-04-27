@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart' hide Column;
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,8 +7,6 @@ import '../db/database.dart';
 import '../providers/database_provider.dart';
 
 /// カレンダー画面の「選択された日のアイテム一覧」パネル
-/// - iPad 横画面: 右カラムに常時表示
-/// - 縦画面: showModalBottomSheet で日付タップ時に表示
 class DayItemsPanel extends ConsumerWidget {
   final DateTime day;
   final ValueChanged<Memo> onMemoTap;
@@ -15,6 +14,8 @@ class DayItemsPanel extends ConsumerWidget {
   final ValueChanged<TodoItem>? onTodoItemTap;
   final VoidCallback? onAddMemo;
   final VoidCallback? onAddTodoList;
+  // 指定するとヘッダ右端に × ボタンが出てパネルを閉じる UI を提供
+  final VoidCallback? onClose;
 
   const DayItemsPanel({
     super.key,
@@ -24,6 +25,7 @@ class DayItemsPanel extends ConsumerWidget {
     this.onTodoItemTap,
     this.onAddMemo,
     this.onAddTodoList,
+    this.onClose,
   });
 
   static const _weekdayLabels = ['月', '火', '水', '木', '金', '土', '日'];
@@ -48,11 +50,11 @@ class DayItemsPanel extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ヘッダ
+        // ヘッダ（日付 + × ボタン）
         Container(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Colors.lightBlue.shade50,
             border: Border(
               bottom: BorderSide(
                 color: Colors.black.withValues(alpha: 0.08),
@@ -79,61 +81,61 @@ class DayItemsPanel extends ConsumerWidget {
                 ),
               ),
               const Spacer(),
-              // メモ件数（アイコン + 数字）
-              Icon(Icons.note_outlined,
-                  size: 15, color: Colors.amber.shade700),
-              const SizedBox(width: 3),
-              Text(
-                '${memos.length}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.black87,
-                  fontFamily: 'Hiragino Sans',
+              if (onClose != null)
+                InkResponse(
+                  onTap: onClose,
+                  radius: 18,
+                  child: Padding(
+                    padding: const EdgeInsets.all(2),
+                    child: Icon(
+                      Icons.close,
+                      size: 20,
+                      color: Colors.black.withValues(alpha: 0.55),
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              // ToDo 件数（リスト + アイテムの合算）
-              Icon(Icons.checklist,
-                  size: 15, color: Colors.green.shade600),
-              const SizedBox(width: 3),
-              Text(
-                '${todoLists.length + todoItems.length}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.black87,
-                  fontFamily: 'Hiragino Sans',
-                ),
-              ),
             ],
           ),
         ),
-        // アイテム一覧（スクロール）+ 追加バー（固定）
+        // アイテム一覧（縦並び 1 列、メモ → ToDo の順）+ 追加バー（固定）
         Expanded(
           child: Container(
-            color: Colors.grey.shade50,
+            color: Colors.lightBlue.shade50,
             child: Column(
               children: [
                 Expanded(
                   child: totalCount == 0
                       ? const _EmptyState()
                       : ListView(
-                          padding: const EdgeInsets.all(8),
+                          padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
                           children: [
-                            for (final m in memos)
-                              _MemoTile(
-                                  memo: m, onTap: () => onMemoTap(m)),
-                            for (final l in todoLists)
-                              _TodoListTile(
-                                  list: l, onTap: () => onTodoListTap(l)),
-                            for (final it in todoItems)
-                              _TodoItemTile(
-                                item: it,
-                                onTap: onTodoItemTap == null
-                                    ? null
-                                    : () => onTodoItemTap!(it),
+                            if (memos.isNotEmpty) ...[
+                              _SectionHeader(
+                                label: 'メモ',
+                                icon: Icons.note_outlined,
+                                color: Colors.amber.shade700,
                               ),
+                              for (final m in memos)
+                                _MemoTile(
+                                    memo: m, onTap: () => onMemoTap(m)),
+                            ],
+                            if (todoLists.isNotEmpty || todoItems.isNotEmpty) ...[
+                              _SectionHeader(
+                                label: 'ToDo',
+                                icon: Icons.checklist,
+                                color: Colors.green.shade600,
+                              ),
+                              for (final l in todoLists)
+                                _TodoListTile(
+                                    list: l, onTap: () => onTodoListTap(l)),
+                              for (final it in todoItems)
+                                _TodoItemTile(
+                                  item: it,
+                                  onTap: onTodoItemTap == null
+                                      ? null
+                                      : () => onTodoItemTap!(it),
+                                ),
+                            ],
                           ],
                         ),
                 ),
@@ -151,6 +153,40 @@ class DayItemsPanel extends ConsumerWidget {
   }
 }
 
+class _SectionHeader extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  const _SectionHeader({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              fontFamily: 'Hiragino Sans',
+              color: Colors.black87,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AddBar extends StatelessWidget {
   final VoidCallback onAddMemo;
   final VoidCallback onAddTodoList;
@@ -162,7 +198,7 @@ class _AddBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
+        color: Colors.lightBlue.shade50,
         border: Border(
           top: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
         ),
@@ -211,7 +247,7 @@ class _AddRowButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.grey.shade50,
+      color: Colors.lightBlue.shade50,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -313,6 +349,48 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+/// 各カードに共通する枠（白背景、角丸、タップ波紋）
+class _CardShell extends StatelessWidget {
+  final VoidCallback? onTap;
+  final Widget child;
+
+  const _CardShell({this.onTap, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// タイトル / 本文の間に挟む薄い仕切り線
+class _Divider extends StatelessWidget {
+  const _Divider();
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Container(
+        height: 0.5,
+        color: Colors.black.withValues(alpha: 0.12),
+      ),
+    );
+  }
+}
+
 class _MemoTile extends StatelessWidget {
   final Memo memo;
   final VoidCallback onTap;
@@ -322,17 +400,40 @@ class _MemoTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasTitle = memo.title.isNotEmpty;
-    final title = hasTitle
-        ? memo.title
-        : (memo.content.isEmpty ? '無題' : memo.content.split('\n').first);
-    final subtitle = hasTitle ? memo.content : null;
-    return _Tile(
-      icon: Icons.note_outlined,
-      iconColor: Colors.amber.shade700,
-      title: title,
-      subtitle: (subtitle != null && subtitle.isNotEmpty) ? subtitle : null,
-      maxSubtitleLines: 3,
+    final hasContent = memo.content.isNotEmpty;
+    return _CardShell(
       onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (hasTitle)
+            Text(
+              memo.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Hiragino Sans',
+                color: Colors.black87,
+              ),
+            ),
+          if (hasTitle && hasContent) const _Divider(),
+          if (hasContent)
+            Text(
+              memo.content,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.black54,
+                fontFamily: 'Hiragino Sans',
+                height: 1.35,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -346,7 +447,6 @@ class _TodoListTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final db = ref.read(databaseProvider);
-    // ルート直下のアイテムのみ対象（深い階層は表示しない）
     final query = db.select(db.todoItems)
       ..where((t) => t.listId.equals(list.id) & t.parentId.isNull())
       ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)])
@@ -357,90 +457,73 @@ class _TodoListTile extends ConsumerWidget {
       stream: stream,
       builder: (context, snap) {
         final items = snap.data ?? const <TodoItem>[];
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
-          child: Material(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        final hasTitle = list.title.isNotEmpty;
+        return _CardShell(
+          onTap: onTap,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (hasTitle)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: Icon(Icons.checklist,
-                          size: 18, color: Colors.green.shade600),
+                    const Icon(
+                      CupertinoIcons.bookmark_fill,
+                      size: 13,
+                      color: Colors.orange,
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 6),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            list.title.isEmpty ? '無題のリスト' : list.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              fontFamily: 'Hiragino Sans',
-                              color: Colors.black87,
-                            ),
-                          ),
-                          for (final it in items) ...[
-                            const SizedBox(height: 4),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  it.isDone
-                                      ? Icons.check_box
-                                      : Icons.check_box_outline_blank,
-                                  size: 14,
-                                  color: it.isDone
-                                      ? Colors.grey.shade500
-                                      : Colors.black45,
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    it.title.isEmpty ? '無題' : it.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontFamily: 'Hiragino Sans',
-                                      color: it.isDone
-                                          ? Colors.black38
-                                          : Colors.black54,
-                                      decoration: it.isDone
-                                          ? TextDecoration.lineThrough
-                                          : null,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ],
+                      child: Text(
+                        list.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Hiragino Sans',
+                          color: Colors.black87,
+                        ),
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: Icon(Icons.chevron_right,
-                          size: 18,
-                          color: Colors.black.withValues(alpha: 0.3)),
                     ),
                   ],
                 ),
-              ),
-            ),
+              if (hasTitle && items.isNotEmpty) const _Divider(),
+              for (var i = 0; i < items.length; i++) ...[
+                if (i > 0) const SizedBox(height: 4),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Icon(
+                      items[i].isDone
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                      size: 14,
+                      color: Colors.green.shade600,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        items[i].title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontFamily: 'Hiragino Sans',
+                          color: items[i].isDone
+                              ? Colors.black38
+                              : Colors.black54,
+                          decoration: items[i].isDone
+                              ? TextDecoration.lineThrough
+                              : null,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
           ),
         );
       },
@@ -456,104 +539,56 @@ class _TodoItemTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Tile(
-      icon: item.isDone ? Icons.check_circle : Icons.radio_button_unchecked,
-      iconColor: item.isDone ? Colors.grey.shade500 : Colors.green.shade400,
-      title: item.title.isEmpty ? '無題' : item.title,
-      subtitle: (item.memo == null || item.memo!.isEmpty) ? null : item.memo,
-      maxSubtitleLines: 3,
-      strikethrough: item.isDone,
+    final hasTitle = item.title.isNotEmpty;
+    final hasMemo = item.memo != null && item.memo!.isNotEmpty;
+    return _CardShell(
       onTap: onTap,
-    );
-  }
-}
-
-class _Tile extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String title;
-  final String? subtitle;
-  final int maxSubtitleLines;
-  final bool strikethrough;
-  final VoidCallback? onTap;
-
-  const _Tile({
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    this.subtitle,
-    this.maxSubtitleLines = 1,
-    this.strikethrough = false,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (hasTitle)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 1),
-                  child: Icon(icon, size: 18, color: iconColor),
+                const Icon(
+                  CupertinoIcons.bookmark_fill,
+                  size: 13,
+                  color: Colors.orange,
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 6),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          fontFamily: 'Hiragino Sans',
-                          decoration: strikethrough
-                              ? TextDecoration.lineThrough
-                              : null,
-                          color: strikethrough
-                              ? Colors.black45
-                              : Colors.black87,
-                        ),
-                      ),
-                      if (subtitle != null && subtitle!.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            subtitle!,
-                            maxLines: maxSubtitleLines,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.black54,
-                              fontFamily: 'Hiragino Sans',
-                            ),
-                          ),
-                        ),
-                    ],
+                  child: Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Hiragino Sans',
+                      color: item.isDone ? Colors.black45 : Colors.black87,
+                      decoration: item.isDone
+                          ? TextDecoration.lineThrough
+                          : null,
+                    ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 1),
-                  child: Icon(Icons.chevron_right,
-                      size: 18, color: Colors.black.withValues(alpha: 0.3)),
                 ),
               ],
             ),
-          ),
-        ),
+          if (hasTitle && hasMemo) const _Divider(),
+          if (hasMemo)
+            Text(
+              item.memo!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.black54,
+                fontFamily: 'Hiragino Sans',
+                height: 1.35,
+              ),
+            ),
+        ],
       ),
     );
   }

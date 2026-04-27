@@ -7,6 +7,16 @@ import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import 'day_items_panel.dart';
 
+/// カレンダーで現在オーバーレイ表示中の日付。
+///
+/// CalendarView の State じゃなく Provider に持つ理由:
+/// home_screen の `_isEditingCompact`（メモ編集コンパクトモード）が立つと
+/// CalendarView が条件外で unmount → State の `_selectedDay` が消失して
+/// キーボード閉じた後にパネルが再表示されない問題があったため。
+/// Provider 化で、CalendarView が remount されても選択状態を保持する。
+final calendarSelectedDayProvider =
+    StateProvider<DateTime?>((ref) => null);
+
 /// 「全カレンダー」タブ本体。縦スクロール月別カレンダー。
 /// - 日付セルタップ:
 ///   - iPad 横画面: 右カラムの DayItemsPanel に選択日を反映
@@ -35,7 +45,7 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
 
   late final ScrollController _scrollController;
   late final DateTime _today;
-  DateTime? _selectedDay; // iPad 横画面で右カラムに表示する日
+  // 選択中の日付は calendarSelectedDayProvider で管理（CalendarView remount 越しに保持）
 
   @override
   void initState() {
@@ -61,17 +71,18 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
 
   void _handleDayTap(DateTime day, int count) {
     if (Responsive.isWide(context)) {
-      setState(() => _selectedDay = day);
+      ref.read(calendarSelectedDayProvider.notifier).state = day;
       return;
     }
-    // メモ入力欄のフォーカスを外しておかないと、シート閉時に
-    // フォーカス復元で勝手に編集モードに突入する
+    // メモ入力欄のフォーカスを外しておかないと、編集モード突入の副作用が出る
     FocusManager.instance.primaryFocus?.unfocus();
     if (count == 0) {
       // 何もない日は新規作成アクションに直行
       _handleAddTap(day);
     } else {
-      _showDaySheet(day);
+      // カレンダー下半分に DayItemsPanel をオーバーレイ表示（非モーダル）
+      // → 上のメモ入力エリアも触れる、ToDo へ遷移して戻ってもパネルは残る
+      ref.read(calendarSelectedDayProvider.notifier).state = day;
     }
   }
 
@@ -110,74 +121,13 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
     widget.onTodoListTap(list);
   }
 
-  void _showDaySheet(DateTime day) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.4,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (_, scrollController) {
-          return Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-            ),
-            child: Column(
-              children: [
-                // ドラッグハンドル
-                Padding(
-                  padding: const EdgeInsets.only(top: 8, bottom: 4),
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: PrimaryScrollController(
-                    controller: scrollController,
-                    child: DayItemsPanel(
-                      day: day,
-                      onMemoTap: (m) {
-                        Navigator.of(ctx).pop();
-                        widget.onMemoTap(m);
-                      },
-                      onTodoListTap: (l) {
-                        Navigator.of(ctx).pop();
-                        widget.onTodoListTap(l);
-                      },
-                      onAddMemo: () {
-                        Navigator.of(ctx).pop();
-                        _createMemoForDay(day);
-                      },
-                      onAddTodoList: () {
-                        Navigator.of(ctx).pop();
-                        _createTodoListForDay(day);
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final calendarList = _buildCalendarList();
+    final selectedDay = ref.watch(calendarSelectedDayProvider);
+    final calendarList = _buildCalendarList(selectedDay);
     if (Responsive.isWide(context)) {
       // 横画面では右カラムに常時 DayItemsPanel
-      _selectedDay ??= _today;
+      final day = selectedDay ?? _today;
       return Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -189,20 +139,67 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
           Expanded(
             flex: 3,
             child: DayItemsPanel(
-              day: _selectedDay!,
+              day: day,
               onMemoTap: widget.onMemoTap,
               onTodoListTap: widget.onTodoListTap,
-              onAddMemo: () => _createMemoForDay(_selectedDay!),
-              onAddTodoList: () => _createTodoListForDay(_selectedDay!),
+              onAddMemo: () => _createMemoForDay(day),
+              onAddTodoList: () => _createTodoListForDay(day),
             ),
           ),
         ],
       );
     }
-    return calendarList;
+    // 縦画面: 日付タップで下半分に DayItemsPanel をオーバーレイ（非モーダル）
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Stack(
+          children: [
+            calendarList,
+            if (selectedDay != null) ...[
+              // 背景を暗くする半透明オーバーレイ（タップで閉じる）
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => ref
+                      .read(calendarSelectedDayProvider.notifier)
+                      .state = null,
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.35),
+                  ),
+                ),
+              ),
+            ],
+            if (selectedDay != null)
+              Positioned(
+                left: 24,
+                right: 24,
+                top: 16,
+                bottom: 24,
+                child: Material(
+                  elevation: 16,
+                  color: Colors.lightBlue.shade50,
+                  shadowColor: Colors.black.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(16),
+                  clipBehavior: Clip.antiAlias,
+                  child: DayItemsPanel(
+                    day: selectedDay,
+                    onMemoTap: widget.onMemoTap,
+                    onTodoListTap: widget.onTodoListTap,
+                    onAddMemo: () => _createMemoForDay(selectedDay),
+                    onAddTodoList: () => _createTodoListForDay(selectedDay),
+                    onClose: () => ref
+                        .read(calendarSelectedDayProvider.notifier)
+                        .state = null,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
   }
 
-  Widget _buildCalendarList() {
+  Widget _buildCalendarList(DateTime? selectedDay) {
     final months = <DateTime>[];
     for (int i = -_monthsBefore; i <= _monthsAfter; i++) {
       months.add(DateTime(_today.year, _today.month + i));
@@ -215,7 +212,7 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
       itemBuilder: (ctx, i) => _MonthBlock(
         month: months[i],
         today: _today,
-        selectedDay: _selectedDay,
+        selectedDay: selectedDay,
         onDayTap: _handleDayTap,
       ),
     );
