@@ -38,11 +38,85 @@ Flutter 側 `ios/Runner.xcodeproj` の Team 設定は個人 Team のまま
 
 ## 現在の状況
 
-- **セッション#28 完了**（2026-04-25 〜 26）
-- ブランチ: **`feat/calendar-view`**（main にマージ前、未完）
-- 最終コミット: `e69971b` シート日付ヘッダ右端にメモ/ToDo件数をアイコン付きで表示
-- セッション#27 から +27 コミット（Phase 15 カレンダービュー実装中）
-- iPhone/iPad シミュ + iPad/iPhone 実機（wireless）で動作確認進めた
+- **セッション#29 完了**（2026-04-26 〜 27）
+- ブランチ: **`feat/calendar-view`**（main にマージ前、Step 7 まで完了）
+- 動作確認: iPhone 17 Pro シミュ中心、SE 3rd（375×667）/ 17 Pro Max（430×932）にも install 比較
+- iOS deploy target 16.0 に引き上げ済（iPhone 6/7/8/X は配信対象外）
+
+## #29 のサマリ: シート刷新 + フォーカス根治 + 爆速整理整理 + iOS 16 + Step 7
+
+### カレンダー日別シート刷新（calendar_view.dart, day_items_panel.dart）
+- showModalBottomSheet → **非モーダルなフローティング Material オーバーレイ** に変更
+  - パネルが残ったまま上のメモ入力エリアを操作可能（barrier タップで閉じる、半透明オーバーレイで背景暗く）
+  - `calendarSelectedDayProvider` (StateProvider) で選択日を保持 → CalendarView remount 越しに残る
+- DayItemsPanel: 横 2 列 → 縦 1 列、セクション見出し（メモ／ToDo + アイコン）
+- 各カードはアイコン+タイトル+仕切り線+本文 2 行（メモ）／しおり付き（ToDo）
+- 「無題」「無題のリスト」表記撤去、ヘッダ件数アイコンも撤去（× ボタンのみ残す）
+- 下部固定: アイコン+ラベル+丸+ の横長 2 ボタン（メモ／ToDo）
+
+### NavigatorObserver で全画面共通の自動 unfocus（main.dart）
+- `_UnfocusOnPopObserver` 追加: pop 時に primaryFocus を強制 unfocus
+- 「ToDo 開いて閉じたらメモ入力欄が勝手に編集状態」系のバグを根治
+- 副作用検証用に **`FOCUS_REGRESSION_CHECKLIST.md`**（90+ 項目）を作成
+  - リリース前にここを 1 件ずつ実機チェックする方針
+
+### プレビューボタンのアイコン化（memo_input_area.dart, preview_icon_lab_screen.dart 新規）
+- フッターの「プレビュー」テキスト → `CupertinoIcons.eye`（アウトライン目玉、size 22）
+- ON 時オレンジ、OFF 時グレー、枠なし、他のアイコンと統一
+- 393pt 幅機種（17 Pro 等）でフッターオーバーフローしてた問題を解消
+- 設定に「プレビューアイコンラボ」追加（13 候補を ON/OFF 状態で比較）
+
+### メモ入力カーソル追従の復活（block_editor.dart, memo_input_area.dart）
+- a7291663（2026-04-17）で入れた `MediaQuery(viewInsets:0)` 上書きを撤去
+- 以降の 833d842（BlockEditor 統合）で TextField の scrollPadding が落ちていた
+- block_editor.dart の TextField に `scrollPaddingBottom` パラメータ追加
+  - 最大化時のみ `viewInsets.bottom + 20` を渡す
+  - 縮小時は標準（EdgeInsets.all(20)）。SingleChildScrollView の viewport が
+    入力エリア内（316pt）に閉じてるため、viewInsets を加算すると上端まで飛ぶ問題回避
+
+### 爆速整理モード整理（quick_sort_screen.dart）
+- **カード最大化機能を完全撤去**（_isCardExpanded、トグルボタン、フロート消しゴム / 縮小ボタン）
+- カード上の消しゴムボタンも撤去
+- カード縮小固定にしてレイアウト計算簡素化
+- フィルタ画面の死にボタン「閉じる」→「**開始**」ボタンに置換
+  - フィルタ選択 + 件数 > 0 でオレンジ active、それ以外グレー disabled
+- ルーレット表示位置を 182 → 155 に下げ（本文編集ボタンの直上、絶妙な隙間に収まる）
+
+### iOS deploy target 13 → 16
+- ios/Podfile + ios/Runner.xcodeproj/project.pbxproj
+- iPhone 6/6s/7/7+/8/8+/X が App Store 配信対象外（旧型 375×667pt の負担減）
+- 残る最小サポート: iPhone SE 2/3rd（同 375×667pt）→ Phase 16 で対応
+
+### Phase 15 Step 7: メモ入力 UI に日付欄追加（lib/widgets/date_picker_sheet.dart 新規）
+- 多機能ボタン（…）をメニュー化、「カレンダーに載せる」/「日付を変える」項目
+- カスタム日付ピッカー（標準 showDatePicker は禁止ルール）
+  - 縦スクロール（前 6 / 後 12 ヶ月）、月ブロックは白カード + grey.shade200 背景
+  - itemExtent + 6 週固定で月高さ揃え、選択月を viewport 中央に正確配置
+  - ヘッダに「YYYY年M月D日(曜)」プレビュー（土日色分け）+ 右端「本日」ボタン
+  - 上段「キャンセル / 決定」、下段「カレンダーから消去」（initial あり時のみ）
+- 「決定」を押すまで eventDate は付与されない（cancel/枠外タップは null pop）
+- フッターの枠外右下に eventDate 表示
+  - カレンダーアイコン + YYYY/MM/DD（ゼロ埋め 2 桁）、grey.shade600、サイズ 11
+  - 日付スペースは **常時 18pt 確保**（eventDate 有無でメモカード高さが動かない）
+  - タップで日付ピッカー（変更／カレンダーから消去）
+
+## 次のアクション
+
+### Phase 15 続き（feat/calendar-view ブランチ継続）
+- **Step 8**: ToDoリスト / アイテム編集に日付欄追加
+  - リストヘッダに「リスト全体の日付」、各アイテム行に日付アイコン
+  - Step 7 のピッカー（`date_picker_sheet.dart`）を共通化して再利用
+- **Step 9**: 仕上げ・整合性
+  - メモカードに eventDate バッジ表示（grid1x2/grid1flex でのみ）
+  - DayItemsPanel の細部詰め
+
+### Phase 16（リリース前必須）
+- メモカード／ToDoカードのレスポンシブ化（カード実幅から比率派生）
+- 検証マトリクス: SE 3rd（375×667）/ 13 mini（375×812）/ 17 Pro（393×852）/ Pro Max（430×932）/ iPad
+
+### リリース前リグレッションチェック
+- `FOCUS_REGRESSION_CHECKLIST.md` の全項目を実機で 1 件ずつ確認
+- ROADMAP の「備忘」欄も合わせてチェック
 
 ## #28 のサマリ: Phase 15 カレンダービュー Step 1〜6 完了 + UI 調整
 

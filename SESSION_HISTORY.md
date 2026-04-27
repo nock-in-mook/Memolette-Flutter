@@ -695,3 +695,62 @@
 - シート（DayItemsPanel）の細部調整続き
 - Step 7（メモ入力UIに日付欄）/ Step 8（ToDoに日付欄）/ Step 9（仕上げ）
 - 完了したら main マージ → release タグ → TestFlight 配布
+
+---
+## #29 (2026-04-26 〜 27): カレンダー日別シート刷新 + フォーカス根治 + 爆速整理整理 + iOS 16 + Step 7
+
+### カレンダー日別シートをフローティングオーバーレイ化
+- showModalBottomSheet → 非モーダル Material オーバーレイ（barrier タップで閉じる、上の入力エリア操作可）
+- `calendarSelectedDayProvider` (StateProvider) で選択日保持、CalendarView remount 越しに残る
+- DayItemsPanel: 縦 1 列に戻し、セクション見出し追加、しおり、仕切り線、横長 2 ボタン
+- 「無題」「無題のリスト」表記撤去、ヘッダ件数アイコンも撤去
+- 背景 lightBlue.shade50、白カードは枠外余白 24pt（フローティング感）
+
+### NavigatorObserver で全画面共通の自動 unfocus（main.dart）
+- `_UnfocusOnPopObserver`: pop 時 primaryFocus を強制 unfocus
+- 「ToDo 開いて閉じたらメモ入力が勝手に編集状態」系のバグ根治
+- 副作用検証用 `FOCUS_REGRESSION_CHECKLIST.md` 新設（90+ 項目）
+
+### プレビューボタンのアイコン化
+- フッターの「プレビュー」テキスト → `CupertinoIcons.eye`（size 22、ON オレンジ / OFF グレー）
+- 393pt 幅機種でフッターオーバーフローしてた問題を解消
+- 設定に「プレビューアイコンラボ」追加（13 候補比較）
+
+### メモ入力カーソル追従の復活
+- a7291663 で入れた `MediaQuery(viewInsets:0)` 上書きを撤去
+- 833d842 の BlockEditor 統合で落ちていた scrollPadding を復活
+- 最大化時のみ `viewInsets.bottom + 20` を加算（縮小時は標準）
+
+### 爆速整理モード整理（quick_sort_screen.dart）
+- **カード最大化機能を完全撤去**（state / トグルボタン / フロート系）
+- カード上の消しゴムボタンも撤去
+- フィルタ画面の死にボタン「閉じる」→「開始」ボタンに置換
+- ルーレット位置 182 → 155、本文編集ボタンの直上に絶妙に収まる
+
+### iOS deploy target 13 → 16
+- iPhone 6/7/8/X が App Store 配信対象外（旧型 375×667pt の負担減）
+- 残る最小サポート: iPhone SE 2/3rd（375×667pt）→ Phase 16 で対応
+
+### Phase 15 Step 7: メモ入力 UI に日付欄追加
+- 新規 `lib/widgets/date_picker_sheet.dart`（カスタム日付ピッカー）
+  - 縦スクロール、月白カード + grey.shade200 背景、itemExtent + 6 週固定で正確な中央配置
+  - 上部プレビュー「YYYY年M月D日(曜)」 + 「本日」ボタン
+  - 二段ボタン: キャンセル/決定 + カレンダーから消去（initial あり時のみ）
+  - 「決定」を押すまで eventDate は付与されない（DB 書き込み防止）
+- 多機能ボタン（…）をメニュー化、「カレンダーに載せる」/「日付を変える」を eventDate 有無で切替
+- フッターの枠外右下に eventDate 表示（カレンダーアイコン + YYYY/MM/DD、grey.shade600）
+- 日付スペースは常時 18pt 確保（メモカード高さが動かない、機種非依存）
+
+### Phase 16 ROADMAP 確定（リリース前必須）
+- 全画面サイズ対応のレスポンシブ化（カード実幅から比率派生）
+- 検証マトリクス: SE 3rd / 13 mini / 17 Pro / Pro Max / iPad
+
+### 動作確認
+- iPhone 17 Pro シミュ中心、SE 3rd / 17 Pro Max シミュにも install 比較
+- 終盤は iPhone 17 Pro 一本（remote-control 接続）
+
+### 次セッション
+- Phase 15 Step 8: ToDoリスト/アイテムに日付欄（Step 7 のピッカー共通化）
+- Step 9: 仕上げ（メモカードの eventDate バッジ等）
+- main マージ → release タグ → TestFlight 配布
+- リリース前リグレッションチェック (`FOCUS_REGRESSION_CHECKLIST.md`)
