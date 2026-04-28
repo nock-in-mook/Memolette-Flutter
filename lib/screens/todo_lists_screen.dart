@@ -40,6 +40,10 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
   final List<String> _mergeOrder = <String>[];
   static const int _mergeMax = 5;
 
+  /// 選択削除モード（メモ混在フォルダの選択削除と同等の体験）
+  bool _isSelectDeleteMode = false;
+  final Set<String> _selectedDeleteIds = <String>{};
+
   void _enterMergeMode() {
     setState(() {
       _isMergeMode = true;
@@ -53,6 +57,143 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
       _isMergeMode = false;
       _mergeOrder.clear();
     });
+  }
+
+  void _enterSelectDeleteMode() {
+    setState(() {
+      _isSelectDeleteMode = true;
+      _selectedDeleteIds.clear();
+      _selectedListId = null;
+    });
+  }
+
+  void _exitSelectDeleteMode() {
+    setState(() {
+      _isSelectDeleteMode = false;
+      _selectedDeleteIds.clear();
+    });
+  }
+
+  void _toggleSelectDeleteSelection(String id, bool isLocked) {
+    if (isLocked) {
+      showToast(context, 'このToDoはロック中です');
+      return;
+    }
+    setState(() {
+      if (_selectedDeleteIds.contains(id)) {
+        _selectedDeleteIds.remove(id);
+      } else {
+        _selectedDeleteIds.add(id);
+      }
+    });
+  }
+
+  Future<void> _confirmDeleteSelected() async {
+    final count = _selectedDeleteIds.length;
+    if (count == 0) return;
+    final ids = _selectedDeleteIds.toList();
+    final confirmed = await showConfirmDeleteDialog(
+      context: context,
+      title: '選択したToDoを削除',
+      message: '$count件のToDoを削除します。よろしいですか？',
+    );
+    if (!confirmed || !mounted) return;
+    final db = ref.read(databaseProvider);
+    for (final id in ids) {
+      await (db.delete(db.todoLists)..where((t) => t.id.equals(id))).go();
+    }
+    if (!mounted) return;
+    _exitSelectDeleteMode();
+  }
+
+  /// 選択削除モード時の上部バナー（1行・TODOタブに重ねて表示）
+  Widget _buildSelectDeleteBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.red, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: const Text(
+        '削除するToDoを選択してください',
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+          fontFamily: 'Hiragino Sans',
+          color: Colors.black87,
+        ),
+      ),
+    );
+  }
+
+  /// 左下フロート削除ボタン（メモ一覧フッターのゴミ箱と同じ見た目）
+  Widget _buildDeleteFloatingButton(bool hasItems) {
+    const secondary = Color(0x993C3C43);
+    final disabledColor = Colors.grey.withValues(alpha: 0.35);
+    return Positioned(
+      left: 14,
+      bottom: 24,
+      child: GestureDetector(
+        onTap: hasItems ? _enterSelectDeleteMode : null,
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF2F2F7),
+            borderRadius: BorderRadius.circular(50),
+            border: Border.all(color: const Color(0x66999999), width: 1.0),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x26000000),
+                blurRadius: 3,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Icon(
+            CupertinoIcons.delete_simple,
+            size: 17,
+            color: hasItems ? secondary : disabledColor,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 選択削除モード時のカード左上バッジ。選択中は赤塗り+チェック、未選択は空円。
+  Widget _selectDeleteBadge(String id) {
+    final selected = _selectedDeleteIds.contains(id);
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        color: selected ? Colors.red : Colors.white.withValues(alpha: 0.85),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: selected ? Colors.red : Colors.grey.shade500,
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      alignment: Alignment.center,
+      child: selected
+          ? const Icon(CupertinoIcons.checkmark_alt,
+              size: 14, color: Colors.white)
+          : null,
+    );
   }
 
   /// 結合モード時のカード左上バッジ。選択中は青塗り+番号、未選択は空円。
@@ -154,11 +295,18 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
         if (_isMergeMode) _buildMergeBanner(),
         _buildTodoTab(),
         Expanded(
-          child: Container(
-            color: _todoTabColor,
-            child: lists.isEmpty
-                ? _buildEmptyState()
-                : _buildListGrid(lists),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Container(
+                color: _todoTabColor,
+                child: lists.isEmpty
+                    ? _buildEmptyState()
+                    : _buildListGrid(lists),
+              ),
+              if (!_isMergeMode && !_isSelectDeleteMode)
+                _buildDeleteFloatingButton(lists.isNotEmpty),
+            ],
           ),
         ),
       ],
@@ -179,11 +327,17 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
               if (_isMergeMode) _buildMergeBanner(),
               _buildTodoTab(),
               Expanded(
-                child: Container(
-                  color: _todoTabColor,
-                  child: lists.isEmpty
-                      ? _buildEmptyState()
-                      : _buildListGrid(lists),
+                child: Stack(
+                  children: [
+                    Container(
+                      color: _todoTabColor,
+                      child: lists.isEmpty
+                          ? _buildEmptyState()
+                          : _buildListGrid(lists),
+                    ),
+                    if (!_isMergeMode && !_isSelectDeleteMode)
+                      _buildDeleteFloatingButton(lists.isNotEmpty),
+                  ],
                 ),
               ),
             ],
@@ -311,9 +465,16 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: GestureDetector(
-            onTap: () => _openList(list.id),
-            onLongPress:
-                _isMergeMode ? null : () => _showListActions(list),
+            onTap: () {
+              if (_isSelectDeleteMode) {
+                _toggleSelectDeleteSelection(list.id, list.isLocked);
+                return;
+              }
+              _openList(list.id);
+            },
+            onLongPress: (_isMergeMode || _isSelectDeleteMode)
+                ? null
+                : () => _showListActions(list),
             behavior: HitTestBehavior.opaque,
             child: StreamBuilder<List<TodoItem>>(
               stream: _watchRootItems(list.id),
@@ -472,7 +633,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
                     // 重なりを避けるため left=22 へ右に逃がす
                     if (list.isMerged)
                       Positioned(
-                        left: _isMergeMode ? 22 : 12,
+                        left: (_isMergeMode || _isSelectDeleteMode) ? 22 : 12,
                         top: 4,
                         child: const Icon(
                           Icons.merge_type,
@@ -487,9 +648,18 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
                         top: -6,
                         child: _mergeBadge(list.id),
                       ),
-                    // 結合モード中、未選択カードを薄く
-                    if (_isMergeMode &&
-                        !_mergeOrder.contains(list.id))
+                    // 選択削除モード時のチェックバッジ
+                    if (_isSelectDeleteMode)
+                      Positioned(
+                        left: -6,
+                        top: -6,
+                        child: _selectDeleteBadge(list.id),
+                      ),
+                    // 結合/選択削除モード中、未選択カードを薄く
+                    if ((_isMergeMode &&
+                            !_mergeOrder.contains(list.id)) ||
+                        (_isSelectDeleteMode &&
+                            !_selectedDeleteIds.contains(list.id)))
                       Positioned.fill(
                         child: IgnorePointer(
                           child: Container(
@@ -589,6 +759,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
 
   Widget _buildToolbar() {
     if (_isMergeMode) return _buildMergeToolbar();
+    if (_isSelectDeleteMode) return _buildSelectDeleteToolbar();
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
       child: Row(
@@ -667,6 +838,99 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF007AFF),
+                      fontFamily: 'Hiragino Sans',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 選択削除モード中のツールバー: キャンセル / N件選択中 / 削除
+  Widget _buildSelectDeleteToolbar() {
+    final canDelete = _selectedDeleteIds.isNotEmpty;
+    final count = _selectedDeleteIds.length;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: _exitSelectDeleteMode,
+            behavior: HitTestBehavior.opaque,
+            child: const SizedBox(
+              height: 32,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'キャンセル',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Color(0xFF007AFF),
+                    fontFamily: 'Hiragino Sans',
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: _exitSelectDeleteMode,
+              behavior: HitTestBehavior.opaque,
+              child: SizedBox(
+                height: 32,
+                child: Center(
+                  child: Text(
+                    count == 0 ? '' : '$count件 選択中',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      fontFamily: 'Hiragino Sans',
+                      color: Color(0x993C3C43),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: canDelete ? _confirmDeleteSelected : null,
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                color: canDelete
+                    ? Colors.red.withValues(alpha: 0.1)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: canDelete
+                      ? Colors.red
+                      : Colors.grey.withValues(alpha: 0.3),
+                  width: 1.5,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(CupertinoIcons.delete_simple,
+                      size: 14,
+                      color: canDelete
+                          ? Colors.red
+                          : Colors.grey.withValues(alpha: 0.5)),
+                  const SizedBox(width: 4),
+                  Text(
+                    '削除',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: canDelete
+                          ? Colors.red
+                          : Colors.grey.withValues(alpha: 0.5),
                       fontFamily: 'Hiragino Sans',
                     ),
                   ),
@@ -1139,46 +1403,62 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
     // 「ここにはタブは増やせない」という視覚的アピールも兼ねる。
     return SizedBox(
       height: 40,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: CustomPaint(
-          painter: const TrapezoidTabPainter(
-            color: _todoTabColor,
-            shadows: [
-              Shadow(
-                color: Color(0x66000000),
-                offset: Offset(-3, 3),
-                blurRadius: 5,
-              ),
-            ],
-          ),
-          child: const Center(
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(CupertinoIcons.checkmark_square,
-                      size: 14, color: Colors.black),
-                  SizedBox(width: 6),
-                  Text(
-                    'TODO',
-                    strutStyle: StrutStyle(
-                      fontSize: 14,
-                      height: 1.0,
-                      forceStrutHeight: true,
-                      leading: 0,
-                    ),
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.0,
-                      fontFamily: 'Hiragino Sans',
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black,
-                    ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(child: _buildTodoTabContent()),
+          if (_isSelectDeleteMode)
+            Positioned(
+              top: 5,
+              left: 0,
+              right: 0,
+              child: Center(child: _buildSelectDeleteBanner()),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTodoTabContent() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: CustomPaint(
+        painter: const TrapezoidTabPainter(
+          color: _todoTabColor,
+          shadows: [
+            Shadow(
+              color: Color(0x66000000),
+              offset: Offset(-3, 3),
+              blurRadius: 5,
+            ),
+          ],
+        ),
+        child: const Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(CupertinoIcons.checkmark_square,
+                    size: 14, color: Colors.black),
+                SizedBox(width: 6),
+                Text(
+                  'TODO',
+                  strutStyle: StrutStyle(
+                    fontSize: 14,
+                    height: 1.0,
+                    forceStrutHeight: true,
+                    leading: 0,
                   ),
-                ],
-              ),
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.0,
+                    fontFamily: 'Hiragino Sans',
+                    fontWeight: FontWeight.w800,
+                    color: Colors.black,
+                  ),
+                ),
+              ],
             ),
           ),
         ),

@@ -224,8 +224,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (count == 0) return;
     final confirmed = await showConfirmDeleteDialog(
       context: context,
-      title: '$count件を削除',
-      message: '選択した$count件を削除します。よろしいですか？',
+      title: '選択したメモを削除',
+      message: '$count件のメモを削除します。よろしいですか？',
     );
     if (!confirmed || !mounted) return;
     final memoIds = _selectedMemoIds.toList();
