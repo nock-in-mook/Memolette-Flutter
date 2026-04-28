@@ -87,6 +87,8 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   String? _memoViewItemId;
   // 選択削除モード
   bool _isSelectMode = false;
+  // 編集確定直後、DBストリームが追いつく前の楽観的タイトル
+  final Map<String, String> _optimisticTitles = {};
   final Set<String> _selectedItems = {};
   // スワイプ削除の一斉クローズ通知
   final ValueNotifier<int> _swipeCloseNotifier = ValueNotifier<int>(0);
@@ -367,6 +369,10 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       setState(() {
         _editingItemId = null;
         _addingParentId = null;
+        // DBストリームが追いつくまで楽観的に新titleを表示
+        if (!wasEmpty) {
+          _optimisticTitles[id] = trimmed;
+        }
       });
       if (chainNext && !wasEmpty) {
         await _createItem(parentId: parentId);
@@ -2431,20 +2437,32 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                       });
                     },
                     behavior: HitTestBehavior.opaque,
-                    child: Text(
-                      item.title.isEmpty ? '（空のアイテム）' : item.title,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        fontFamily: 'Hiragino Sans',
-                        color: item.isDone
-                            ? Colors.black.withValues(alpha: 0.4)
-                            : Colors.black87,
-                        decoration: item.isDone
-                            ? TextDecoration.lineThrough
-                            : null,
-                      ),
-                    ),
+                    child: Builder(builder: (_) {
+                      final optimistic = _optimisticTitles[item.id];
+                      // DBが追いついたら楽観値を破棄
+                      if (optimistic != null && item.title == optimistic) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) {
+                            setState(() => _optimisticTitles.remove(item.id));
+                          }
+                        });
+                      }
+                      final displayTitle = optimistic ?? item.title;
+                      return Text(
+                        displayTitle.isEmpty ? '（空のアイテム）' : displayTitle,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Hiragino Sans',
+                          color: item.isDone
+                              ? Colors.black.withValues(alpha: 0.4)
+                              : Colors.black87,
+                          decoration: item.isDone
+                              ? TextDecoration.lineThrough
+                              : null,
+                        ),
+                      );
+                    }),
                   ),
           ),
           // メモボタン（項目名編集中も表示）
@@ -2895,7 +2913,7 @@ class _EditingItemFieldState extends State<_EditingItemField> {
       decoration: const InputDecoration(
         isDense: true,
         border: InputBorder.none,
-        contentPadding: EdgeInsets.symmetric(horizontal: 10),
+        contentPadding: EdgeInsets.zero,
       ),
       onTap: TextMenuDismisser.wrap(null),
       contextMenuBuilder: TextMenuDismisser.builder,
