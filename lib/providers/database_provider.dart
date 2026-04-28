@@ -193,6 +193,15 @@ final eventCountsForRangeProvider = StreamProvider.family<
   return db.watchEventCountsForRange(start: range.start, end: range.end);
 });
 
+/// 指定範囲 [start, end) の各日付サマリ（メモ件数+最初のラベル / ToDo件数+最初のラベル）。
+/// カレンダーセル内に「オレンジ帯（メモ）/緑帯（ToDo）」を表示するために使用。
+final eventSummariesForRangeProvider = StreamProvider.family<
+    Map<DateTime, DaySummary>,
+    ({DateTime start, DateTime end})>((ref, range) {
+  final db = ref.watch(databaseProvider);
+  return db.watchEventSummariesForRange(start: range.start, end: range.end);
+});
+
 /// その日のメモを購読
 final memosForDayProvider =
     StreamProvider.family<List<Memo>, DateTime>((ref, day) {

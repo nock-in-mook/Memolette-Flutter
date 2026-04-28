@@ -970,6 +970,97 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  /// 指定範囲の各日付サマリ（メモ件数・最初のメモラベル・ToDo件数・最初のToDoラベル）。
+  /// カレンダーセル内に「オレンジ帯（メモ）/緑帯（ToDo）」を表示するために使用。
+  /// 空アイテムは除外。
+  Stream<Map<DateTime, DaySummary>> watchEventSummariesForRange({
+    required DateTime start,
+    required DateTime end,
+  }) {
+    return customSelect(
+      '''
+      SELECT kind, label, day, sort_key FROM (
+        SELECT 'memo' AS kind,
+               CASE WHEN title != '' THEN title
+                    WHEN content != '' THEN content
+                    ELSE ''
+               END AS label,
+               date(event_date, 'unixepoch', 'localtime') AS day,
+               created_at AS sort_key
+          FROM memos
+          WHERE event_date IS NOT NULL
+            AND event_date >= ?1 AND event_date < ?2
+            AND (title != '' OR content != '' OR bg_color_index != 0)
+        UNION ALL
+        SELECT 'todoList' AS kind,
+               CASE WHEN title != '' THEN title
+                    ELSE COALESCE(
+                      (SELECT title FROM todo_items
+                         WHERE list_id = todo_lists.id
+                         ORDER BY sort_order LIMIT 1),
+                      ''
+                    )
+               END AS label,
+               date(event_date, 'unixepoch', 'localtime') AS day,
+               created_at AS sort_key
+          FROM todo_lists
+          WHERE event_date IS NOT NULL
+            AND event_date >= ?1 AND event_date < ?2
+            AND (title != ''
+                 OR id IN (SELECT DISTINCT list_id FROM todo_items))
+        UNION ALL
+        SELECT 'todoItem' AS kind,
+               title AS label,
+               date(event_date, 'unixepoch', 'localtime') AS day,
+               created_at AS sort_key
+          FROM todo_items
+          WHERE event_date IS NOT NULL
+            AND event_date >= ?1 AND event_date < ?2
+            AND title != ''
+      )
+      ORDER BY day, sort_key
+      ''',
+      variables: [
+        Variable<DateTime>(start),
+        Variable<DateTime>(end),
+      ],
+      readsFrom: {memos, todoLists, todoItems},
+    ).watch().map((rows) {
+      final result = <DateTime, DaySummary>{};
+      for (final row in rows) {
+        final dayStr = row.read<String>('day');
+        final parts = dayStr.split('-');
+        final day = DateTime(
+          int.parse(parts[0]),
+          int.parse(parts[1]),
+          int.parse(parts[2]),
+        );
+        final kind = row.read<String>('kind');
+        final label = row.read<String>('label');
+        final cur = result[day] ?? const DaySummary();
+        if (kind == 'memo') {
+          result[day] = DaySummary(
+            memoCount: cur.memoCount + 1,
+            firstMemoLabel:
+                cur.firstMemoLabel ?? (label.isEmpty ? null : label),
+            todoCount: cur.todoCount,
+            firstTodoLabel: cur.firstTodoLabel,
+          );
+        } else {
+          // todoList と todoItem を ToDo として一緒にカウント
+          result[day] = DaySummary(
+            memoCount: cur.memoCount,
+            firstMemoLabel: cur.firstMemoLabel,
+            todoCount: cur.todoCount + 1,
+            firstTodoLabel:
+                cur.firstTodoLabel ?? (label.isEmpty ? null : label),
+          );
+        }
+      }
+      return result;
+    });
+  }
+
   /// その日のメモ取得（eventDate が day と同じ日、空メモは除外）
   Stream<List<Memo>> watchMemosForDay(DateTime day) {
     final start = DateTime(day.year, day.month, day.day);
@@ -1233,5 +1324,21 @@ LazyDatabase _openConnection() {
     final dbFolder = await getApplicationDocumentsDirectory();
     final file = File(p.join(dbFolder.path, 'memolette.sqlite'));
     return NativeDatabase.createInBackground(file);
+  });
+}
+
+/// カレンダーセル内に表示するための、その日のサマリ。
+/// メモ・ToDo それぞれ「件数」と「最初のラベル（タイトル or 1行目 or 1項目目）」を持つ。
+class DaySummary {
+  final int memoCount;
+  final String? firstMemoLabel;
+  final int todoCount;
+  final String? firstTodoLabel;
+
+  const DaySummary({
+    this.memoCount = 0,
+    this.firstMemoLabel,
+    this.todoCount = 0,
+    this.firstTodoLabel,
   });
 }

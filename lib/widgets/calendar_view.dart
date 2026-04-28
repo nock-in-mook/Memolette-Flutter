@@ -238,10 +238,11 @@ class _MonthBlock extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final monthStart = DateTime(month.year, month.month);
     final monthEnd = DateTime(month.year, month.month + 1);
-    final countsAsync = ref.watch(eventCountsForRangeProvider(
+    final summariesAsync = ref.watch(eventSummariesForRangeProvider(
       (start: monthStart, end: monthEnd),
     ));
-    final counts = countsAsync.valueOrNull ?? const <DateTime, int>{};
+    final summaries =
+        summariesAsync.valueOrNull ?? const <DateTime, DaySummary>{};
 
     // 月の日数
     final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
@@ -263,7 +264,8 @@ class _MonthBlock extends ConsumerWidget {
         }
         final dayNum = cellIndex - firstDayWeekday + 1;
         final day = DateTime(month.year, month.month, dayNum);
-        final count = counts[day] ?? 0;
+        final summary = summaries[day] ?? const DaySummary();
+        final count = summary.memoCount + summary.todoCount;
         final isToday = day.year == today.year &&
             day.month == today.month &&
             day.day == today.day;
@@ -274,7 +276,7 @@ class _MonthBlock extends ConsumerWidget {
         cells.add(Expanded(
           child: _DayCell(
             day: day,
-            count: count,
+            summary: summary,
             isToday: isToday,
             isSelected: isSelected,
             onTap: () => onDayTap(day, count),
@@ -410,14 +412,14 @@ class _EmptyDayCell extends StatelessWidget {
 
 class _DayCell extends StatelessWidget {
   final DateTime day;
-  final int count;
+  final DaySummary summary;
   final bool isToday;
   final bool isSelected;
   final VoidCallback? onTap;
 
   const _DayCell({
     required this.day,
-    required this.count,
+    required this.summary,
     required this.isToday,
     this.isSelected = false,
     this.onTap,
@@ -431,7 +433,10 @@ class _DayCell extends StatelessWidget {
             ? Colors.blue.shade400
             : Colors.black87;
 
-    final cell = Container(
+    final hasMemo = summary.memoCount > 0;
+    final hasTodo = summary.todoCount > 0;
+
+    final cell = DecoratedBox(
       decoration: BoxDecoration(
         border: Border.all(
           color: isSelected
@@ -445,62 +450,52 @@ class _DayCell extends StatelessWidget {
                 ? Colors.blue.withValues(alpha: 0.06)
                 : null,
       ),
-      child: Stack(
-        children: [
-          // 日付数字（左上）
-          Positioned(
-            top: 3,
-            left: 4,
-            child: Container(
-              constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(2, 2, 2, 3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisAlignment: MainAxisAlignment.start,
+          mainAxisSize: MainAxisSize.max,
+          children: [
+            // 日付数字（中央寄せ、当日は青丸）
+            Container(
+              alignment: Alignment.center,
+              constraints: const BoxConstraints(minHeight: 18),
               decoration: isToday
                   ? BoxDecoration(
                       shape: BoxShape.circle,
                       color: Colors.blue.shade500,
                     )
                   : null,
-              child: Center(
-                child: Text(
-                  '${day.day}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: 'Hiragino Sans',
-                    color: isToday ? Colors.white : weekdayColor,
-                  ),
+              child: Text(
+                '${day.day}',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Hiragino Sans',
+                  color: isToday ? Colors.white : weekdayColor,
+                  height: 1.0,
                 ),
               ),
             ),
-          ),
-          // 件数バッジ（中央下）
-          if (count > 0)
-            Positioned(
-              bottom: 18,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 6, vertical: 1.5),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    color: Colors.orange.withValues(alpha: 0.18),
-                  ),
-                  child: Text(
-                    '$count',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      fontFamily: 'Hiragino Sans',
-                      color: Color(0xFFE67E22),
-                    ),
-                  ),
-                ),
+            const SizedBox(height: 2),
+            // メモ帯（オレンジ）
+            if (hasMemo)
+              _DayBand(
+                color: Colors.orange.shade400,
+                label: summary.firstMemoLabel ?? '',
+                count: summary.memoCount,
               ),
-            ),
-        ],
+            if (hasMemo && hasTodo) const SizedBox(height: 2),
+            // ToDo 帯（緑）
+            if (hasTodo)
+              _DayBand(
+                color: Colors.green.shade500,
+                label: summary.firstTodoLabel ?? '',
+                count: summary.todoCount,
+              ),
+          ],
+        ),
       ),
     );
 
@@ -509,6 +504,70 @@ class _DayCell extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: cell,
+    );
+  }
+}
+
+/// セル内の帯（メモ=オレンジ / ToDo=緑）。横幅いっぱい、下部に配置、複数件は右端にバッジ。
+class _DayBand extends StatelessWidget {
+  final Color color;
+  final String label;
+  final int count;
+
+  const _DayBand({
+    required this.color,
+    required this.label,
+    required this.count,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 13,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(2),
+      ),
+      padding: const EdgeInsets.fromLTRB(3, 0, 2, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label.isEmpty ? '無題' : label,
+              style: const TextStyle(
+                fontSize: 8,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                fontFamily: 'Hiragino Sans',
+                height: 1.1,
+              ),
+              overflow: TextOverflow.clip,
+              maxLines: 1,
+              softWrap: false,
+            ),
+          ),
+          if (count > 1) ...[
+            const SizedBox(width: 2),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 0),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                '$count',
+                style: const TextStyle(
+                  fontSize: 8,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  fontFamily: 'Hiragino Sans',
+                  height: 1.1,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

@@ -50,9 +50,9 @@ class DayItemsPanel extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ヘッダ（日付 + × ボタン）
+        // ヘッダ（日付 + × ボタン、上下 padding は 80%）
         Container(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+          padding: const EdgeInsets.fromLTRB(16, 11, 16, 10),
           decoration: BoxDecoration(
             color: Colors.lightBlue.shade50,
             border: Border(
@@ -67,7 +67,7 @@ class DayItemsPanel extends ConsumerWidget {
               Text(
                 '${day.year}年${day.month}月${day.day}日',
                 style: const TextStyle(
-                  fontSize: 16,
+                  fontSize: 14,
                   fontWeight: FontWeight.w800,
                   fontFamily: 'Hiragino Sans',
                 ),
@@ -75,7 +75,7 @@ class DayItemsPanel extends ConsumerWidget {
               Text(
                 '($wd)',
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 12,
                   fontWeight: FontWeight.w700,
                   color: wdColor,
                 ),
@@ -97,58 +97,190 @@ class DayItemsPanel extends ConsumerWidget {
             ],
           ),
         ),
-        // アイテム一覧（縦並び 1 列、メモ → ToDo の順）+ 追加バー（固定）
+        // アイテム一覧（横 2 列、左 = メモ / 右 = ToDo）+ 各列下端にフロート FAB
         Expanded(
           child: Container(
-            color: Colors.lightBlue.shade50,
-            child: Column(
-              children: [
-                Expanded(
-                  child: totalCount == 0
-                      ? const _EmptyState()
-                      : ListView(
-                          padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-                          children: [
-                            if (memos.isNotEmpty) ...[
-                              _SectionHeader(
-                                label: 'メモ',
-                                icon: Icons.note_outlined,
-                                color: Colors.amber.shade700,
-                              ),
-                              for (final m in memos)
-                                _MemoTile(
-                                    memo: m, onTap: () => onMemoTap(m)),
-                            ],
-                            if (todoLists.isNotEmpty || todoItems.isNotEmpty) ...[
-                              _SectionHeader(
-                                label: 'ToDo',
-                                icon: Icons.checklist,
-                                color: Colors.green.shade600,
-                              ),
-                              for (final l in todoLists)
-                                _TodoListTile(
-                                    list: l, onTap: () => onTodoListTap(l)),
-                              for (final it in todoItems)
-                                _TodoItemTile(
-                                  item: it,
-                                  onTap: onTodoItemTap == null
-                                      ? null
-                                      : () => onTodoItemTap!(it),
-                                ),
-                            ],
-                          ],
+            // grey.shade100 と shade200 の中間（ほんのり濃い）
+            color: const Color(0xFFF1F1F1),
+            child: totalCount == 0 && onAddMemo == null && onAddTodoList == null
+                ? const _EmptyState()
+                : Stack(
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // 左列: メモ
+                          Expanded(
+                            child: _ColumnList(
+                              sectionLabel: 'メモ',
+                              sectionIcon: Icons.note_outlined,
+                              sectionColor: Colors.amber.shade700,
+                              isEmpty: memos.isEmpty,
+                              children: [
+                                for (final m in memos)
+                                  _MemoTile(
+                                      memo: m,
+                                      onTap: () => onMemoTap(m)),
+                              ],
+                            ),
+                          ),
+                          // 中央の仕切り線
+                          Container(
+                            width: 0.5,
+                            color: Colors.black.withValues(alpha: 0.15),
+                          ),
+                          // 右列: ToDo
+                          Expanded(
+                            child: _ColumnList(
+                              sectionLabel: 'ToDo',
+                              sectionIcon: Icons.checklist,
+                              sectionColor: Colors.green.shade600,
+                              isEmpty: todoLists.isEmpty &&
+                                  todoItems.isEmpty,
+                              children: [
+                                for (final l in todoLists)
+                                  _TodoListTile(
+                                      list: l,
+                                      onTap: () => onTodoListTap(l)),
+                                for (final it in todoItems)
+                                  _TodoItemTile(
+                                    item: it,
+                                    onTap: onTodoItemTap == null
+                                        ? null
+                                        : () => onTodoItemTap!(it),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      // フロート FAB（左下: メモ追加）
+                      if (onAddMemo != null)
+                        Positioned(
+                          left: 14,
+                          bottom: 14,
+                          child: _FloatAddFab(
+                            icon: Icons.note_outlined,
+                            iconColor: Colors.amber.shade700,
+                            onTap: onAddMemo!,
+                          ),
                         ),
-                ),
-                if (onAddMemo != null && onAddTodoList != null)
-                  _AddBar(
-                    onAddMemo: onAddMemo!,
-                    onAddTodoList: onAddTodoList!,
+                      // フロート FAB（右下: ToDo追加）
+                      if (onAddTodoList != null)
+                        Positioned(
+                          right: 14,
+                          bottom: 14,
+                          child: _FloatAddFab(
+                            icon: Icons.checklist,
+                            iconColor: Colors.green.shade600,
+                            onTap: onAddTodoList!,
+                          ),
+                        ),
+                    ],
                   ),
-              ],
-            ),
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 左右の列の中身（セクション見出し + 内容 + 下端の FAB スペース）。
+/// 各列が独立してスクロールできるように個別の ListView を持つ。
+class _ColumnList extends StatelessWidget {
+  final String sectionLabel;
+  final IconData sectionIcon;
+  final Color sectionColor;
+  final bool isEmpty;
+  final List<Widget> children;
+
+  const _ColumnList({
+    required this.sectionLabel,
+    required this.sectionIcon,
+    required this.sectionColor,
+    required this.isEmpty,
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(6, 4, 6, 80), // 下端は FAB スペース
+      children: [
+        _SectionHeader(
+          label: sectionLabel,
+          icon: sectionIcon,
+          color: sectionColor,
+        ),
+        if (isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text(
+              'なし',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.black.withValues(alpha: 0.35),
+                fontFamily: 'Hiragino Sans',
+              ),
+            ),
+          ),
+        ...children,
+      ],
+    );
+  }
+}
+
+/// 円形フロート追加ボタン（テキストなし、アイコン + 右下に小さい +）。
+class _FloatAddFab extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final VoidCallback onTap;
+
+  const _FloatAddFab({
+    required this.icon,
+    required this.iconColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 3,
+      shadowColor: Colors.black.withValues(alpha: 0.25),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 48,
+          height: 48,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(icon, size: 22, color: iconColor),
+              // 右下に小さい + バッジ
+              Positioned(
+                right: 4,
+                bottom: 4,
+                child: Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.grey.shade600,
+                  ),
+                  child: const Icon(
+                    Icons.add,
+                    size: 12,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -349,7 +481,7 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-/// 各カードに共通する枠（白背景、角丸、タップ波紋）
+/// 各カードに共通する枠（白背景、角丸、薄いドロップシャドウ、タップ波紋）
 class _CardShell extends StatelessWidget {
   final VoidCallback? onTap;
   final Widget child;
@@ -363,11 +495,13 @@ class _CardShell extends StatelessWidget {
       child: Material(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
+        elevation: 1.5,
+        shadowColor: Colors.black.withValues(alpha: 0.18),
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(8),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             child: child,
           ),
         ),
@@ -413,7 +547,7 @@ class _MemoTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 14,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
                 fontFamily: 'Hiragino Sans',
                 color: Colors.black87,
@@ -426,10 +560,10 @@ class _MemoTile extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 12,
+                fontSize: 10,
                 color: Colors.black54,
                 fontFamily: 'Hiragino Sans',
-                height: 1.35,
+                height: 1.3,
               ),
             ),
         ],
@@ -470,17 +604,17 @@ class _TodoListTile extends ConsumerWidget {
                   children: [
                     const Icon(
                       CupertinoIcons.bookmark_fill,
-                      size: 13,
+                      size: 11,
                       color: Colors.orange,
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 5),
                     Expanded(
                       child: Text(
                         list.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 14,
+                          fontSize: 11,
                           fontWeight: FontWeight.w700,
                           fontFamily: 'Hiragino Sans',
                           color: Colors.black87,
@@ -491,7 +625,7 @@ class _TodoListTile extends ConsumerWidget {
                 ),
               if (hasTitle && items.isNotEmpty) const _Divider(),
               for (var i = 0; i < items.length; i++) ...[
-                if (i > 0) const SizedBox(height: 4),
+                if (i > 0) const SizedBox(height: 3),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -499,7 +633,7 @@ class _TodoListTile extends ConsumerWidget {
                       items[i].isDone
                           ? Icons.check_box
                           : Icons.check_box_outline_blank,
-                      size: 14,
+                      size: 12,
                       color: Colors.green.shade600,
                     ),
                     const SizedBox(width: 4),
@@ -509,7 +643,7 @@ class _TodoListTile extends ConsumerWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 10,
                           fontFamily: 'Hiragino Sans',
                           color: items[i].isDone
                               ? Colors.black38
@@ -553,17 +687,17 @@ class _TodoItemTile extends StatelessWidget {
               children: [
                 const Icon(
                   CupertinoIcons.bookmark_fill,
-                  size: 13,
+                  size: 11,
                   color: Colors.orange,
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 5),
                 Expanded(
                   child: Text(
                     item.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                       fontFamily: 'Hiragino Sans',
                       color: item.isDone ? Colors.black45 : Colors.black87,
@@ -582,10 +716,10 @@ class _TodoItemTile extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 12,
+                fontSize: 10,
                 color: Colors.black54,
                 fontFamily: 'Hiragino Sans',
-                height: 1.35,
+                height: 1.3,
               ),
             ),
         ],
