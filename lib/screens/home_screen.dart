@@ -375,6 +375,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   int _focusInputTrigger = 0;
   // 入力エリアの最大化状態
   bool _isInputExpanded = false;
+  // 編集中メモの eventDate（カレンダー紐付け日）。MemoInputArea から callback で更新。
+  // 入力エリア下の日付テキスト表示に使用（白カードや機能バーの位置を変えずにオーバーレイ）。
+  DateTime? _currentMemoEventDate;
   // フォルダビューの全画面状態（引き上げ）
   bool _isMemoListExpanded = false;
   // フォルダ全画面からメモを開いた（戻る→フォルダ全画面に復帰）
@@ -532,6 +535,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         final idx = order.indexOf(_selectedTabKey);
         if (idx >= 0) _scrollTabBarToSelected(idx);
       });
+      // カレンダー以外のタブに切り替えたらカレンダーのシートを閉じる
+      if (_selectedTabKey != kCalendarTabKey) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          if (ref.read(calendarSelectedDayProvider) != null) {
+            ref.read(calendarSelectedDayProvider.notifier).state = null;
+          }
+        });
+      }
     }
 
     return Scaffold(
@@ -904,6 +916,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         if (hasInputFocus || hasSearchFocus) {
           FocusManager.instance.primaryFocus?.unfocus();
         }
+        // カレンダーのシート表示中は、機能バー / ナビバー / 余白タップで閉じる
+        if (ref.read(calendarSelectedDayProvider) != null) {
+          ref.read(calendarSelectedDayProvider.notifier).state = null;
+        }
       },
       child: child,
     );
@@ -1115,6 +1131,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           onDialogOpenChanged: (open) =>
               setState(() => _isDialogOverEditing = open),
           onContentChanged: () => setState(() {}),
+          // eventDate 変化を受けて入力エリア下の日付テキスト表示を更新。
+          // build 中に呼ばれることがある（ToDo編集画面から戻る等）ので
+          // postFrameCallback で安全に遅延させる。
+          onEventDateChanged: (date) {
+            if (_currentMemoEventDate == date) return;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                setState(() => _currentMemoEventDate = date);
+              }
+            });
+          },
         ),
       ),
     );
@@ -1126,40 +1153,80 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// 消しゴムなど編集用ボタンは入力エリアフッターに集約する。
   Widget _buildFunctionBarSection() {
     final isWide = Responsive.isWide(context);
-    return AnimatedContainer(
-      duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
-      curve: Curves.easeInOut,
-      height: isWide
-          ? null
-          : (_isInputExpanded ||
-                  _isMemoListExpanded ||
-                  _isInFolderSearch ||
-                  _isEditingCompact ||
-                  (_isSearchFocused && !_isSearchActive))
-              ? 0
-              : null,
-      // 選択モードのバーは Transform で上に食い込むので clip しない
-      clipBehavior: _isSelectMode ? Clip.none : Clip.hardEdge,
-      decoration: const BoxDecoration(),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Opacity(
-            opacity: _isSelectMode ? 0 : 1,
-            child: IgnorePointer(
-              ignoring: _isSelectMode,
-              child: _buildFunctionBar(),
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        AnimatedContainer(
+          duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
+          curve: Curves.easeInOut,
+          height: isWide
+              ? null
+              : (_isInputExpanded ||
+                      _isMemoListExpanded ||
+                      _isInFolderSearch ||
+                      _isEditingCompact ||
+                      (_isSearchFocused && !_isSearchActive))
+                  ? 0
+                  : null,
+          // 選択モードのバーは Transform で上に食い込むので clip しない
+          clipBehavior: _isSelectMode ? Clip.none : Clip.hardEdge,
+          decoration: const BoxDecoration(),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Opacity(
+                opacity: _isSelectMode ? 0 : 1,
+                child: IgnorePointer(
+                  ignoring: _isSelectMode,
+                  child: _buildFunctionBar(),
+                ),
+              ),
+              if (_isSelectMode)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  child: _buildSelectModeBar(),
+                ),
+            ],
+          ),
+        ),
+        // eventDate 表示（付与時のみ、機能バーの外側に重ねるので
+        // 機能バーが非表示（編集中等）でも独立に出る）。
+        // タップで unfocus してから日付ピッカー起動。
+        if (_currentMemoEventDate != null && !_isSelectMode)
+          Positioned(
+            right: 10,
+            top: 0,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+                _inputAreaKey.currentState?.openCalendarDatePicker();
+              },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.event_outlined,
+                    size: 11,
+                    color: Colors.orange.shade700,
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    '${_currentMemoEventDate!.year}/${_currentMemoEventDate!.month.toString().padLeft(2, '0')}/${_currentMemoEventDate!.day.toString().padLeft(2, '0')}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.orange.shade700,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Hiragino Sans',
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          if (_isSelectMode)
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              child: _buildSelectModeBar(),
-            ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -1531,7 +1598,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 .then((_) => FocusManager.instance.primaryFocus?.unfocus()),
             child: SizedBox(
               width: 44,
-              height: 44,
+              height: 28,
               child: Center(
                 child: Icon(Icons.bolt, size: 22,
                     color: Colors.orange.withValues(alpha: 0.7)),
@@ -1548,7 +1615,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 .then((_) => FocusManager.instance.primaryFocus?.unfocus()),
             child: SizedBox(
               width: 44,
-              height: 44,
+              height: 28,
               child: Center(
                 child: Icon(Icons.checklist, size: 22,
                     color: Colors.green.withValues(alpha: 0.8)),
@@ -1566,7 +1633,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               behavior: HitTestBehavior.opaque,
               child: const SizedBox(
                 width: 56,
-                height: 44,
+                height: 28,
                 child: Center(child: _ChevronIcon(up: true)),
               ),
             ),

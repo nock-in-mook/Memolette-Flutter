@@ -52,6 +52,9 @@ class MemoInputArea extends ConsumerStatefulWidget {
   final ValueChanged<bool>? onDialogOpenChanged;
   /// 本文/タイトル変更時の通知（機能バー・フロート消しゴムボタンの有効化再評価用）
   final VoidCallback? onContentChanged;
+  /// eventDate（カレンダー紐付け日）が変わったときの通知。
+  /// 親（home_screen）が機能バー右半分の日付ラベル表示に使う。
+  final ValueChanged<DateTime?>? onEventDateChanged;
 
   const MemoInputArea({
     super.key,
@@ -67,6 +70,7 @@ class MemoInputArea extends ConsumerStatefulWidget {
     this.onFocusChanged,
     this.onDialogOpenChanged,
     this.onContentChanged,
+    this.onEventDateChanged,
   });
 
   @override
@@ -87,6 +91,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   bool get isInputFocused => _isInputFocused;
   /// 外部から Undo を実行（⌘Z ショートカット用）
   Future<void> triggerUndo() => _undo();
+  /// 外部から日付ピッカーを開く（機能バーの日付ラベルタップ時用）
+  Future<void> openCalendarDatePicker() async {
+    final memoId = widget.editingMemoId ?? _selfCreatedMemoId;
+    if (memoId == null) return;
+    await _showCalendarDatePicker(memoId);
+  }
   /// 外部から Redo を実行（⇧⌘Z ショートカット用）
   Future<void> triggerRedo() => _redo();
   /// 外部からフォーカス中の選択範囲を wrapper でラップ（⌘B / ⌘I 用）。
@@ -578,6 +588,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       _showMarkdownPreview = false;
       _eventDate = memo.eventDate;
     });
+    widget.onEventDateChanged?.call(memo.eventDate);
   }
 
   void _clearInput({bool keepMarkdown = false}) {
@@ -606,6 +617,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       _isViewMode = false;
       _eventDate = null;
     });
+    widget.onEventDateChanged?.call(null);
   }
 
   // 閲覧モードを抜けて編集モードへ。本文タップ等から呼ばれる
@@ -917,56 +929,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   @override
   Widget build(BuildContext context) {
     final allTagsAsync = ref.watch(allTagsProvider);
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // メイン入力エリア（白カード）。日付スペース分（18pt）を引いた残りを取る。
-        Expanded(child: _buildMainArea(allTagsAsync)),
-        // 日付スペース（常時 18pt 確保。eventDate 有無でレイアウトが動かないように）
-        SizedBox(
-          height: 18,
-          child: _eventDate == null
-              ? null
-              : Padding(
-                  padding: const EdgeInsets.only(right: 14),
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () async {
-                        final memoId =
-                            widget.editingMemoId ?? _selfCreatedMemoId;
-                        if (memoId == null) return;
-                        await _showCalendarDatePicker(memoId);
-                      },
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.event_outlined,
-                            size: 11,
-                            color: Colors.grey.shade600,
-                          ),
-                          const SizedBox(width: 2),
-                          Text(
-                            '${_eventDate!.year}/${_eventDate!.month.toString().padLeft(2, '0')}/${_eventDate!.day.toString().padLeft(2, '0')}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey.shade600,
-                              fontWeight: FontWeight.w600,
-                              fontFamily: 'Hiragino Sans',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-        ),
-      ],
-    );
+    return _buildMainArea(allTagsAsync);
   }
 
   Widget _buildMainArea(AsyncValue<List<Tag>> allTagsAsync) {
@@ -1032,6 +995,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           ),
           // ルーレット台形タブは非表示（タグ欄タップで開く）
           // プレビューボタンはツールバー側に移動（MDトグル直後）
+          // 日付テキストオーバーレイは home_screen 側で _buildInputAreaSection に
+          // 重ねる方式（白カードの外、機能バー上の余白を使う）
         ],
       ),
     );
@@ -2545,10 +2510,16 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     if (result == null || !mounted) return;
     if (result.cleared) {
       await db.setMemoEventDate(memoId, null);
-      if (mounted) setState(() => _eventDate = null);
+      if (mounted) {
+        setState(() => _eventDate = null);
+        widget.onEventDateChanged?.call(null);
+      }
     } else if (result.date != null) {
       await db.setMemoEventDate(memoId, result.date!);
-      if (mounted) setState(() => _eventDate = result.date);
+      if (mounted) {
+        setState(() => _eventDate = result.date);
+        widget.onEventDateChanged?.call(result.date);
+      }
     }
   }
 
