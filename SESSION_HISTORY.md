@@ -754,3 +754,72 @@
 - Step 9: 仕上げ（メモカードの eventDate バッジ等）
 - main マージ → release タグ → TestFlight 配布
 - リリース前リグレッションチェック (`FOCUS_REGRESSION_CHECKLIST.md`)
+
+
+---
+## #30 (2026-04-27 〜 29) — Phase 15 Step 8 + UI 全面整備 + データ保護方針
+
+### Phase 15 Step 8（ToDo に日付欄）
+- TodoListScreen のリストヘッダ右にカレンダーアイコン、各アイテムのメモボタン隣に日付ボタン
+- 付与済みアイテムはタイトル下にバッジ
+- `_showListDatePicker` / `_showItemDatePicker` で既存 CRUD ヘルパに接続
+
+### 日付ピッカー UI 全面改修
+- ヘッダ刷新: 「日付を指定」+「（カレンダーに表示されます）」+ 左上 refresh、本日ボタン廃止
+- 月ブロック動的高さ（4-6 週）、ListView.itemExtent 撤廃、`_calcMonthHeight` で累積 offset
+- セル高 40 → 36、月見出しフォント縮小
+- ボタン 3 つ全部 OutlinedButton（グレー背景 + 色枠）
+- 全体高さ 0.85 → 0.74、`Align(bottomCenter)` で下端固定 + 上端下げ
+
+### カレンダー日付セルに帯表示（オレンジ=メモ / 緑=ToDo）
+- `DaySummary` 型 + `watchEventSummariesForRange` (UNION ALL、TodoList はタイトル空時に最初のアイテム名フォールバック)
+- `eventSummariesForRangeProvider` を月単位購読
+- 既存件数バッジ撤去 → 各セルに帯（横幅いっぱい、複数件は右端バッジ、テキスト clip）
+
+### DayItemsPanel 横 2 列化 + 円形フロート FAB
+- 左メモ / 中央仕切り / 右 ToDo（独立スクロール）
+- 各列下端右下に白円 FAB（アイコン+小さい+）
+- カード背景 `#F1F1F1`、`_CardShell` に elevation 1.5 ドロップシャドウ
+- カード内テキスト全体縮小（タイトル 14→11、本文 12→10）
+- 日付ヘッダのフォント・上下 padding を 80% に
+
+### メモ eventDate 表示の移譲（白カード縮みを根治）
+- `MemoInputArea` から build 内日付スペース撤去 → 白カード 316 のまま
+- `onEventDateChanged` callback で home_screen の `_currentMemoEventDate` を更新
+- `_buildFunctionBarSection` の Stack の **外側** に Positioned で日付テキスト → 編集中（機能バー height 0）でも表示
+- `addPostFrameCallback` で setState during build エラー回避
+- 色オレンジ、右端は白カード右枠線と一致（`right: 10`）
+
+### 機能バー縮小 + シート閉じる動作の拡張
+- `_buildFunctionBar` の SizedBox 縦幅 44 → 28（フォルダビューが上がる）
+- タブ切替 / 機能バー / ナビバータップでもカレンダーシートが閉じる（`_wrapUnfocusOnTap` の `onPointerDown` 内で `calendarSelectedDayProvider` を null 化）
+
+### ROADMAP 拡充
+- Phase 9 同期に **データ保護方針** セクション追加（多重防御策・絶対遵守・リリース不可ガード）
+- アイデア: Google Calendar 連携 / リマインダー / 自分宛メール / メッセージ機能
+- 備忘: 選択中フォルダタブの重なり順調整
+
+### memory に行動則を追加
+- `feedback_layout_immutable.md`: 既存レイアウトは新機能で 1px も動かさない、オーバーレイで実装
+- `feedback_no_monitor_for_build.md`: flutter run のビルド完了待ちに Monitor は使わない（チャット通知が溢れる）
+
+### 学び
+- `Stack(clipBehavior: Clip.none)` でも Positioned が bound 外なら **タップ判定が届かない**。タップが必要な要素は Stack の bound 内（or 親側で別 Stack 設置）
+- `setState during build` は callback 経由で発生しやすい。`addPostFrameCallback` で遅延が安全
+- /tmp/memolette-run の ios/ も rsync 同期対象。Podfile 古いと `objective_c.framework` が組み込まれず実行時例外
+
+### コミット & マージ
+- 4 コミットに分割: Phase 15 Step 8+ピッカー / カレンダー UI / home eventDate+機能バー+シート / ROADMAP
+- `feat/calendar-view` から `main` に fast-forward マージ済み、push 完了
+- 追加で「データ保護方針」コミットも main へ
+
+### 動作確認
+- iPhone 17 Pro シミュ中心
+- 実機 / iPad は未確認（次セッション以降）
+
+### 次セッション (#31)
+- ToDo の細かい直し（ユーザー予告）:
+  - 項目入力時の謎のインデント問題
+  - TODO 選択削除の実装
+  - TODO カードに背景色追加
+  - 全件削除の確認を 1 回にまとめる
