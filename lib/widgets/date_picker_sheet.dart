@@ -37,9 +37,16 @@ class _DatePickerSheet extends StatefulWidget {
 class _DatePickerSheetState extends State<_DatePickerSheet> {
   static const int _monthsBefore = 6;
   static const int _monthsAfter = 12;
-  // 月ブロックの固定高さ。ListView の itemExtent で強制し、スクロール offset を正確に。
-  // 内訳: 外側 padding 12 + ヘッダ 32 + 6 週 × 44 + 内側 vertical padding 24 ≒ 332
-  static const double _approxMonthHeight = 332;
+
+  /// 月ブロックの実際の高さを計算。
+  /// 内訳: 外側 padding 4*2 + 内側 vertical padding 8*2 + 月見出し 22 + weeksCount × 36
+  static double _calcMonthHeight(DateTime month) {
+    final firstDayWeekday = month.weekday % 7;
+    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+    final totalCells = firstDayWeekday + daysInMonth;
+    final weeksCount = (totalCells / 7).ceil();
+    return 8 + 16 + 22 + weeksCount * 36;
+  }
 
   late DateTime _selected; // initial or 当日
   late final DateTime _today;
@@ -67,16 +74,23 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
   }
 
   /// 選択中の月を viewport の中央に来るようスクロール。
+  /// 月ブロックの高さが月ごとに異なる（4-6週）ので、累積で offset を計算する。
   void _scrollToSelectedMonth({bool animate = true}) {
     if (!_scrollController.hasClients) return;
-    final monthsFromBase =
-        ((_selected.year - _today.year) * 12) +
-            (_selected.month - _today.month) +
-            _monthsBefore;
+    final monthsFromBase = ((_selected.year - _today.year) * 12) +
+        (_selected.month - _today.month) +
+        _monthsBefore;
+    // 選択月の上端までの累積高さ
+    double accumulated = 0;
+    for (int i = 0; i < monthsFromBase; i++) {
+      final m =
+          DateTime(_today.year, _today.month + i - _monthsBefore);
+      accumulated += _calcMonthHeight(m);
+    }
+    final selectedMonthHeight = _calcMonthHeight(_selected);
     final viewportH = _scrollController.position.viewportDimension;
     // 中央配置: 月ブロックの上端を viewport の (viewportH - 月高さ) / 2 に
-    final offset = (_approxMonthHeight * monthsFromBase -
-            (viewportH - _approxMonthHeight) / 2)
+    final offset = (accumulated - (viewportH - selectedMonthHeight) / 2)
         .clamp(0.0, _scrollController.position.maxScrollExtent);
     if (animate) {
       _scrollController.animateTo(
@@ -102,13 +116,16 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
       behavior: HitTestBehavior.opaque,
       onTap: () => Navigator.of(context).pop(),
       child: SafeArea(
-        child: Center(
+        // 下端固定で上端だけ下げる: bottomCenter + 高さ縮小
+        // (上下それぞれ約 1 列分 = 36pt 程度を削った高さ)
+        child: Align(
+          alignment: Alignment.bottomCenter,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 440),
             child: FractionallySizedBox(
-              heightFactor: 0.85,
+              heightFactor: 0.74,
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: GestureDetector(
                   // シート内タップは外側に伝搬させない
                   onTap: () {},
@@ -147,51 +164,70 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
             ? Colors.blue.shade400
             : Colors.black87;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // 左側スペーサーで「本日」ボタン分とバランス取り、本体は中央
-          const SizedBox(width: 56),
-          Expanded(
-            child: Center(
-              child: Text.rich(
-                TextSpan(
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    fontFamily: 'Hiragino Sans',
-                    color: Colors.black87,
+          // 上段: 左に refresh アイコン（本日へジャンプ） + 中央にタイトル
+          Row(
+            children: [
+              SizedBox(
+                width: 36,
+                height: 36,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _jumpToToday,
+                  child: Icon(
+                    Icons.refresh,
+                    size: 20,
+                    color: Colors.blue.shade400,
                   ),
+                ),
+              ),
+              const Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    TextSpan(
-                        text:
-                            '${_selected.year}年${_selected.month}月${_selected.day}日'),
-                    TextSpan(
-                        text: '($wd)',
-                        style: TextStyle(color: wdColor)),
+                    Text(
+                      '日付を指定',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black87,
+                        fontFamily: 'Hiragino Sans',
+                      ),
+                    ),
+                    SizedBox(height: 1),
+                    Text(
+                      '（カレンダーに表示されます）',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.black54,
+                        fontFamily: 'Hiragino Sans',
+                      ),
+                    ),
                   ],
                 ),
               ),
-            ),
+              const SizedBox(width: 36),
+            ],
           ),
-          // 「本日」へ飛ぶボタン（右端、小さめ）
-          SizedBox(
-            width: 56,
-            child: TextButton(
-              onPressed: _jumpToToday,
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(0, 32),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          const SizedBox(height: 6),
+          // 下段: 選択日プレビュー
+          Text.rich(
+            TextSpan(
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Hiragino Sans',
+                color: Colors.black87,
               ),
-              child: const Text(
-                '本日',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.blue,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+              children: [
+                TextSpan(
+                    text:
+                        '${_selected.year}年${_selected.month}月${_selected.day}日'),
+                TextSpan(text: '($wd)', style: TextStyle(color: wdColor)),
+              ],
             ),
           ),
         ],
@@ -238,7 +274,7 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
         controller: _scrollController,
         padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: months.length,
-        itemExtent: _approxMonthHeight,
+        // 月ごとに高さが違うので itemExtent は固定にしない
         itemBuilder: (ctx, i) => _MonthBlock(
           month: months[i],
           selected: _selected,
@@ -251,37 +287,61 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
   Widget _buildFooter() {
     final hasInitial = widget.initial != null;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
       child: Column(
         children: [
           // 上段: キャンセル / 決定
           Row(
             children: [
               Expanded(
-                child: TextButton(
+                child: OutlinedButton(
                   onPressed: () => Navigator.of(context).pop(),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: Colors.grey.shade200,
+                    side: BorderSide(
+                      color: Colors.grey.shade400,
+                      width: 0.8,
+                    ),
+                    foregroundColor: Colors.grey.shade700,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
                   child: const Text(
                     'キャンセル',
                     style: TextStyle(
-                      fontSize: 15,
-                      color: Colors.grey,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Hiragino Sans',
                     ),
                   ),
                 ),
               ),
+              const SizedBox(width: 10),
               Expanded(
-                child: TextButton(
+                child: OutlinedButton(
                   onPressed: () => Navigator.of(context).pop(
                     DatePickerResult(date: _selected),
                   ),
-                  style: TextButton.styleFrom(
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: Colors.grey.shade200,
+                    side: const BorderSide(
+                      color: Colors.orange,
+                      width: 0.8,
+                    ),
                     foregroundColor: Colors.orange,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                   child: const Text(
                     '決定',
                     style: TextStyle(
-                      fontSize: 15,
+                      fontSize: 14,
                       fontWeight: FontWeight.w800,
+                      fontFamily: 'Hiragino Sans',
                     ),
                   ),
                 ),
@@ -291,17 +351,32 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
           // 下段: カレンダーから消去（initial 指定 = 既に日付付与済み時のみ）
           if (hasInitial)
             Padding(
-              padding: const EdgeInsets.only(top: 2, bottom: 2),
-              child: TextButton(
-                onPressed: () => Navigator.of(context).pop(
-                  const DatePickerResult(cleared: true),
-                ),
-                child: const Text(
-                  'カレンダーから消去',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.red,
-                    fontWeight: FontWeight.w700,
+              padding: const EdgeInsets.only(top: 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(
+                    const DatePickerResult(cleared: true),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: Colors.grey.shade200,
+                    side: BorderSide(
+                      color: Colors.red.shade300,
+                      width: 0.8,
+                    ),
+                    foregroundColor: Colors.red,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    'カレンダーから消去',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Hiragino Sans',
+                    ),
                   ),
                 ),
               ),
@@ -331,18 +406,14 @@ class _MonthBlock extends StatelessWidget {
     final totalCells = firstDayWeekday + daysInMonth;
     final weeksCount = (totalCells / 7).ceil();
 
-    // 月ブロックの高さを固定にしてスクロール offset 計算を正確に。
-    // weeksCount が 4 / 5 でも常に 6 週分のスペースを取り、空 Row で埋める。
-    const fixedWeeks = 6;
+    // 月の実際の週数だけ表示（4 / 5 / 6）。空行を出さず月ごとに高さが変わる。
     final rows = <Widget>[];
-    for (int week = 0; week < fixedWeeks; week++) {
+    for (int week = 0; week < weeksCount; week++) {
       final cells = <Widget>[];
       for (int col = 0; col < 7; col++) {
         final cellIndex = week * 7 + col;
-        if (week >= weeksCount ||
-            cellIndex < firstDayWeekday ||
-            cellIndex >= totalCells) {
-          cells.add(const Expanded(child: SizedBox(height: 40)));
+        if (cellIndex < firstDayWeekday || cellIndex >= totalCells) {
+          cells.add(const Expanded(child: SizedBox(height: 36)));
           continue;
         }
         final day = cellIndex - firstDayWeekday + 1;
@@ -362,7 +433,7 @@ class _MonthBlock extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
@@ -375,16 +446,16 @@ class _MonthBlock extends StatelessWidget {
             ),
           ],
         ),
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
               child: Text(
                 '${month.year}年${month.month}月',
                 style: const TextStyle(
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.w800,
                   color: Colors.black87,
                   fontFamily: 'Hiragino Sans',
@@ -426,8 +497,8 @@ class _DayCell extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 40,
-        margin: const EdgeInsets.symmetric(vertical: 2),
+        height: 34,
+        margin: const EdgeInsets.symmetric(vertical: 1),
         decoration: BoxDecoration(
           color: isSelected ? Colors.orange : Colors.transparent,
           shape: BoxShape.circle,

@@ -10,6 +10,7 @@ import '../providers/database_provider.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../widgets/confirm_delete_dialog.dart';
+import '../widgets/date_picker_sheet.dart';
 import '../widgets/frosted_alert_dialog.dart';
 import '../widgets/new_tag_sheet.dart';
 import '../widgets/tag_dial_view.dart';
@@ -1185,7 +1186,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 1行目: ブックマーク + タイトル（フル幅） + 円グラフ
+                  // 1行目: ブックマーク + タイトル（フル幅） + 日付ボタン + 円グラフ
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
@@ -1193,6 +1194,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                           size: 20, color: Colors.orange),
                       const SizedBox(width: 8),
                       Expanded(child: _buildTitleEditable(list)),
+                      _buildDateButton(list),
                       if (total > 0) ...[
                         const SizedBox(width: 8),
                         _buildProgressDonut(rootItems, progress),
@@ -1253,6 +1255,74 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           },
         );
       },
+    );
+  }
+
+  /// リスト全体に日付を付与・編集・消去する。
+  /// 既存日付があれば initial として渡し、結果を DB に書き戻す。
+  Future<void> _showListDatePicker(TodoList list) async {
+    final db = ref.read(databaseProvider);
+    final result = await focusSafe<DatePickerResult?>(
+      context,
+      () => showCustomDatePickerSheet(context, initial: list.eventDate),
+    );
+    if (result == null || !mounted) return;
+    if (result.cleared) {
+      await db.setTodoListEventDate(list.id, null);
+    } else if (result.date != null) {
+      await db.setTodoListEventDate(list.id, result.date!);
+    }
+  }
+
+  /// 個別アイテムに日付を付与・編集・消去する。
+  Future<void> _showItemDatePicker(TodoItem item) async {
+    final db = ref.read(databaseProvider);
+    final result = await focusSafe<DatePickerResult?>(
+      context,
+      () => showCustomDatePickerSheet(context, initial: item.eventDate),
+    );
+    if (result == null || !mounted) return;
+    if (result.cleared) {
+      await db.setTodoItemEventDate(item.id, null);
+    } else if (result.date != null) {
+      await db.setTodoItemEventDate(item.id, result.date!);
+    }
+  }
+
+  /// リスト全体の日付ボタン。タイトル右に常時表示、タップでピッカー。
+  /// 付与済み時はオレンジ + YYYY/MM/DD テキスト、未付与はグレーのアイコンのみ。
+  Widget _buildDateButton(TodoList list) {
+    final eventDate = list.eventDate;
+    return GestureDetector(
+      onTap: () => _showListDatePicker(list),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              CupertinoIcons.calendar,
+              size: 18,
+              color: eventDate != null
+                  ? Colors.orange
+                  : Colors.black.withValues(alpha: 0.35),
+            ),
+            if (eventDate != null) ...[
+              const SizedBox(width: 3),
+              Text(
+                '${eventDate.year}/${eventDate.month.toString().padLeft(2, '0')}/${eventDate.day.toString().padLeft(2, '0')}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Hiragino Sans',
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -2420,6 +2490,30 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                 ),
               );
             }),
+          // 日付ボタン（メモボタン隣）
+          Builder(builder: (context) {
+            final hasDate = item.eventDate != null;
+            return GestureDetector(
+              onTap: () => _showItemDatePicker(item),
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.all(2),
+                child: SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: Center(
+                    child: Icon(
+                      CupertinoIcons.calendar,
+                      size: 16,
+                      color: hasDate
+                          ? Colors.orange
+                          : Colors.black.withValues(alpha: 0.35),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
           // シェブロン（右端、展開/折りたたみ）
           if (hasChild || canExpand)
             GestureDetector(
@@ -2450,6 +2544,8 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           // ドラッグハンドル（将来カスタム化予定）
         ],
       ),
+      // 日付バッジ（付与済み時のみ、タイトル位置に揃える）
+      if (item.eventDate != null) _buildItemDateBadge(item),
       // メモ展開エリア
       if (_memoEditingItemId == item.id || _memoViewItemId == item.id)
         _buildMemoArea(item, depth),
@@ -2461,6 +2557,39 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       ),
       ],
     ),
+    );
+  }
+
+  /// アイテム行のタイトル下に表示する日付バッジ。
+  /// 付与済み時のみ呼ばれる。チェックボックス幅分インデントしてタイトル位置に揃える。
+  Widget _buildItemDateBadge(TodoItem item) {
+    final eventDate = item.eventDate!;
+    return Padding(
+      padding: const EdgeInsets.only(left: 56, top: 0, bottom: 4, right: 4),
+      child: GestureDetector(
+        onTap: () => _showItemDatePicker(item),
+        behavior: HitTestBehavior.opaque,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.event_outlined,
+              size: 11,
+              color: Colors.grey.shade600,
+            ),
+            const SizedBox(width: 2),
+            Text(
+              '${eventDate.year}/${eventDate.month.toString().padLeft(2, '0')}/${eventDate.day.toString().padLeft(2, '0')}',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'Hiragino Sans',
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
