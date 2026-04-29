@@ -326,6 +326,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  /// 新規追加タブを画面内に確実に「全体」表示するためのスクロール。
+  /// _scrollTabBarToSelected と違って、右にスクロールする際に末尾の「+」
+  /// タブや実タブ幅の推定誤差ぶんの余白を確保する。
+  void _scrollTabBarToShow(int index) {
+    if (!_tabBarScrollController.hasClients) return;
+    const estimatedTabWidth = 80.0;
+    const trailingMargin = 100.0; // 末尾「+」タブ + 余白
+    final screenWidth = MediaQuery.of(context).size.width;
+    final maxOffset = _tabBarScrollController.position.maxScrollExtent;
+    final tabRight = (index + 1) * estimatedTabWidth + trailingMargin;
+    final target = (tabRight - screenWidth).clamp(0.0, maxOffset);
+    _tabBarScrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOut,
+    );
+  }
+
   // スワイプ・タブ切替時のスライドイン方向 (true: 右から、false: 左から)
   bool _slideFromRight = true;
   // タブ切替アニメ duration: フリック時のみ 280ms、タップ等は 0 (即時)
@@ -519,6 +537,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   /// 最後に自動スクロールしたタブキー（タブタップ時に選択が変わったら自動スクロールで追従）
   String? _lastScrolledTabKey;
+  /// 直前の build で観測した親タグ ID 集合（新規追加検出用）
+  Set<String>? _previousParentTagIds;
 
   @override
   Widget build(BuildContext context) {
@@ -527,14 +547,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     _tabOrder = _syncTabOrder(parentTags);
     final currentColor = _currentTabColor(parentTags);
 
-    // 選択タブが変わったら、build後に自動スクロールで画面内に持ってくる
+    // 親タグ新規追加検出: 前回 build から増えたタグがあれば、そのタブを
+    // 画面内に確実に表示する（フォルダタブ末尾の「+」だけでなく、ルーレット
+    // 経由の追加でも反応する）。
+    final currentIds = parentTags.map((t) => t.id).toSet();
+    if (_previousParentTagIds != null) {
+      final added = currentIds.difference(_previousParentTagIds!);
+      if (added.isNotEmpty) {
+        final newId = added.first;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final order = _tabOrder;
+          if (order == null) return;
+          final idx = order.indexOf(newId);
+          if (idx >= 0) _scrollTabBarToShow(idx);
+        });
+      }
+    }
+    _previousParentTagIds = currentIds;
+
+    // 選択タブが変わったら、build後に自動スクロールで画面内に持ってくる。
+    // 親タグ追加直後など、Riverpod の parentTags 反映が次フレーム以降になる
+    // ケースに対応するため、_lastScrolledTabKey の更新はスクロール成功時のみ。
+    // 反映前の build では idx < 0 で skip し、次の build で再試行する。
     if (_lastScrolledTabKey != _selectedTabKey) {
-      _lastScrolledTabKey = _selectedTabKey;
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         final order = _tabOrder;
         if (order == null) return;
         final idx = order.indexOf(_selectedTabKey);
-        if (idx >= 0) _scrollTabBarToSelected(idx);
+        if (idx >= 0) {
+          _lastScrolledTabKey = _selectedTabKey;
+          _scrollTabBarToSelected(idx);
+        }
       });
       // カレンダー以外のタブに切り替えたらカレンダーのシートを閉じる
       if (_selectedTabKey != kCalendarTabKey) {
