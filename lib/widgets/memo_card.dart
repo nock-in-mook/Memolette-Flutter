@@ -9,6 +9,7 @@ import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../screens/home_screen.dart' show GridSizeOption;
 import '../utils/image_storage.dart';
+import '../utils/markdown_detect.dart';
 import '../utils/responsive.dart';
 
 /// メモカード（グリッド表示用）
@@ -278,13 +279,42 @@ class MemoCard extends ConsumerWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            // 右端マーク: Pin / Lock / 画像（小さめ）
+            // 右端マーク: eventDate / MD / Pin / Lock / 画像（小さめ）
+            if (memo.eventDate != null) ...[
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.event_outlined,
+                size: 9,
+                color: Color(0xCCFF9500), // orange
+              ),
+            ],
+            if (containsMarkdown(memo.content)) ...[
+              const SizedBox(width: 4),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.purple.withValues(alpha: 0.75),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+                child: const Text(
+                  'MD',
+                  style: TextStyle(
+                    fontSize: 7,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    fontFamily: 'monospace',
+                    height: 1.0,
+                  ),
+                ),
+              ),
+            ],
             if (memo.isPinned) ...[
               const SizedBox(width: 4),
               const Icon(
                 Icons.push_pin,
                 size: 9,
-                color: Color(0x99FF9500),
+                color: Color(0xCC007AFF), // blue
               ),
             ],
             if (memo.isLocked) ...[
@@ -292,7 +322,7 @@ class MemoCard extends ConsumerWidget {
               const Icon(
                 Icons.lock,
                 size: 9,
-                color: Color(0x99FF9500),
+                color: Color(0xCCFF3B30), // red
               ),
             ],
             if (hasImages) ...[
@@ -300,7 +330,7 @@ class MemoCard extends ConsumerWidget {
               const Icon(
                 Icons.image_outlined,
                 size: 9,
-                color: Color(0x99FF9500),
+                color: Color(0xCCFF9500),
               ),
             ],
           ],
@@ -455,43 +485,8 @@ class MemoCard extends ConsumerWidget {
               ],
             ),
           ),
-          // 右上マーク: Pin / Lock / 画像バッジ
-          if (memo.isPinned || memo.isLocked || (hasImages && _thumbSize == 0))
-            Positioned(
-              top: 3,
-              right: 3,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (memo.isPinned)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 3),
-                      child: Icon(
-                        Icons.push_pin,
-                        size: 10,
-                        color: Color(0x99FF9500), // orange opacity 0.6
-                      ),
-                    ),
-                  if (memo.isLocked)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 3),
-                      child: Icon(
-                        Icons.lock,
-                        size: 10,
-                        color: Color(0x99FF9500),
-                      ),
-                    ),
-                  // サムネが出ない小さいグリッド用に、画像付きを示すアイコン
-                  if (hasImages && _thumbSize == 0)
-                    const Icon(
-                      Icons.image_outlined,
-                      size: 10,
-                      color: Color(0x99FF9500),
-                    ),
-                ],
-              ),
-            ),
+          // 上方向のステータスバッジは外側の Stack（子タグバッジと同じ層）に
+          // Positioned で出してカード上端からはみ出させる（タイトルと衝突しない）。
         ],
       ),
     ),
@@ -535,6 +530,65 @@ class MemoCard extends ConsumerWidget {
                           height: 1.0,
                         ),
                       ),
+                    ),
+                  ),
+                ),
+              // ステータスバッジ群（カード上端からはみ出して横並びで表示）
+              if (memo.eventDate != null ||
+                  containsMarkdown(memo.content) ||
+                  memo.isPinned ||
+                  memo.isLocked)
+                Positioned(
+                  right: 6,
+                  top: -5, // カードからはみ出させてタイトルと干渉しない
+                  child: IgnorePointer(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (memo.eventDate != null) ...[
+                          const Icon(
+                            Icons.event_outlined,
+                            size: 12,
+                            color: Color(0xE6FF9500), // orange
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        if (containsMarkdown(memo.content)) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 3, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.purple.withValues(alpha: 0.85),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                            child: const Text(
+                              'MD',
+                              style: TextStyle(
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                fontFamily: 'monospace',
+                                height: 1.0,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        if (memo.isPinned) ...[
+                          const Icon(
+                            Icons.push_pin,
+                            size: 12,
+                            color: Color(0xE6007AFF), // blue
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        if (memo.isLocked)
+                          const Icon(
+                            Icons.lock,
+                            size: 12,
+                            color: Color(0xE6FF3B30), // red
+                          ),
+                      ],
                     ),
                   ),
                 ),

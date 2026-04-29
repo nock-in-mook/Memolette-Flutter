@@ -5909,7 +5909,7 @@ class _MemoGridView extends StatelessWidget {
                 if (Responsive.isTablet(context)) {
                   return GridView.builder(
                     controller: scrollController,
-                    padding: EdgeInsets.only(bottom: bottomPad),
+                    padding: EdgeInsets.only(top: 14, bottom: bottomPad),
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
@@ -5923,7 +5923,7 @@ class _MemoGridView extends StatelessWidget {
                 }
                 return ListView.separated(
                   controller: scrollController,
-                  padding: const EdgeInsets.only(bottom: bottomPad),
+                  padding: const EdgeInsets.only(top: 14, bottom: bottomPad),
                   itemCount: merged.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 2),
                   itemBuilder: (_, i) => _buildGridItem(merged[i]),
@@ -5934,7 +5934,7 @@ class _MemoGridView extends StatelessWidget {
               if (gridSize == GridSizeOption.grid1flex) {
                 return ListView.separated(
                   controller: scrollController,
-                  padding: const EdgeInsets.only(bottom: bottomPad),
+                  padding: const EdgeInsets.only(top: 14, bottom: bottomPad),
                   itemCount: merged.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (_, i) => _buildGridItem(merged[i]),
@@ -5962,7 +5962,7 @@ class _MemoGridView extends StatelessWidget {
                       : gridSize.columns;
               return GridView.builder(
                 controller: scrollController,
-                padding: EdgeInsets.only(bottom: bottomPad),
+                padding: EdgeInsets.only(top: 14, bottom: bottomPad),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: columns,
                   crossAxisSpacing: 8,
