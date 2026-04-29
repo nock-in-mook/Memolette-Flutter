@@ -75,6 +75,16 @@ class _TagDialViewState extends State<TagDialView>
       if (idx >= 0 && !_parentDragging && !_parentSettling) {
         _parentRotation = idx * itemAngle;
       }
+    } else {
+      // 親タグなし: 0番目（「タグなし」）にアニメーションでリセット。
+      // これがないと、×ボタンでタグを消した直後にルーレットを再表示したとき、
+      // 親タグの回転位置だけ前回の選択を指したまま残って、子タグ列が
+      // 空（_parentTag=null による）になり矛盾した見た目になる。
+      if (!_parentDragging && !_parentSettling && _parentRotation != 0) {
+        _animateTo(0, isChild: false, notify: false,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOutCubic);
+      }
     }
     if (widget.selectedChildId != null) {
       final idx = widget.childOptions
