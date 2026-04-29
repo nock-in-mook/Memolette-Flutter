@@ -34,6 +34,11 @@
 - `_showClearAllConfirm` を削除、`_showClearAllDialog` の「全て削除する」から直接 `_clearAllItems`
 - 件数と注意書きは1回目で表示済み、2回目「本当によろしいですか？」は冗長
 
+### 選択モードのカード見た目を旧Row形式に戻す（home_screen.dart）
+- 4/24 (cecb85a) で Stack + Positioned(-6,-6) の「カード上に○を浮かべる」形式に変更されていたが、○がカードに重なって見切れる見た目だったため、旧 Row { Center(icon), SizedBox, Expanded(card) } 形式に戻した
+- 3 箇所（`_FrequentTabContent` / `_MemoGridView._buildCard` / `_buildTodoCard`）
+- チェックボックスの分カードが右にシフトする「縮む」旧スタイル
+
 ### ROADMAP 追記
 - 備忘: メモ選択削除のUI崩壊修正 / フォルダ最大時の選択モードUI最適化 / Phase 8（iPad）チェック項目化
 - Phase 14: アクセシビリティ「文字サイズ拡大」影響箇所の全洗い出し（重点箇所と方針付き）

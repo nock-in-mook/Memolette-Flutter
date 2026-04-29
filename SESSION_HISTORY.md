@@ -854,6 +854,11 @@
 - `_showClearAllConfirm` を削除し、`_showClearAllDialog` の「全て削除する」から直接 `_clearAllItems` を呼ぶ
 - 件数と注意書きは 1 回目のダイアログで既に表示しているため、2 回目の「本当によろしいですか？」は冗長
 
+### 選択モードのカード見た目を旧 Row 形式に戻す（home_screen）
+- 終了直前に発覚: 4/24 のコミット `cecb85a`「結合マーク位置とチェックボックス配置の調整」で Stack + Positioned(-6,-6) の「カード上に○を浮かべる」形式に変更されていた
+- ユーザーから「カードに重なって見切れている」「以前のように左にチェックボックス・カード右シフトに戻したい」要望
+- 3 箇所（`_FrequentTabContent` / `_MemoGridView._buildCard` / `_MemoGridView._buildTodoCard`）を旧 Row { Center(icon), SizedBox(6), Expanded(card) } 形式に復元
+
 ### ROADMAP 追記
 - 備忘: メモ選択削除のUI崩壊修正 / フォルダ最大時の選択モードUI最適化 / 上記を Phase 8（iPad）チェック項目にも追加
 - Phase 14（リリース準備）に「アクセシビリティ：文字サイズ拡大の影響箇所を全洗い出して塞ぐ」を追加（重点チェック箇所と方針付き）
