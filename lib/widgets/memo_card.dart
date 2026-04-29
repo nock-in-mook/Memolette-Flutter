@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -148,70 +149,81 @@ class MemoCard extends ConsumerWidget {
   }
 
   /// 本文右端に置く小サムネ（正方形）+ 2枚以上なら右上に件数バッジ
-  Widget _buildCornerThumb(List<MemoImage> images) {
+  Widget _buildCornerThumb(List<MemoImage> images, {double? size}) {
     final first = images.first;
     final count = images.length;
+    final s = size ?? _thumbSize;
     // バッジフォント: サムネが小さいときは控えめに
-    final badgeFont = _thumbSize <= 24 ? 8.0 : 10.0;
-    final badgePadH = _thumbSize <= 24 ? 3.0 : 4.0;
+    final badgeFont = s <= 24 ? 8.0 : 10.0;
+    final badgePadH = s <= 24 ? 3.0 : 4.0;
+    // 通常時（起動後）はキャッシュ済みなので同期でパス取得 → FutureBuilder を介さず
+    // 描画する。これでバッジ操作等の rebuild 時にサムネがチカチカするのを防ぐ。
+    final syncPath = ImageStorage.absolutePathSync(first.filePath);
+    if (syncPath != null) {
+      return _buildThumbContent(syncPath, count, s, badgeFont, badgePadH);
+    }
     return FutureBuilder<String>(
       future: ImageStorage.absolutePath(first.filePath),
       builder: (ctx, snap) {
-        final path = snap.data;
-        return SizedBox(
-          width: _thumbSize,
-          height: _thumbSize,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: Container(
-                  width: _thumbSize,
-                  height: _thumbSize,
-                  color: Colors.grey.shade200,
-                  child: path == null
-                      ? const SizedBox()
-                      : Image.file(
-                          File(path),
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
-                          // サムネは小サイズ。3x retina 想定で cacheWidth を
-                          // 実表示の3倍に制限し、フルデコードを避ける
-                          cacheWidth: (_thumbSize * 3).round(),
-                          errorBuilder: (_, _, _) => const Icon(
-                              Icons.broken_image,
-                              color: Colors.grey,
-                              size: 14),
-                        ),
+        return _buildThumbContent(snap.data, count, s, badgeFont, badgePadH);
+      },
+    );
+  }
+
+  Widget _buildThumbContent(
+      String? path, int count, double s, double badgeFont, double badgePadH) {
+    return SizedBox(
+      width: s,
+      height: s,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: Container(
+              width: s,
+              height: s,
+              color: Colors.grey.shade200,
+              child: path == null
+                  ? const SizedBox()
+                  : Image.file(
+                      File(path),
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      // サムネは小サイズ。3x retina 想定で cacheWidth を
+                      // 実表示の3倍に制限し、フルデコードを避ける
+                      cacheWidth: (s * 3).round(),
+                      errorBuilder: (_, _, _) => const Icon(
+                          Icons.broken_image,
+                          color: Colors.grey,
+                          size: 14),
+                    ),
+            ),
+          ),
+          if (count >= 2)
+            Positioned(
+              top: -4,
+              right: -4,
+              child: Container(
+                padding:
+                    EdgeInsets.symmetric(horizontal: badgePadH, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.75),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-              ),
-              if (count >= 2)
-                Positioned(
-                  top: -4,
-                  right: -4,
-                  child: Container(
-                    padding: EdgeInsets.symmetric(
-                        horizontal: badgePadH, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.75),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '$count',
-                      style: TextStyle(
-                        fontSize: badgeFont,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                        height: 1.0,
-                      ),
-                    ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: badgeFont,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    height: 1.0,
                   ),
                 ),
-            ],
-          ),
-        );
-      },
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -458,14 +470,31 @@ class MemoCard extends ConsumerWidget {
                           maxLines: maxLines,
                           overflow: TextOverflow.ellipsis,
                         );
-                        // 画像があるときは本文右端に小サムネ + カウントバッジ
+                        // 画像があるときは本文右端に小サムネ + カウントバッジ。
+                        // Row だと bodyText の行数が少ないとき crossAxisAlignment が
+                        // サムネ高さを潰してアスペクト比が崩れる（横長になる）ため、
+                        // Stack + Positioned に切替: 本文右側に padding で逃がし、
+                        // サムネは右上に絶対配置して正方形を維持する。
+                        // サムネサイズは利用可能高さで頭打ちにして、3x6 など縦に
+                        // 余裕がないグリッドでカードからはみ出さないようにする。
                         if (hasImages && _thumbSize > 0) {
-                          return Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          final actualThumb = constraints.maxHeight.isFinite
+                              ? math.min(_thumbSize, constraints.maxHeight)
+                              : _thumbSize;
+                          return Stack(
+                            clipBehavior: Clip.none,
                             children: [
-                              Expanded(child: bodyText),
-                              const SizedBox(width: 4),
-                              _buildCornerThumb(images),
+                              Padding(
+                                padding:
+                                    EdgeInsets.only(right: actualThumb + 4),
+                                child: bodyText,
+                              ),
+                              Positioned(
+                                top: 0,
+                                right: 0,
+                                child: _buildCornerThumb(images,
+                                    size: actualThumb),
+                              ),
                             ],
                           );
                         }

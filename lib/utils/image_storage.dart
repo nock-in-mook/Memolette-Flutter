@@ -62,6 +62,16 @@ class ImageStorage {
     return p.join(docs, relativePath);
   }
 
+  /// 同期版 absolutePath: Documents パスがキャッシュ済みなら即座に絶対パスを返す。
+  /// キャッシュ未取得なら null を返す（呼び出し側で Future 経由にフォールバック）。
+  /// FutureBuilder の "none → waiting → done" 遷移を踏まないので、
+  /// グリッド再描画時にサムネがチカチカ点滅するのを防げる。
+  static String? absolutePathSync(String relativePath) {
+    final docs = _docsPathCache;
+    if (docs == null) return null;
+    return p.join(docs, relativePath);
+  }
+
   /// 事前に Documents パスを温めておく（起動時に呼ぶ）
   /// 呼び忘れても absolutePath 内で初回のみ await されるので致命的ではない
   static Future<void> warmUp() => _ensureDocsPath();
