@@ -79,6 +79,8 @@ class TodoLists extends Table {
   BoolColumn get isMerged => boolean().withDefault(const Constant(false))();
   // カレンダー紐付け日（任意）。リスト全体の日付指定
   DateTimeColumn get eventDate => dateTime().nullable()();
+  // カード背景色インデックス（0=なし/白、1-31=MemoBgColors パレット）
+  IntColumn get bgColorIndex => integer().withDefault(const Constant(0))();
 
   @override
   Set<Column> get primaryKey => {id};

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' hide Column;
 
+import '../constants/memo_bg_colors.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/keyboard_done_bar.dart';
@@ -12,6 +13,7 @@ import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
+import '../widgets/bg_color_picker_dialog.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/trapezoid_tab_shape.dart';
 import '../widgets/wide_todo_pane.dart';
@@ -104,6 +106,13 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
     }
     if (!mounted) return;
     _exitSelectDeleteMode();
+  }
+
+  /// ToDoカード背景色（チェックボックス可読性のため、メモカードより薄め）
+  Color _cardBgColor(int bgColorIndex) {
+    if (bgColorIndex == 0) return Colors.white;
+    final base = MemoBgColors.getColor(bgColorIndex);
+    return Color.lerp(base, Colors.white, 0.4) ?? base;
   }
 
   /// 選択削除モード時の上部バナー（1行・TODOタブに重ねて表示）
@@ -489,7 +498,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
                     Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: _cardBgColor(list.bgColorIndex),
                     borderRadius: BorderRadius.circular(10),
                     boxShadow: [
                       BoxShadow(
@@ -1286,6 +1295,12 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
                                 Navigator.of(sheetCtx).pop('pin'),
                           ),
                           _TodoMenuActionRow(
+                            icon: Icons.palette_outlined,
+                            label: '背景色',
+                            onTap: () =>
+                                Navigator.of(sheetCtx).pop('bgColor'),
+                          ),
+                          _TodoMenuActionRow(
                             icon: list.isLocked
                                 ? Icons.lock_open
                                 : Icons.lock_outline,
@@ -1362,6 +1377,20 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
           isPinned: Value(!list.isPinned),
           updatedAt: Value(DateTime.now()),
         ));
+        break;
+      case 'bgColor':
+        if (!mounted) return;
+        final selected = await focusSafe(
+          context,
+          () => showDialog<int>(
+            context: context,
+            builder: (_) =>
+                BgColorPickerDialog(current: list.bgColorIndex),
+          ),
+        );
+        if (selected != null && mounted) {
+          await db.setTodoListBgColor(list.id, selected);
+        }
         break;
       case 'lock':
         final wasLocked = list.isLocked;

@@ -1933,6 +1933,18 @@ class $TodoListsTable extends TodoLists
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _bgColorIndexMeta = const VerificationMeta(
+    'bgColorIndex',
+  );
+  @override
+  late final GeneratedColumn<int> bgColorIndex = GeneratedColumn<int>(
+    'bg_color_index',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1944,6 +1956,7 @@ class $TodoListsTable extends TodoLists
     updatedAt,
     isMerged,
     eventDate,
+    bgColorIndex,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2013,6 +2026,15 @@ class $TodoListsTable extends TodoLists
         eventDate.isAcceptableOrUnknown(data['event_date']!, _eventDateMeta),
       );
     }
+    if (data.containsKey('bg_color_index')) {
+      context.handle(
+        _bgColorIndexMeta,
+        bgColorIndex.isAcceptableOrUnknown(
+          data['bg_color_index']!,
+          _bgColorIndexMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2058,6 +2080,10 @@ class $TodoListsTable extends TodoLists
         DriftSqlType.dateTime,
         data['${effectivePrefix}event_date'],
       ),
+      bgColorIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}bg_color_index'],
+      )!,
     );
   }
 
@@ -2077,6 +2103,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
   final DateTime updatedAt;
   final bool isMerged;
   final DateTime? eventDate;
+  final int bgColorIndex;
   const TodoList({
     required this.id,
     required this.title,
@@ -2087,6 +2114,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
     required this.updatedAt,
     required this.isMerged,
     this.eventDate,
+    required this.bgColorIndex,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2102,6 +2130,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
     if (!nullToAbsent || eventDate != null) {
       map['event_date'] = Variable<DateTime>(eventDate);
     }
+    map['bg_color_index'] = Variable<int>(bgColorIndex);
     return map;
   }
 
@@ -2118,6 +2147,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
       eventDate: eventDate == null && nullToAbsent
           ? const Value.absent()
           : Value(eventDate),
+      bgColorIndex: Value(bgColorIndex),
     );
   }
 
@@ -2136,6 +2166,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       isMerged: serializer.fromJson<bool>(json['isMerged']),
       eventDate: serializer.fromJson<DateTime?>(json['eventDate']),
+      bgColorIndex: serializer.fromJson<int>(json['bgColorIndex']),
     );
   }
   @override
@@ -2151,6 +2182,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'isMerged': serializer.toJson<bool>(isMerged),
       'eventDate': serializer.toJson<DateTime?>(eventDate),
+      'bgColorIndex': serializer.toJson<int>(bgColorIndex),
     };
   }
 
@@ -2164,6 +2196,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
     DateTime? updatedAt,
     bool? isMerged,
     Value<DateTime?> eventDate = const Value.absent(),
+    int? bgColorIndex,
   }) => TodoList(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -2174,6 +2207,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
     updatedAt: updatedAt ?? this.updatedAt,
     isMerged: isMerged ?? this.isMerged,
     eventDate: eventDate.present ? eventDate.value : this.eventDate,
+    bgColorIndex: bgColorIndex ?? this.bgColorIndex,
   );
   TodoList copyWithCompanion(TodoListsCompanion data) {
     return TodoList(
@@ -2188,6 +2222,9 @@ class TodoList extends DataClass implements Insertable<TodoList> {
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       isMerged: data.isMerged.present ? data.isMerged.value : this.isMerged,
       eventDate: data.eventDate.present ? data.eventDate.value : this.eventDate,
+      bgColorIndex: data.bgColorIndex.present
+          ? data.bgColorIndex.value
+          : this.bgColorIndex,
     );
   }
 
@@ -2202,7 +2239,8 @@ class TodoList extends DataClass implements Insertable<TodoList> {
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('isMerged: $isMerged, ')
-          ..write('eventDate: $eventDate')
+          ..write('eventDate: $eventDate, ')
+          ..write('bgColorIndex: $bgColorIndex')
           ..write(')'))
         .toString();
   }
@@ -2218,6 +2256,7 @@ class TodoList extends DataClass implements Insertable<TodoList> {
     updatedAt,
     isMerged,
     eventDate,
+    bgColorIndex,
   );
   @override
   bool operator ==(Object other) =>
@@ -2231,7 +2270,8 @@ class TodoList extends DataClass implements Insertable<TodoList> {
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.isMerged == this.isMerged &&
-          other.eventDate == this.eventDate);
+          other.eventDate == this.eventDate &&
+          other.bgColorIndex == this.bgColorIndex);
 }
 
 class TodoListsCompanion extends UpdateCompanion<TodoList> {
@@ -2244,6 +2284,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
   final Value<DateTime> updatedAt;
   final Value<bool> isMerged;
   final Value<DateTime?> eventDate;
+  final Value<int> bgColorIndex;
   final Value<int> rowid;
   const TodoListsCompanion({
     this.id = const Value.absent(),
@@ -2255,6 +2296,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
     this.updatedAt = const Value.absent(),
     this.isMerged = const Value.absent(),
     this.eventDate = const Value.absent(),
+    this.bgColorIndex = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TodoListsCompanion.insert({
@@ -2267,6 +2309,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
     this.updatedAt = const Value.absent(),
     this.isMerged = const Value.absent(),
     this.eventDate = const Value.absent(),
+    this.bgColorIndex = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id);
   static Insertable<TodoList> custom({
@@ -2279,6 +2322,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
     Expression<DateTime>? updatedAt,
     Expression<bool>? isMerged,
     Expression<DateTime>? eventDate,
+    Expression<int>? bgColorIndex,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2291,6 +2335,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
       if (updatedAt != null) 'updated_at': updatedAt,
       if (isMerged != null) 'is_merged': isMerged,
       if (eventDate != null) 'event_date': eventDate,
+      if (bgColorIndex != null) 'bg_color_index': bgColorIndex,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2305,6 +2350,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
     Value<DateTime>? updatedAt,
     Value<bool>? isMerged,
     Value<DateTime?>? eventDate,
+    Value<int>? bgColorIndex,
     Value<int>? rowid,
   }) {
     return TodoListsCompanion(
@@ -2317,6 +2363,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
       updatedAt: updatedAt ?? this.updatedAt,
       isMerged: isMerged ?? this.isMerged,
       eventDate: eventDate ?? this.eventDate,
+      bgColorIndex: bgColorIndex ?? this.bgColorIndex,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2351,6 +2398,9 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
     if (eventDate.present) {
       map['event_date'] = Variable<DateTime>(eventDate.value);
     }
+    if (bgColorIndex.present) {
+      map['bg_color_index'] = Variable<int>(bgColorIndex.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2369,6 +2419,7 @@ class TodoListsCompanion extends UpdateCompanion<TodoList> {
           ..write('updatedAt: $updatedAt, ')
           ..write('isMerged: $isMerged, ')
           ..write('eventDate: $eventDate, ')
+          ..write('bgColorIndex: $bgColorIndex, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -5210,6 +5261,7 @@ typedef $$TodoListsTableCreateCompanionBuilder =
       Value<DateTime> updatedAt,
       Value<bool> isMerged,
       Value<DateTime?> eventDate,
+      Value<int> bgColorIndex,
       Value<int> rowid,
     });
 typedef $$TodoListsTableUpdateCompanionBuilder =
@@ -5223,6 +5275,7 @@ typedef $$TodoListsTableUpdateCompanionBuilder =
       Value<DateTime> updatedAt,
       Value<bool> isMerged,
       Value<DateTime?> eventDate,
+      Value<int> bgColorIndex,
       Value<int> rowid,
     });
 
@@ -5306,6 +5359,11 @@ class $$TodoListsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get bgColorIndex => $composableBuilder(
+    column: $table.bgColorIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> todoListTagsRefs(
     Expression<bool> Function($$TodoListTagsTableFilterComposer f) f,
   ) {
@@ -5385,6 +5443,11 @@ class $$TodoListsTableOrderingComposer
     column: $table.eventDate,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get bgColorIndex => $composableBuilder(
+    column: $table.bgColorIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TodoListsTableAnnotationComposer
@@ -5424,6 +5487,11 @@ class $$TodoListsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get eventDate =>
       $composableBuilder(column: $table.eventDate, builder: (column) => column);
+
+  GeneratedColumn<int> get bgColorIndex => $composableBuilder(
+    column: $table.bgColorIndex,
+    builder: (column) => column,
+  );
 
   Expression<T> todoListTagsRefs<T extends Object>(
     Expression<T> Function($$TodoListTagsTableAnnotationComposer a) f,
@@ -5488,6 +5556,7 @@ class $$TodoListsTableTableManager
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<bool> isMerged = const Value.absent(),
                 Value<DateTime?> eventDate = const Value.absent(),
+                Value<int> bgColorIndex = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TodoListsCompanion(
                 id: id,
@@ -5499,6 +5568,7 @@ class $$TodoListsTableTableManager
                 updatedAt: updatedAt,
                 isMerged: isMerged,
                 eventDate: eventDate,
+                bgColorIndex: bgColorIndex,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -5512,6 +5582,7 @@ class $$TodoListsTableTableManager
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<bool> isMerged = const Value.absent(),
                 Value<DateTime?> eventDate = const Value.absent(),
+                Value<int> bgColorIndex = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TodoListsCompanion.insert(
                 id: id,
@@ -5523,6 +5594,7 @@ class $$TodoListsTableTableManager
                 updatedAt: updatedAt,
                 isMerged: isMerged,
                 eventDate: eventDate,
+                bgColorIndex: bgColorIndex,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

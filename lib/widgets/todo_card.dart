@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../constants/memo_bg_colors.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../screens/home_screen.dart' show GridSizeOption;
@@ -60,6 +61,13 @@ class TodoCard extends ConsumerWidget {
   // しおりアイコンはタイトル font に合わせて 2px 程度小さく
   double get _bookmarkSize => _titleFont - 2;
 
+  /// カード背景色（チェックボックス可読性のため、メモカードよりさらに白に寄せて薄く）
+  Color _bgColor() {
+    if (todoList.bgColorIndex == 0) return Colors.white;
+    final base = MemoBgColors.getColor(todoList.bgColorIndex);
+    return Color.lerp(base, Colors.white, 0.4) ?? base;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final db = ref.read(databaseProvider);
@@ -93,7 +101,7 @@ class TodoCard extends ConsumerWidget {
             decoration: BoxDecoration(
               color: isHighlighted
                   ? Colors.blue.withValues(alpha: 0.08)
-                  : Colors.white,
+                  : _bgColor(),
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(

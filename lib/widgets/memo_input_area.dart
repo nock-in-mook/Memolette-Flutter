@@ -20,6 +20,7 @@ import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
+import 'bg_color_picker_dialog.dart';
 import 'block_editor.dart';
 import 'confirm_delete_dialog.dart';
 import 'date_picker_sheet.dart';
@@ -2532,7 +2533,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
         context,
         () => showDialog<int>(
           context: context,
-          builder: (ctx) => _BgColorPickerDialog(current: _bgColorIndex),
+          builder: (ctx) => BgColorPickerDialog(current: _bgColorIndex),
         ),
       );
       if (selected == null || !mounted) return;
@@ -2577,176 +2578,6 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
 // 消しゴムグリフ: CustomPainterで斜めの長方形を描く
 // (Material Icons に eraser がないため自前)
-/// 背景色選択ダイアログ
-/// 8×4 パレット（31色 + 色なし）/ 色名 / サンプルパネル / 決定・キャンセル
-class _BgColorPickerDialog extends StatefulWidget {
-  final int current;
-  const _BgColorPickerDialog({required this.current});
-
-  @override
-  State<_BgColorPickerDialog> createState() => _BgColorPickerDialogState();
-}
-
-class _BgColorPickerDialogState extends State<_BgColorPickerDialog> {
-  late int _selected;
-
-  @override
-  void initState() {
-    super.initState();
-    _selected = widget.current;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final sampleBg =
-        _selected == 0 ? Colors.white : MemoBgColors.getColor(_selected);
-    final name = MemoBgColors.getName(_selected);
-
-    return Dialog(
-      backgroundColor: Colors.white,
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // タイトル（中央寄せ）
-            const Center(
-              child: Text('背景色',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold)),
-            ),
-            const SizedBox(height: 16),
-            // パレット左上に色名
-            Row(
-              children: [
-                Text(
-                  name,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const Spacer(),
-              ],
-            ),
-            const SizedBox(height: 4),
-            // パレット (8列 × 4行 = 32マス、末尾が「色なし」)
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: 32,
-              gridDelegate:
-                  const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 8,
-                mainAxisSpacing: 6,
-                crossAxisSpacing: 6,
-                mainAxisExtent: 30,
-              ),
-              itemBuilder: (_, i) {
-                // 最後のマスは「色なし」（index 0）
-                final isNone = i == MemoBgColors.count;
-                final index = isNone ? 0 : i + 1;
-                final isSelected = index == _selected;
-                return GestureDetector(
-                  onTap: () => setState(() => _selected = index),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: isNone
-                          ? Colors.white
-                          : MemoBgColors.getColor(index),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: isSelected
-                            ? Colors.black
-                            : (isNone
-                                ? Colors.grey.shade300
-                                : Colors.transparent),
-                        width: isSelected ? 2 : 1,
-                      ),
-                    ),
-                    child: isNone
-                        ? Icon(Icons.block,
-                            size: 14, color: Colors.grey[500])
-                        : null,
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 20),
-            // サンプルパネル（シンプルに「サンプル」だけ）
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 22),
-              decoration: BoxDecoration(
-                color: sampleBg,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                    color: Colors.grey.shade300, width: 0.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 2,
-                    offset: const Offset(0, 1),
-                  ),
-                ],
-              ),
-              child: const Center(
-                child: Text(
-                  'サンプル',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            // 決定・キャンセル（横長均等）
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      foregroundColor: Colors.grey.shade700,
-                      backgroundColor: Colors.grey.shade100,
-                    ),
-                    child: const Text('キャンセル'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(context, _selected),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      foregroundColor: Colors.white,
-                      backgroundColor: const Color(0xFF007AFF),
-                    ),
-                    child: const Text('決定',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class EraserGlyph extends StatelessWidget {
   /// 線の色。省略時は白（丸い色背景の上に置く前提）。
   /// フッター等で背景なしに置く場合は明示的にグレー系を渡すこと。

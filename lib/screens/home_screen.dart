@@ -17,6 +17,7 @@ import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
+import '../widgets/bg_color_picker_dialog.dart';
 import '../widgets/calendar_view.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/memo_card.dart';
@@ -3962,6 +3963,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                 Navigator.of(sheetCtx).pop('copy'),
                           ),
                           _MenuActionRow(
+                            icon: Icons.palette_outlined,
+                            label: '背景色',
+                            onTap: () =>
+                                Navigator.of(sheetCtx).pop('bgColor'),
+                          ),
+                          _MenuActionRow(
                             icon: memo.isLocked
                                 ? Icons.lock_open
                                 : Icons.lock_outline,
@@ -4054,6 +4061,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         break;
       case 'copy':
         await Clipboard.setData(ClipboardData(text: memo.content));
+        break;
+      case 'bgColor':
+        if (!mounted) return;
+        final selected = await focusSafe(
+          context,
+          () => showDialog<int>(
+            context: context,
+            builder: (_) => BgColorPickerDialog(current: memo.bgColorIndex),
+          ),
+        );
+        if (selected != null && mounted) {
+          await db.updateMemo(id: memo.id, bgColorIndex: selected);
+          if (mounted) _flashItem(memo.id);
+        }
         break;
       case 'lock':
         final wasLocked = memo.isLocked;
@@ -4159,6 +4180,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                 Navigator.of(sheetCtx).pop('pin'),
                           ),
                           _MenuActionRow(
+                            icon: Icons.palette_outlined,
+                            label: '背景色',
+                            onTap: () =>
+                                Navigator.of(sheetCtx).pop('bgColor'),
+                          ),
+                          _MenuActionRow(
                             icon: list.isLocked
                                 ? Icons.lock_open
                                 : Icons.lock_outline,
@@ -4236,6 +4263,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           isPinned: Value(!list.isPinned),
           updatedAt: Value(DateTime.now()),
         ));
+        break;
+      case 'bgColor':
+        if (!mounted) return;
+        final selected = await focusSafe(
+          context,
+          () => showDialog<int>(
+            context: context,
+            builder: (_) =>
+                BgColorPickerDialog(current: list.bgColorIndex),
+          ),
+        );
+        if (selected != null && mounted) {
+          await db.setTodoListBgColor(list.id, selected);
+        }
         break;
       case 'lock':
         final wasLocked = list.isLocked;

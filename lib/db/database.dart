@@ -31,7 +31,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -57,6 +57,10 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               'ALTER TABLE todo_items RENAME COLUMN due_date TO event_date',
             );
+          }
+          if (from < 6) {
+            // TodoLists カード背景色（メモと同じ MemoBgColors パレット使用）
+            await m.addColumn(todoLists, todoLists.bgColorIndex);
           }
         },
       );
@@ -816,6 +820,8 @@ class AppDatabase extends _$AppDatabase {
             isLocked: row.read<bool>('is_locked'),
             manualSortOrder: row.read<int>('manual_sort_order'),
             isMerged: row.read<bool>('is_merged'),
+            eventDate: row.readNullable<DateTime>('event_date'),
+            bgColorIndex: row.read<int>('bg_color_index'),
           );
         }).toList());
   }
@@ -837,6 +843,8 @@ class AppDatabase extends _$AppDatabase {
             isLocked: row.read<bool>('is_locked'),
             manualSortOrder: row.read<int>('manual_sort_order'),
             isMerged: row.read<bool>('is_merged'),
+            eventDate: row.readNullable<DateTime>('event_date'),
+            bgColorIndex: row.read<int>('bg_color_index'),
           );
         }).toList());
   }
@@ -902,6 +910,16 @@ class AppDatabase extends _$AppDatabase {
     return (update(todoLists)..where((t) => t.id.equals(id))).write(
       TodoListsCompanion(
         eventDate: Value(eventDate),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  /// ToDoリストの背景色を設定（0=色なし、1-31=MemoBgColors パレット）
+  Future<void> setTodoListBgColor(String id, int bgColorIndex) {
+    return (update(todoLists)..where((t) => t.id.equals(id))).write(
+      TodoListsCompanion(
+        bgColorIndex: Value(bgColorIndex),
         updatedAt: Value(DateTime.now()),
       ),
     );
@@ -1111,6 +1129,7 @@ class AppDatabase extends _$AppDatabase {
             manualSortOrder: row.read<int>('manual_sort_order'),
             isMerged: row.read<bool>('is_merged'),
             eventDate: row.readNullable<DateTime>('event_date'),
+            bgColorIndex: row.read<int>('bg_color_index'),
           );
         }).toList());
   }
