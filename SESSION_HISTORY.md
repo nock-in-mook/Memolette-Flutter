@@ -823,3 +823,54 @@
   - TODO 選択削除の実装
   - TODO カードに背景色追加
   - 全件削除の確認を 1 回にまとめる
+
+---
+## #31 (2026-04-29) — ToDo 細部修正 4 本立て（インデント / 選択削除 / 背景色 / 全削除確認）
+
+### ToDo 編集画面のインデント問題と保存後のチラつき解消
+- `_EditingItemField` の `contentPadding` を `horizontal: 10` → `EdgeInsets.zero` に揃え、編集中だけ右にずれる現象を解消
+- 保存直後に DB ストリームが古い空文字を返す瞬間「（空のアイテム）」が一瞬出る問題を、楽観的タイトル `_optimisticTitles: Map<String, String>` で吸収
+  - `_commitEditWithText` 内で書き込み完了後にエントリ追加、DB ストリームが追いつくフレームで `addPostFrameCallback` 経由で破棄
+
+### TODO フォルダに選択削除モード追加（メモ混在フォルダと同等の体験）
+- 緑エリア左下に円形フロート削除ボタン（メモ一覧フッターのゴミ箱と同じスタイル: `_capsuleDeco` 相当）
+- 選択削除モード時のヘッダー: [キャンセル] / N件 選択中 / [削除]（ボタンに件数なし、中央テキストに件数）
+- TODO タブの中央付近に 1 行ポップアップ「削除するToDoを選択してください」（白背景・赤枠 2pt・影、Stack `clipBehavior: Clip.none` で TODO タブの 40pt 領域から下にはみ出させて配置、`top: 5`）
+- カードタップで選択トグル、未選択カードは半透明（既存の結合モードと同じ overlay）、選択中カードは左上に赤チェックバッジ
+- ロック中リストは選択不可（トースト警告）
+- 削除確認ダイアログを 1 行構成に統一: タイトル「選択したToDoを削除」/ メッセージ「N件のToDoを削除します。よろしいですか？」（件数の重複を排除）
+- メモ混在フォルダ側のダイアログも同形式（「選択したメモを削除」/「N件のメモを削除します。よろしいですか？」）に揃えた
+
+### メモ・ToDoカードの長押しメニューに「背景色」を追加
+- DB Migration v5 → v6: `TodoLists` テーブルに `bgColorIndex` (int, default 0) を追加
+- `setTodoListBgColor(id, index)` を `database.dart` に新設
+- `_BgColorPickerDialog` を `lib/widgets/bg_color_picker_dialog.dart` に切り出して `BgColorPickerDialog` として public 化（メモ・ToDo 両方から利用）
+- メモ長押しメニュー（`home_screen._showMemoActions`）に「背景色」項目追加（パレットアイコン）
+- ToDoリスト長押しメニュー（`home_screen._showTodoActions` / `todo_lists_screen._showListActions`）にも同項目を追加
+- `TodoCard` と `todo_lists_screen` のカード描画で `bgColorIndex` を反映
+- ToDoカードはチェックボックス可読性のため、メモカードよりさらに白に40%寄せて薄める: `Color.lerp(base, Colors.white, 0.4)`
+
+### 項目全件削除の確認を 1 回に統合（todo_list_screen）
+- `_showClearAllConfirm` を削除し、`_showClearAllDialog` の「全て削除する」から直接 `_clearAllItems` を呼ぶ
+- 件数と注意書きは 1 回目のダイアログで既に表示しているため、2 回目の「本当によろしいですか？」は冗長
+
+### ROADMAP 追記
+- 備忘: メモ選択削除のUI崩壊修正 / フォルダ最大時の選択モードUI最適化 / 上記を Phase 8（iPad）チェック項目にも追加
+- Phase 14（リリース準備）に「アクセシビリティ：文字サイズ拡大の影響箇所を全洗い出して塞ぐ」を追加（重点チェック箇所と方針付き）
+
+### 開発フロー確立
+- Google Drive 上でビルドできない問題は `/tmp/memolette-run` 経由で回避（既存運用）
+- ホットリロード: FIFO `/tmp/flutter_pipe` を作って flutter run の stdin に流す
+  - keeper: `nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe' &` で writer 端を常駐保持
+  - リロード: `echo r > /tmp/flutter_pipe`
+  - rsync 後にこれを送ると 0.5 秒程度で UI に反映できる（デバッグビルド前提）
+- メモリに `feedback_no_monitor_for_build.md` 既存ルール: ビルド完了待ちで Monitor を使わない（チャット通知が溢れる）
+
+### 次セッション (#32) 候補
+- 実機 / iPad での今回変更の動作確認
+- ROADMAP 備忘の整理:
+  - メモ選択削除のUI崩壊修正
+  - フォルダ最大時の選択モードUI最適化
+- Phase 15 Step 9: メモカードに eventDate バッジ表示
+- Undo/Redo スナップショットへの eventDate 統合
+- Phase 14 のアクセシビリティ文字サイズ対応（リリース前タスク）
