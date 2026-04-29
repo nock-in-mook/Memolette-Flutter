@@ -739,7 +739,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                   GestureDetector(
                     onTap: () {
                       Navigator.of(context).pop();
-                      _showClearAllConfirm();
+                      _clearAllItems();
                     },
                     child: Container(
                       width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10),
@@ -749,73 +749,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                       alignment: Alignment.center,
                       child: const Text('全て削除する', style: TextStyle(fontSize: 14,
                         fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans', color: Colors.red)),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
-                    child: Container(
-                      width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10),
-                      alignment: Alignment.center,
-                      child: Text('キャンセル', style: TextStyle(fontSize: 14,
-                        fontWeight: FontWeight.w500, fontFamily: 'Hiragino Sans',
-                        color: Colors.black.withValues(alpha: 0.5))),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-        transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
-      ),
-    );
-  }
-
-  void _showClearAllConfirm() {
-    focusSafe(
-      context,
-      () => showGeneralDialog(
-      context: context,
-      barrierDismissible: true, barrierLabel: '',
-      barrierColor: Colors.black.withValues(alpha: 0.3),
-      transitionDuration: const Duration(milliseconds: 150),
-      pageBuilder: (context, _, __) => Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white, borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 20, offset: const Offset(0, 4))],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('本当によろしいですか？', style: TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Hiragino Sans')),
-                  const SizedBox(height: 8),
-                  Text('全項目を削除します。この操作は取り消せません。',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 13, fontFamily: 'Hiragino Sans',
-                      color: Colors.black.withValues(alpha: 0.5))),
-                  const SizedBox(height: 16),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      _clearAllItems();
-                    },
-                    child: Container(
-                      width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.red, borderRadius: BorderRadius.circular(8)),
-                      alignment: Alignment.center,
-                      child: const Text('削除する', style: TextStyle(fontSize: 14,
-                        fontWeight: FontWeight.w700, fontFamily: 'Hiragino Sans', color: Colors.white)),
                     ),
                   ),
                   const SizedBox(height: 10),
