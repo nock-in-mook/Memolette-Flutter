@@ -5369,19 +5369,23 @@ class _FrequentTabContent extends ConsumerWidget {
     if (selectMode) {
       final isSelected = selectedIds.contains(memo.id);
       final isLocked = memo.isLocked;
-      final inner = Stack(
-        clipBehavior: Clip.none,
+      // Row { Center(icon), SizedBox, Expanded(card) }
+      // crossAxisAlignment: stretch でカードがセル高さを満たす（縮まない）
+      // チェックアイコンの分カードが右にシフトし、はみ出さない
+      final inner = Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Opacity(
-            opacity: isLocked ? 0.4 : 1.0,
-            child: IgnorePointer(child: card),
-          ),
-          Positioned(
-            left: -6,
-            top: -6,
+          Center(
             child: buildSelectModeIcon(
               isSelected: isSelected,
               isBlocked: isLocked,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Opacity(
+              opacity: isLocked ? 0.4 : 1.0,
+              child: IgnorePointer(child: card),
             ),
           ),
         ],
@@ -5606,8 +5610,9 @@ class _MemoGridView extends StatelessWidget {
       // ロックは削除を防ぐ用なので、削除モードのときだけ操作不可扱い。
       // トップ移動モードではロック中も普通に選択できる。
       final isLockedBlocked = isDeleteSelectMode && memo.isLocked;
-      // チェックアイコンはカード左上に浮かせる（Stack + Positioned）
-      // カードは従来サイズで、アイコンだけはみ出す
+      // 本家準拠: Row { Center(icon), SizedBox, Expanded(card) }
+      // crossAxisAlignment: stretch でカードがセル高さを満たす（縮まない）
+      // アイコンの分カードが右にシフトし、はみ出さない
       final iconWidget = buildSelectModeIcon(
         isSelected: isSelected,
         isBlocked: isLockedBlocked,
@@ -5615,25 +5620,29 @@ class _MemoGridView extends StatelessWidget {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => onToggleSelect?.call(memo),
-        child: Stack(
-          clipBehavior: Clip.none,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Opacity(
-              opacity: isLockedBlocked ? 0.4 : 1.0,
-              child: IgnorePointer(
-                child: MemoCard(
-                  memo: memo,
-                  onTap: () {},
-                  parentTagId: parentTagId,
-                  gridSize: gridSize,
-                  isHighlighted: memo.id == editingMemoId ||
-                      memo.id == highlightedMemoId,
-                  flashLevel:
-                      flashingItemIds.contains(memo.id) ? flashLevel : 0,
+            Center(child: iconWidget),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Opacity(
+                opacity: isLockedBlocked ? 0.4 : 1.0,
+                child: IgnorePointer(
+                  child: MemoCard(
+                    memo: memo,
+                    onTap: () {},
+                    parentTagId: parentTagId,
+                    gridSize: gridSize,
+                    isHighlighted: memo.id == editingMemoId ||
+                        memo.id == highlightedMemoId,
+                    flashLevel: flashingItemIds.contains(memo.id)
+                        ? flashLevel
+                        : 0,
+                  ),
                 ),
               ),
             ),
-            Positioned(left: -6, top: -6, child: iconWidget),
           ],
         ),
       );
@@ -5712,22 +5721,24 @@ class _MemoGridView extends StatelessWidget {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => onToggleTodoSelect?.call(list),
-        child: Stack(
-          clipBehavior: Clip.none,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Opacity(
-              opacity: isLockedBlocked ? 0.4 : 1.0,
-              child: IgnorePointer(
-                child: TodoCard(
-                  todoList: list,
-                  onTap: () {},
-                  gridSize: gridSize,
-                  flashLevel: flash,
-                  selectModeActive: true,
+            Center(child: iconWidget),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Opacity(
+                opacity: isLockedBlocked ? 0.4 : 1.0,
+                child: IgnorePointer(
+                  child: TodoCard(
+                    todoList: list,
+                    onTap: () {},
+                    gridSize: gridSize,
+                    flashLevel: flash,
+                  ),
                 ),
               ),
             ),
-            Positioned(left: -6, top: -6, child: iconWidget),
           ],
         ),
       );
