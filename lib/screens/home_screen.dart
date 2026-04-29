@@ -657,6 +657,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _minimizeWithCommit() {
     _inputAreaKey.currentState?.commitIME();
     if (_openedFromMemoList) {
+      // 先に unfocus して MemoInputArea 側の空メモ削除パスを駆動させる。
+      // これがないと、空メモのまま戻った場合に _preCreateEmptyMemo の async
+      // 遅延コールバック（onMemoCreated）が後から発火して _editingMemoId を
+      // 再セットし、ループの原因になる。
+      FocusScope.of(context).unfocus();
       _suppressAnimation = true;
       setState(() {
         _isInputExpanded = false;
@@ -933,35 +938,51 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       List<Tag> parentTags,
       AsyncValue<List<Tag>> parentTagsAsync,
       Color currentColor) {
-    return Column(
+    final viewPadTop = MediaQuery.of(context).viewPadding.top;
+    return Stack(
+      clipBehavior: Clip.none,
+      fit: StackFit.expand,
       children: [
-        // 1. 検索バー / 入力欄最大化中はミニバー。
-        // 検索バー周辺（+ボタン、⚙、余白）をタップしたら現フォーカスを外す。
-        // Listener は translucent なので検索 TextField 自身のタップは
-        // 子の GestureDetector に届きフォーカス取得される。
-        _wrapUnfocusOnTap(_buildSearchBarSection()),
-        // 2. メモ入力エリア（高さをアニメーション）
-        _buildInputAreaSection(constraints, parentTags),
-        // 3. 機能バー or 編集中バー（入力エリア以外 → unfocus 対象）
-        _wrapUnfocusOnTap(_buildFunctionBarSection()),
-        // 4. 親タグタブ（入力エリア以外 → unfocus 対象）
-        _wrapUnfocusOnTap(_buildTabContainerSection(parentTagsAsync)),
-        // 5. フォルダ本体（入力エリア以外 → unfocus 対象）
-        // 入力欄最大化中 / 検索バーフォーカス中＋クエリ空 は非表示。
-        // ただしフォルダ最大化中は検索フォーカスでもフォルダを維持（空白画面回避）。
-        if (_isMemoListExpanded ||
-            (!_isInputExpanded && !(_isSearchFocused && !_isSearchActive)))
-          Expanded(
-            child: _wrapUnfocusOnTap(_buildFolderBodySection(
-                currentColor, parentTags, parentTagsAsync)),
-          )
-        else
-          // フォルダ非表示中でも空白領域をタップしたら unfocus できるよう
-          // Expanded + 透明レイヤを _wrapUnfocusOnTap で覆う
-          Expanded(
-            child: _wrapUnfocusOnTap(
-              const SizedBox.expand(child: ColoredBox(color: Colors.transparent)),
-            ),
+        Column(
+          children: [
+            // 1. 検索バー / 入力欄最大化中はミニバー。
+            // 検索バー周辺（+ボタン、⚙、余白）をタップしたら現フォーカスを外す。
+            // Listener は translucent なので検索 TextField 自身のタップは
+            // 子の GestureDetector に届きフォーカス取得される。
+            _wrapUnfocusOnTap(_buildSearchBarSection()),
+            // 2. メモ入力エリア（高さをアニメーション）
+            _buildInputAreaSection(constraints, parentTags),
+            // 3. 機能バー or 編集中バー（入力エリア以外 → unfocus 対象）
+            _wrapUnfocusOnTap(_buildFunctionBarSection()),
+            // 4. 親タグタブ（入力エリア以外 → unfocus 対象）
+            _wrapUnfocusOnTap(_buildTabContainerSection(parentTagsAsync)),
+            // 5. フォルダ本体（入力エリア以外 → unfocus 対象）
+            // 入力欄最大化中 / 検索バーフォーカス中＋クエリ空 は非表示。
+            // ただしフォルダ最大化中は検索フォーカスでもフォルダを維持（空白画面回避）。
+            if (_isMemoListExpanded ||
+                (!_isInputExpanded && !(_isSearchFocused && !_isSearchActive)))
+              Expanded(
+                child: _wrapUnfocusOnTap(_buildFolderBodySection(
+                    currentColor, parentTags, parentTagsAsync)),
+              )
+            else
+              // フォルダ非表示中でも空白領域をタップしたら unfocus できるよう
+              // Expanded + 透明レイヤを _wrapUnfocusOnTap で覆う
+              Expanded(
+                child: _wrapUnfocusOnTap(
+                  const SizedBox.expand(
+                      child: ColoredBox(color: Colors.transparent)),
+                ),
+              ),
+          ],
+        ),
+        // フォルダ最大化中の選択モードバナー（タブより前面に出すため Stack 直下に配置）
+        if (_isSelectMode && _isMemoListExpanded)
+          Positioned(
+            top: viewPadTop + 10,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(child: _buildSelectModeBarContent(16)),
           ),
       ],
     );
@@ -1079,6 +1100,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           key: _inputAreaKey,
           editingMemoId: _editingMemoId,
           onMemoCreated: (id) async {
+            // _preCreateEmptyMemo は async なので、ユーザーが入力エリアを
+            // 閉じた後に遅延コールバックされうる。閉じてる状態なら state を
+            // 上書きせずスキップ（フォルダ最大化からの戻りループ防止）。
+            if (!_isInputExpanded && !_isEditingCompact) return;
             _clearSearchIfActive();
             // 「このフォルダにメモ作成」経由なら現在タブのタグを付与
             if (_pendingAttachCurrentFolderTags) {
@@ -1125,8 +1150,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           // 横画面では最大化/縮小トグル自体を無効化（ボタン非表示にもつながる）
           onToggleExpanded: isWide
               ? null
-              : () =>
-                  setState(() => _isInputExpanded = !_isInputExpanded),
+              : () => setState(() {
+                    if (_isSelectMode) _resetSelection();
+                    _isInputExpanded = !_isInputExpanded;
+                  }),
           onTagHistoryChanged: () => setState(() {}),
           onFocusChanged: () => setState(() {}),
           onDialogOpenChanged: (open) =>
@@ -1182,7 +1209,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   child: _buildFunctionBar(),
                 ),
               ),
-              if (_isSelectMode)
+              // フォルダ最大化中（縦画面のみ）はルート Stack 側で
+              // Positioned バナーを出してタブより前面に被せる。
+              if (_isSelectMode &&
+                  !(_isMemoListExpanded && !Responsive.isWide(context)))
                 Positioned(
                   left: 0,
                   right: 0,
@@ -1629,7 +1659,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           // 横画面ではフォルダ最大化の概念が不要なので非表示
           if (!Responsive.isWide(context)) ...[
             GestureDetector(
-              onTap: () => setState(() => _isMemoListExpanded = true),
+              onTap: () => setState(() {
+                if (_isSelectMode) _resetSelection();
+                _isMemoListExpanded = true;
+              }),
               onVerticalDragEnd: _handleVerticalSwipe,
               behavior: HitTestBehavior.opaque,
               child: const SizedBox(
@@ -1652,8 +1685,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// FractionalTranslation で自身の高さの半分ぶん上にずらし、入力欄に大きく被せて
   /// 「特殊モードに入った」ことを一瞬で伝える。
   Widget _buildSelectModeBar() {
-    final isDelete = _selectMode == _SelectMode.delete;
-    final accent = isDelete ? Colors.red : const Color(0xFF007AFF);
     final isWide = Responsive.isWide(context);
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1687,52 +1718,62 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         }
         return Transform.translate(
           offset: Offset(0, yOffset),
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-            child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: accent, width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.18),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                isDelete
-                    ? '削除するメモを選択してください'
-                    : 'トップに移動するメモを選択してください',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'Hiragino Sans',
-                  color: accent,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '$_selectedCount件 選択中',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  fontFamily: 'Hiragino Sans',
-                  color: Color(0xFF555555),
-                ),
-              ),
-            ],
-          ),
-            ),
-          ),
+          child: _buildSelectModeBarContent(horizontalPadding),
         );
       },
+    );
+  }
+
+  /// 選択モードバナーの中身（Padding + Container + Column）。
+  /// 通常モードは _buildSelectModeBar 内で Transform.translate でラップ、
+  /// フォルダ最大化中は _buildNarrowLayout のルート Stack の Positioned で
+  /// 直接配置する（タブより前面に出すため）。
+  Widget _buildSelectModeBarContent(double horizontalPadding) {
+    final isDelete = _selectMode == _SelectMode.delete;
+    final accent = isDelete ? Colors.red : const Color(0xFF007AFF);
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: accent, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              isDelete
+                  ? '削除するメモを選択してください'
+                  : 'トップに移動するメモを選択してください',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Hiragino Sans',
+                color: accent,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '$_selectedCount件 選択中',
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'Hiragino Sans',
+                color: Color(0xFF555555),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1746,6 +1787,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // 上スワイプ: フォルダ最大化
       if (!_isMemoListExpanded) {
         setState(() {
+          if (_isSelectMode) _resetSelection();
           _isMemoListExpanded = true;
           _isInputExpanded = false;
         });
@@ -1753,9 +1795,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     } else {
       // 下スワイプ: フォルダ縮小 or 入力欄最大化
       if (_isMemoListExpanded) {
-        setState(() => _isMemoListExpanded = false);
+        setState(() {
+          if (_isSelectMode) _resetSelection();
+          _isMemoListExpanded = false;
+        });
       } else if (!_isInputExpanded) {
-        setState(() => _isInputExpanded = true);
+        setState(() {
+          if (_isSelectMode) _resetSelection();
+          _isInputExpanded = true;
+        });
       }
     }
   }
@@ -1770,15 +1818,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         mainAxisSize: MainAxisSize.min,
         children: [
         // フォルダ引き上げ時: 引き下げシェブロン（中央）
+        // 選択モード中はシェブロン非表示 + タップで選択モード解除（最大化は維持）
         if (_isMemoListExpanded)
           GestureDetector(
-            onTap: () => setState(() => _isMemoListExpanded = false),
+            onTap: () => setState(() {
+              if (_isSelectMode) {
+                _resetSelection();
+              } else {
+                _isMemoListExpanded = false;
+              }
+            }),
             behavior: HitTestBehavior.opaque,
             child: SizedBox(
               height: 40,
               width: double.infinity,
               child: Center(
-                child: const _ChevronIcon(up: false),
+                child: _isSelectMode ? null : const _ChevronIcon(up: false),
               ),
             ),
           ),
@@ -2714,14 +2769,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 600),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      for (final filter in _AllTabSubFilter.values)
-                        _buildAllTabSubFilterChip(filter),
-                      // 「タグなし」ピル廃止→ここにフィルタ▼（タグなしも含めて選択）
-                      _buildFilterButton(allowUntagged: true),
-                    ],
+                  // 機種幅に応じて自動スケール: Pro Max では原寸、それ以下では
+                  // フィルタボタンが「TODO のみ」等で大きくなっても全体を縮めて
+                  // 画面内に必ず収める（オーバーフロー防止）。
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.center,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final filter in _AllTabSubFilter.values)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 14),
+                            child: _buildAllTabSubFilterChip(filter),
+                          ),
+                        // 「タグなし」ピル廃止→ここにフィルタ▼（タグなしも含めて選択）
+                        _buildFilterButton(allowUntagged: true),
+                      ],
+                    ),
                   ),
                 ),
               ),

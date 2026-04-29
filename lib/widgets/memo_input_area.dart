@@ -478,7 +478,13 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           final db = ref.read(databaseProvider);
           db.deleteMemo(widget.editingMemoId!);
           _clearInput(keepMarkdown: _isMarkdown);
-          widget.onClosed();
+          // 入力エリア最大化中の自動 onClosed は、ユーザーが意図せず
+          // フォーカスを外したとき（最大化画面でフォルダ余白をタップ等）
+          // にフォルダ最大化への自動復帰ループを起こすので呼ばない。
+          // 最大化中は明示的に戻り矢印で抜けてもらう（_minimizeWithCommit）。
+          if (!widget.isExpanded) {
+            widget.onClosed();
+          }
           return;
         }
       }
