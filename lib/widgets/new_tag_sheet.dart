@@ -1,14 +1,12 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
-import '../utils/keyboard_done_bar.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
+import 'dialog_styles.dart';
 import 'trapezoid_tab_shape.dart';
 
 /// タグシート（Swift版 NewTagSheetView 準拠）
@@ -58,10 +56,8 @@ class NewTagSheet extends ConsumerStatefulWidget {
         context: context,
         isScrollControlled: true,
         useSafeArea: true,
-        // 背景を透明にして、内部でBackdropFilter（すりガラス）を適用する
         backgroundColor: Colors.transparent,
-        // 背景の暗幕は薄く（背後のUIをうっすら透けさせる）
-        barrierColor: Colors.black.withValues(alpha: 0.15),
+        barrierColor: Colors.black.withValues(alpha: 0.3),
         builder: (ctx) {
         final mq = MediaQuery.of(ctx);
         final screenH = mq.size.height;
@@ -72,27 +68,31 @@ class NewTagSheet extends ConsumerStatefulWidget {
             visibleH > maxVisible && maxVisible > 0 ? maxVisible : visibleH;
         return SizedBox(
           height: sheetH,
-          child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(16),
-            ),
-            child: BackdropFilter(
-              // すりガラス効果（iOS UIBlurEffect.systemMaterial 相当）
-              // sigma小さめで形が軽く残るくらいに
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: Container(
-                // 半透明の白で軽くカバー
-                color: Colors.white.withValues(alpha: 0.65),
-                // 内側だけキーボード分上に詰める（外枠は動かない）
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: keyboardH),
-                  child: NewTagSheet(
-                    parentTagId: parentTagId,
-                    editingTag: editingTag,
-                    specialLabel: specialLabel,
-                    specialInitialColorIndex: specialInitialColorIndex,
-                    onSpecialColorSaved: onSpecialColorSaved,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(16),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x26000000),
+                    blurRadius: 20,
+                    offset: Offset(0, -4),
                   ),
+                ],
+              ),
+              // 内側だけキーボード分上に詰める（外枠は動かない）
+              child: Padding(
+                padding: EdgeInsets.only(bottom: keyboardH),
+                child: NewTagSheet(
+                  parentTagId: parentTagId,
+                  editingTag: editingTag,
+                  specialLabel: specialLabel,
+                  specialInitialColorIndex: specialInitialColorIndex,
+                  onSpecialColorSaved: onSpecialColorSaved,
                 ),
               ),
             ),
@@ -111,6 +111,11 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
   final _nameController = TextEditingController();
   int _selectedColorIndex = 1;
   static const int _maxNameLength = 20;
+
+  // 保存中フラグ。createTag/updateTag の await 完了→pop までの間に
+  // allTagsProvider が更新されて build が走るので、この間は重複チェックを
+  // スキップする（自分が今作ったタグと同名扱いされて誤エラー表示されるのを防ぐ）。
+  bool _saving = false;
 
   bool get _isEdit => widget.editingTag != null;
   bool get _isSpecial => widget.specialLabel != null;
@@ -154,6 +159,7 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     // 特殊タブ: 色変更コールバック
     if (_isSpecial) {
       widget.onSpecialColorSaved?.call(_selectedColorIndex);
@@ -163,6 +169,7 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
     // 念のため save 時にも重複チェック（canSave で弾けているはずの二重防御）
     final all = ref.read(allTagsProvider).value ?? const <Tag>[];
     if (_isDuplicate(all)) return;
+    setState(() => _saving = true);
     // 編集モード
     if (_isEdit) {
       final name = _trimmed;
@@ -193,11 +200,15 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
   @override
   Widget build(BuildContext context) {
     final allTags = ref.watch(allTagsProvider).value ?? const <Tag>[];
-    final duplicate = _isDuplicate(allTags);
+    // 保存中は新しく作ったタグ自身が allTags に入って自分と重複扱いされるので
+    // 重複チェックをスキップ（誤エラー表示を防ぐ）
+    final duplicate = !_saving && _isDuplicate(allTags);
     // 特殊タブは色変更だけなので常に保存可能
     final canSave = _isSpecial || (_trimmed.isNotEmpty && !duplicate);
 
-    return KeyboardDoneBar(child: Column(
+    // KeyboardDoneBar は MaterialApp.builder で全体に掛かっているため
+    // ここで再度包まない（包むと「完了」ボタンが二重表示される）
+    return Column(
       children: [
         _buildHeader(canSave: canSave),
         // 仕切り線なし（Swift版同様に余白で区切る）
@@ -220,7 +231,7 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
           ),
         ),
       ],
-    ));
+    );
   }
 
   Widget _buildHeader({required bool canSave}) {
@@ -238,7 +249,7 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
       if (!_isChild) subtitle = '（フォルダの追加）';
     }
 
-    // iOSナビゲーションバー風: 余白多め、仕切り線なし
+    // iOSナビゲーションバー風: 配置はそのまま、色・フォント・太さは DialogStyles 統一
     return SizedBox(
       height: 64,
       child: Stack(
@@ -252,16 +263,19 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
                   title,
                   style: const TextStyle(
                     fontSize: 17,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'Hiragino Sans',
                   ),
                 ),
                 if (subtitle != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 12,
-                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
+                      color: DialogStyles.textGrey,
+                      fontFamily: 'Hiragino Sans',
                     ),
                   ),
                 ],
@@ -276,12 +290,16 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
             child: TextButton(
               onPressed: () => Navigator.of(context).pop(),
               style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF007AFF),
+                foregroundColor: DialogStyles.defaultAction,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
               ),
               child: const Text(
                 'キャンセル',
-                style: TextStyle(fontSize: 17),
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Hiragino Sans',
+                ),
               ),
             ),
           ),
@@ -293,13 +311,17 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
             child: TextButton(
               onPressed: canSave ? _save : null,
               style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF007AFF),
+                foregroundColor: DialogStyles.defaultAction,
                 disabledForegroundColor: Colors.grey.shade400,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
               ),
               child: const Text(
                 '確定',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Hiragino Sans',
+                ),
               ),
             ),
           ),
@@ -312,12 +334,13 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        const Text(
           'タグ名',
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w500,
-            color: Colors.grey.shade600,
+            color: DialogStyles.textGrey,
+            fontFamily: 'Hiragino Sans',
           ),
         ),
         const SizedBox(height: 6),
@@ -327,7 +350,10 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
           onTap: TextMenuDismisser.wrap(null),
           contextMenuBuilder: TextMenuDismisser.builder,
           // 自動フォーカスしない（Swift版同様、ユーザータップでキーボードが出る）
-          style: const TextStyle(fontSize: 16),
+          style: const TextStyle(
+            fontSize: 16,
+            fontFamily: 'Hiragino Sans',
+          ),
           decoration: InputDecoration(
             hintText: 'タグ名を入力（20文字まで）',
             hintStyle: TextStyle(color: Colors.grey.shade400),
@@ -468,12 +494,13 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        const Text(
           'カラー',
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w500,
-            color: Colors.grey.shade600,
+            color: DialogStyles.textGrey,
+            fontFamily: 'Hiragino Sans',
           ),
         ),
         const SizedBox(height: 6),
@@ -491,10 +518,11 @@ class _NewTagSheetState extends ConsumerState<NewTagSheet> {
             const SizedBox(width: 6),
             Text(
               TagColors.getName(_selectedColorIndex),
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
-                color: Colors.grey.shade600,
+                color: DialogStyles.textGrey,
+                fontFamily: 'Hiragino Sans',
               ),
             ),
           ],
