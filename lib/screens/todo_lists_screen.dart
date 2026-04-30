@@ -444,8 +444,8 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
                       border: Border.all(color: Colors.white, width: 2),
                     ),
                     child: const Center(
-                      child: Icon(CupertinoIcons.add,
-                          size: 11, color: Colors.white),
+                      child: Icon(Icons.add,
+                          size: 14, weight: 900, color: Colors.white),
                     ),
                   ),
                   const SizedBox(width: 6),

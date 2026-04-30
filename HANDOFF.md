@@ -2,135 +2,128 @@
 
 ## 現在の状況
 
-- **セッション#31 完了**（2026-04-29、半日）
-- ブランチ: **`main`**
-- ToDo 関連の細部修正 4 本立て完了。Phase 15 Step 8 までの主要部分は引き続き安定
-- 動作確認: iPhone 17 Pro シミュ（debug、FIFO 経由ホットリロード）。実機 / iPad は未確認
+- **セッション#32 完了**（2026-04-29、長め）
+- ブランチ: **`main`**（`feature/phase-16-responsive` をマージ済み）
+- Phase 15 Step 9（カードバッジ）/ Phase 16（レスポンシブ）/ ダイアログ統一 まで完了
+- 動作確認: SE 3rd シミュ + iPhone 13 mini シミュ（FIFO 二系統）
 
-## #31 のサマリ: ToDo 細部修正 4 本立て
+## #32 のサマリ
 
-### ToDo 編集画面のインデント問題 + 保存後のチラつき解消（todo_list_screen.dart）
-- `_EditingItemField` の `contentPadding: horizontal: 10` → `EdgeInsets.zero`（編集中だけ右にずれる問題）
-- 保存直後の「（空のアイテム）」一瞬表示を楽観的更新で吸収（`_optimisticTitles: Map<String, String>`）
-  - `_commitEditWithText` で書き込み完了後にエントリ追加、Text 表示部の Builder 内で DB が追いついたらクリア
+### Phase 15 Step 9: メモ・ToDo カードにバッジ表示
+- メモカード: `eventDate`（橙）/ `containsMarkdown` ベースの MD（紫）/ Pin（青）/ Lock（赤）を Stack 右上にオーバーレイ
+- `containsMarkdown(text)` を `lib/utils/markdown_detect.dart` に新設（Swift 版から regex 移植）
+- ToDoカード（メモ一覧グリッド + ToDo一覧画面）にも同形式のバッジ追加
+- `StackFit.expand` でセル全体を満たすよう調整、サムネイル比率の潰れも修正
+- サムネイル更新時のチラつき → `ImageStorage.absolutePathSync` で同期取得し初フレームで決定
 
-### TODO フォルダに選択削除モード追加（todo_lists_screen.dart）
-- 緑エリア左下に円形フロート削除ボタン（メモ一覧フッターのゴミ箱と同じスタイル）
-- 選択削除モード時のヘッダー: [キャンセル] / N件 選択中 / [削除]（ボタンに件数なし、中央テキストに件数）
-- TODO タブ中央付近に 1 行ポップアップ「削除するToDoを選択してください」
-  - Stack `clipBehavior: Clip.none` で 40pt 外にはみ出し配置、`Positioned(top: 5)`
-- カードタップで選択トグル、未選択カード半透明、選択中カードに赤チェックバッジ
-- 確認ダイアログ: 「選択したToDoを削除」/「N件のToDoを削除します。よろしいですか？」（件数1回）
-- メモ混在フォルダ側も同形式に統一（home_screen の `_confirmDeleteSelected`）
+### Phase 16: レスポンシブ対応（SE 3rd / 13 mini / 標準）
+- 機種別グリッドオプション: SE は 3×2/2×2、mini は 3×4/2×4、標準は 3×6/2×5
+- `_phoneSizeClass` / `_gridRowsFor` / `_availableGridOptions` ヘルパーで分岐
+- カレンダー初期スクロール: 今日が常にビューポート中央に来るよう `weekIndex` 基準で算出
+- 爆速整理画面: 高さ 700px 未満で上部余白 70→30
+- 爆速整理 最終カードの右下「完了」ボタン → 虹色三角形（`_TriangleNavButton.rainbow`）に変更。ロックボタンとの視覚的被り回避
+- ToDo カードのセル高をメモカードと一致させる
 
-### メモ・ToDoカードに背景色追加（DB Migration v6）
-- `TodoLists.bgColorIndex` (int, default 0) を追加（`setTodoListBgColor` も新設）
-- `_BgColorPickerDialog` を `lib/widgets/bg_color_picker_dialog.dart` に切り出して `BgColorPickerDialog` として public 化
-- メモ長押し（`_showMemoActions`）/ ToDo 長押し（`_showTodoActions` / `_showListActions`）に「背景色」項目追加
-- `TodoCard` と `todo_lists_screen` カード描画で `bgColorIndex` 反映
-- ToDoカードはチェックボックス可読性のため、メモカードよりさらに白に40%寄せて薄める
+### ダイアログデザイン共通化
+- `lib/widgets/dialog_styles.dart` 新設。`title` / `message` / `actionLabel` / `bodyDecoration` / `accentButtonDecoration` / `textGrey` / `destructive` / `defaultAction` を一箇所に集約
+- `confirm_delete_dialog.dart` と `frosted_alert_dialog.dart` を `DialogStyles` 参照にリファクタ
+- 視認性向上: タイトル w600→w700 / 本文 w400→w500 / ボタン w500→w600、グレー alpha 0x99→0xCC
+- メモ上限（旧 CupertinoAlertDialog）→ `showFrostedAlert` に統一
+- 設定画面の全データ削除（旧 AlertDialog）→ `showConfirmDeleteDialog` に統一
 
-### 項目全件削除の確認を1回に統合（todo_list_screen.dart）
-- `_showClearAllConfirm` を削除、`_showClearAllDialog` の「全て削除する」から直接 `_clearAllItems`
-- 件数と注意書きは1回目で表示済み、2回目「本当によろしいですか？」は冗長
+### ToDo 編集画面の状態遷移修正（多数）
+- アイテム編集中に他アイテム / タイトル / メモ をタップ → 自動コミットしてから次の操作へ
+- `_committingIds: Set<String>` で per-id ガード（単一フラグだと Y commit が漏れる問題を解消）
+- dispose 時の commit が次アイテムを上書きしないよう `if (_editingItemId == id)` ガード
+- 「完了」 キーボードボタンで commit → `_focusNode.addListener(_handleFocusChange)` で focus loss 検知
+- 親 GestureDetector の onTap が子のタップを奪う問題 → outer `Listener(onPointerDown:)` に変更
+- onTapOutside は no-op（commit は dispose と focus listener に任せる）
 
-### 選択モードのカード見た目を旧Row形式に戻す（home_screen.dart）
-- 4/24 (cecb85a) で Stack + Positioned(-6,-6) の「カード上に○を浮かべる」形式に変更されていたが、○がカードに重なって見切れる見た目だったため、旧 Row { Center(icon), SizedBox, Expanded(card) } 形式に戻した
-- 3 箇所（`_FrequentTabContent` / `_MemoGridView._buildCard` / `_buildTodoCard`）
-- チェックボックスの分カードが右にシフトする「縮む」旧スタイル
+### 選択モード見た目調整
+- 「削除するメモを選択してください」バナー位置をフォルダタブより前面 + ノッチ回避位置に
+- 選択削除ボタンのドロップシャドウ・不透明背景化（半透明だとシャドウが透けて灰色っぽく見える問題）
+- ToDo 一覧の選択削除ラベル「削除」→「選択削除」、alpha 0.6→0.85
+
+### タグ周り
+- タブ z-index: 選択中=最前面、隣接=次、遠い=奥（`_ZOrderedRow._frontToBackOrder`）
+- 親タグ追加直後にそのタブへ自動スクロール（リトライ付き）
+- ルーレットの親タグ削除後リセット（`_syncToSelection` に `selectedParentId == null` 分岐追加）
+- タグ表示の動的配分: TextPainter で自然幅を測り、短辺は自然 / 長辺に余白配分
 
 ### ROADMAP 追記
-- 備忘: メモ選択削除のUI崩壊修正 / フォルダ最大時の選択モードUI最適化 / Phase 8（iPad）チェック項目化
-- Phase 14: アクセシビリティ「文字サイズ拡大」影響箇所の全洗い出し（重点箇所と方針付き）
+- フィルタボタンに「名前順」ソート（昇/降順トグル）
+- **タグ追加シート（NewTagSheet）を Memolette オリジナル風に改修**（次セッション最有力タスク）
+- アプリ全体の iOS 風 UI 要素を洗い出して脱却（Android リリース見据えて）
 
-## 次のアクション（次セッション #32）
+## 次のアクション（次セッション #33）
 
-### 残課題
-- 実機 / iPad での今回変更の動作確認
-- ROADMAP 備忘:
-  - メモ選択削除のUI崩壊修正
-  - フォルダ最大時の選択モードUI最適化
-- Phase 15 Step 9: メモカードに eventDate バッジ表示
-- Undo/Redo スナップショットへの eventDate 統合
-- Phase 14: アクセシビリティ文字サイズ対応（リリース前タスク）
-- iPad 横画面 (embedded mode) での Phase 15 動作確認
+### 直近最優先
+- **NewTagSheet のオリジナル風改修**
+  - 現状: iOS ナビゲーションバー風（左キャンセル / 中央タイトル / 右確定 / 背景すりガラス）+ 入力欄が背景同化
+  - 改修: 白背景 + ボタン縦並び（confirm_delete_dialog 系統）/ 入力欄も白背景 + 明確な枠線
+  - ToDoリスト新規作成（_NewListDialog）はそのまま据え置き
+- **アプリ全体の iOS 風要素の洗い出し**
+  - showCupertinoModalPopup / CupertinoActionSheet / CupertinoDialogAction 系の使用箇所
+  - Memolette オリジナル風に置き換え
+
+### ダイアログ巡回の続き（途中）
+カテゴリ別の確認・統一作業は途中で中断。次は：
+- **C 選択肢・メニュー**: フィルタプルダウン / 背景色ピッカー / グリッドサイズ選択メニュー
+- **D 入力シート**: NewTagSheet（上記タスクと統合）
+- **E ピッカー**: showCustomDatePickerSheet / showCupertinoModalPopup
+- **F バナー**: 選択モードバナー類
+
+### 残課題（前セッションから継続）
+- 実機 / iPad での Phase 15 Step 9 + Phase 16 動作確認
+- Phase 14: アクセシビリティ文字サイズ対応（リリース前タスク、現状はアプリ固定方針）
+- iPad 横画面 (embedded mode) での選択モード対応（Phase 8 で確認）
 - `FOCUS_REGRESSION_CHECKLIST.md` の全項目チェック
 
 ## 技術メモ
+
+### Phase 16 グリッド分岐
+```dart
+enum _PhoneSizeClass { se, mini, standard }
+_PhoneSizeClass _phoneSizeClass(Size size) {
+  if (size.width < 380 && size.height < 700) return _PhoneSizeClass.se;       // 375x667
+  if (size.width < 380) return _PhoneSizeClass.mini;                          // 375x812
+  return _PhoneSizeClass.standard;
+}
+```
+
+### 二系統 FIFO（SE + mini 並列起動）
+```bash
+# SE 3rd
+nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe' > /dev/null 2>&1 &
+
+# mini
+nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe_13' > /dev/null 2>&1 &
+
+# 別 /tmp/memolette-run-13 に rsync して並列 flutter run
+```
+
+### DialogStyles の使い方
+共通スタイルは `lib/widgets/dialog_styles.dart` 一箇所で管理。新規ダイアログは：
+```dart
+import '../widgets/dialog_styles.dart';
+// タイトル
+Text(title, style: DialogStyles.title)
+// 本文
+Text(message, style: DialogStyles.message)
+// アクションボタン
+Container(
+  decoration: DialogStyles.accentButtonDecoration(DialogStyles.destructive),
+  child: Text(label, style: DialogStyles.actionLabel.copyWith(color: DialogStyles.destructive)),
+)
+// ダイアログ全体
+Container(decoration: DialogStyles.bodyDecoration, ...)
+```
 
 ### shimu / 実機 ID
 - iPhone 17 Pro シミュ: `ACE500F3-AA23-44EC-AB93-C4EA636FC3BC`
 - iPad Pro 12.9-inch (6th gen): `1F181174-7768-44DB-9BDA-E9E9976695F0`
 - iPhone 15 Pro Max（実機 wireless）: `00008130-0006252E2E40001C`
-
-### 開発フロー（FIFO 経由ホットリロード、デバッグビルド）
-このセッションで確立した。debug ビルド + FIFO で素早い反復が可能。
-
-```bash
-# 初回セットアップ（FIFO + writer keeper を起動）
-[ -p /tmp/flutter_pipe ] || mkfifo /tmp/flutter_pipe
-nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe' > /dev/null 2>&1 &
-disown
-
-# flutter run 起動（FIFO を stdin に）
-cd /tmp/memolette-run && \
-  nohup sh -c 'flutter run -d ACE500F3-AA23-44EC-AB93-C4EA636FC3BC < /tmp/flutter_pipe' \
-  > /tmp/memolette-run/flutter_run.log 2>&1 &
-
-# コード編集後の反映フロー
-# 1. 本体側で編集
-# 2. rsync で /tmp/memolette-run/lib/ に同期
-rsync -a --delete \
-  --exclude=build/ --exclude=.dart_tool/ --exclude=ios/Pods/ --exclude=ios/.symlinks/ \
-  --exclude=ios/Flutter/ephemeral/ --exclude=ios/Runner.xcworkspace/xcuserdata/ \
-  lib/ /tmp/memolette-run/lib/
-# 3. ホットリロード送信
-echo "r" > /tmp/flutter_pipe
-# 必要なら R でホットリスタート（DBスキーマ変更後など）
-```
-
-### DB Migration v6
-- `TodoLists.bgColorIndex` (int, default 0) を追加
-- 起動時 `onUpgrade` で `m.addColumn(todoLists, todoLists.bgColorIndex)`
-- `database.dart` の手動 TodoList コンストラクト箇所 3 つに `bgColorIndex: row.read<int>('bg_color_index')` を追加（ついでに不足していた `eventDate` も追加）
-
-### 楽観的更新パターン
-DB ストリームのラグを埋めるための定型。
-```dart
-// State
-final Map<String, String> _optimisticTitles = {};
-
-// 書き込み完了後
-setState(() {
-  _editingItemId = null;
-  _optimisticTitles[id] = trimmed;
-});
-
-// 表示部 Builder 内
-final optimistic = _optimisticTitles[item.id];
-if (optimistic != null && item.title == optimistic) {
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (mounted) setState(() => _optimisticTitles.remove(item.id));
-  });
-}
-final displayTitle = optimistic ?? item.title;
-```
-
-### Stack の Positioned + Clip.none
-TODO タブの 40pt 領域より下に少しはみ出して配置するためのパターン:
-```dart
-SizedBox(
-  height: 40,
-  child: Stack(
-    clipBehavior: Clip.none,  // ←必須
-    children: [
-      Positioned.fill(child: ...),  // 元のコンテンツ
-      if (showBanner)
-        Positioned(top: 5, left: 0, right: 0, child: Center(child: banner)),
-    ],
-  ),
-);
-```
+- iPhone SE 3rd / iPhone 13 mini はセッション中に作成した iOS 26.3 ランタイムシミュ（次回再作成可）
 
 ## 関連メモ（自動メモリ）
 

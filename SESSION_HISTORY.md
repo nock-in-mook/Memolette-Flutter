@@ -879,3 +879,74 @@
 - Phase 15 Step 9: メモカードに eventDate バッジ表示
 - Undo/Redo スナップショットへの eventDate 統合
 - Phase 14 のアクセシビリティ文字サイズ対応（リリース前タスク）
+
+---
+## #32 (2026-04-29)
+
+### Phase 15 Step 9: メモ・ToDoカードにバッジ表示
+- メモカード右上に eventDate（橙）/ MD（紫）/ Pin（青）/ Lock（赤）のバッジを Stack でオーバーレイ
+- MD バッジは Swift 版の `containsMarkdown` を `lib/utils/markdown_detect.dart` に regex 移植して内容ベース判定
+- ToDoカード（メモ一覧グリッド + ToDo一覧画面）にも同形式のバッジ追加
+- サムネイル比率の潰れ修正: `Stack` + `Positioned` + `LayoutBuilder` で正方形セルにフィット
+- バッジ操作時のサムネイル再ロードによるチラつき → `ImageStorage.absolutePathSync` を新設して同期取得し初フレームで決定
+
+### Phase 16: レスポンシブ対応（SE 3rd / 13 mini / 標準）
+- 機種別グリッドオプション: SE は 3×2/2×2、mini は 3×4/2×4、標準は 3×6/2×5
+- `_phoneSizeClass` / `_gridRowsFor` / `_availableGridOptions` ヘルパーで分岐
+- カレンダー初期スクロール: `_today` から `weekIndex` を算出して今日が常にビューポート中央に来るよう調整
+- 爆速整理画面: 画面高 700px 未満で上部余白 70→30 にして SE 3rd の overflow 回避
+- 爆速整理 最終カードの右下「完了」テキストボタン → 虹色グラデーション三角形（`_TriangleNavButton.rainbow`）に変更してロックボタンとの被り回避
+- ToDo カードのセル高をメモカードと一致
+
+### ToDo 編集画面の状態遷移修正（多数）
+- アイテム編集中に他アイテム / タイトル / メモ をタップ → 自動コミットしてから次の操作へ
+- `_committingIds: Set<String>` で per-id ガード（単一フラグだと Y commit が漏れる問題を解消）
+- dispose 時の commit が次アイテムを上書きしないよう `if (_editingItemId == id)` ガード
+- 「完了」 キーボードボタンで commit → `_focusNode.addListener(_handleFocusChange)` で focus loss 検知
+- 親 GestureDetector の onTap が子のタップを奪う問題 → outer `Listener(onPointerDown:)` に変更
+- onTapOutside は no-op（commit は dispose と focus listener に任せる）
+- タイトル TextField の `contentPadding: zero` で左インデント解消
+- 親項目の追加ボタンは emptyState のみ全幅、通常時はアイコン部のみタップ反応
+
+### ダイアログデザイン共通化
+- `lib/widgets/dialog_styles.dart` 新設: `title` / `message` / `actionLabel` / `bodyDecoration` / `accentButtonDecoration` / `textGrey` / `destructive` / `defaultAction` を一箇所集約
+- `confirm_delete_dialog.dart` と `frosted_alert_dialog.dart` を `DialogStyles` 参照にリファクタ → 値変更で全ダイアログ一括反映
+- 視認性向上: タイトル w600→w700 / 本文 w400→w500 / ボタン w500→w600、グレー alpha 0x99→0xCC（テキストより濃く）
+- メモ上限（旧 CupertinoAlertDialog）→ `showFrostedAlert` に統一
+- 設定画面の全データ削除（旧 AlertDialog）→ `showConfirmDeleteDialog` に統一
+- 爆速整理の `_DeleteConfirmDialog` は独自デザイン（アイコン+Divider）として据え置き
+
+### 選択モード見た目調整
+- 「削除するメモを選択してください」バナー位置をフォルダタブより前面 + ノッチ回避位置に
+- 選択削除ボタンのドロップシャドウ・不透明背景化（半透明だとシャドウが透けて灰色っぽく見える問題）
+- ToDo 一覧の選択削除ラベル「削除」→「選択削除」、alpha 0.6→0.85
+- 選択削除モードのカード見た目を旧 Row 形式（チェックボックス+カード横並び）に維持
+- フォルダ最大化中の選択モード → 最大化を維持しつつ選択可能に
+
+### タブ周り改善
+- タブ z-index: 選択中=最前面、隣接=次、遠い=奥（`_ZOrderedRow._frontToBackOrder` で距離順制御）
+- 親タグ追加直後にそのタブへ自動スクロール（リトライ付きで描画完了後に確実に移動）
+- タグ表示の動的配分: TextPainter で自然幅を測り、短辺は自然 / 長辺に余白配分
+- フォルダ最大化 → 新規メモ → 抜けられないループの根本修正（`_onFocusChange` で `widget.isExpanded` 中は `widget.onClosed()` をスキップ）
+- ルーレットの親タグ削除後リセット（`_syncToSelection` に `selectedParentId == null` 分岐追加）
+
+### ROADMAP 追記
+- フィルタボタンに「名前順」ソート（昇/降順トグル）
+- **NewTagSheet を Memolette オリジナル風に改修**（次セッション最有力タスク。現状は iOS ナビゲーションバー風 + 入力欄背景同化）
+- アプリ全体の iOS 風 UI 要素を洗い出して脱却（Android リリース見据えて）
+
+### 開発環境
+- iOS 26.3 ランタイムを使った SE 3rd / 13 mini シミュを追加作成（iOS 17.2 サブイメージは Flutter 認識しないため）
+- 二系統 FIFO（`/tmp/flutter_pipe` + `/tmp/flutter_pipe_13`）で SE と mini を並列ホットリロード
+- 別 `/tmp/memolette-run-13` ディレクトリに rsync して並列 flutter run
+
+### ブランチ運用
+- `feature/phase-16-responsive` で Phase 16 を進めて main にマージ済み
+- 一連のダイアログ統一作業も main で完了
+
+### 次セッション (#33) 候補
+- **NewTagSheet のオリジナル風改修（最有力）**
+- アプリ全体の iOS 風要素の洗い出しと置き換え
+- ダイアログ巡回の続き: フィルタプルダウン / 背景色ピッカー / グリッドサイズ選択メニュー / ピッカー / バナー
+- 実機 / iPad での Phase 15 Step 9 + Phase 16 動作確認
+- Phase 14: アクセシビリティ文字サイズ対応（リリース前タスク）
