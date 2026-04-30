@@ -455,6 +455,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // 「このフォルダにメモ作成」ボタン起点の新規作成で、
   // フォーカス後に MemoInputArea 側が作った空メモへ現在タブのタグを付与するためのフラグ
   bool _pendingAttachCurrentFolderTags = false;
+  // 新規作成ボタン押下直後の onMemoCreated 早期 return ガードを通すためのフラグ。
+  // _focusInputTrigger++ 直後はまだフォーカス取得・キーボード出現が完了しておらず
+  // _isEditingCompact が false のまま onMemoCreated が来ることがある。
+  // pending=true の間はガードをすり抜けて _editingMemoId を確実に更新する。
+  bool _pendingNewMemoCreation = false;
   double _savedTabBarOffset = 0;
   // キャンセル時に戻すための並び替え前のタブ順スナップショット
   List<String>? _savedTabOrder;
@@ -1240,7 +1245,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             // _preCreateEmptyMemo は async なので、ユーザーが入力エリアを
             // 閉じた後に遅延コールバックされうる。閉じてる状態なら state を
             // 上書きせずスキップ（フォルダ最大化からの戻りループ防止）。
-            if (!_isInputExpanded && !_isEditingCompact) return;
+            // ただし新規作成ボタン押下直後の「立ち上がりかけ」は通す。
+            if (!_isInputExpanded &&
+                !_isEditingCompact &&
+                !_pendingNewMemoCreation) {
+              return;
+            }
+            _pendingNewMemoCreation = false;
             _clearSearchIfActive();
             // 「このフォルダにメモ作成」経由なら現在タブのタグを付与
             if (_pendingAttachCurrentFolderTags) {
@@ -1257,6 +1268,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             if (mounted) setState(() => _editingMemoId = id);
           },
           onClosed: () {
+            // 入力閉鎖時に pending を必ずリセット。これがないと、
+            // _preCreateEmptyMemo の async 遅延コールバックが「+押下→入力→
+            // 戻り矢印」のあとに発火しても pending=true のままガードを
+            // 通過してしまい、920c0bd で潰した最大化ループが復活する。
+            _pendingNewMemoCreation = false;
             if (_isInputExpanded && _openedFromMemoList) {
               // パターンA: フォルダ最大化→メモ開いた → フォルダ最大化に戻る
               _suppressAnimation = true;
@@ -3618,6 +3634,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       setState(() {
         _editingMemoId = null;
         _focusInputTrigger++;
+        _pendingNewMemoCreation = true;
         _isMemoListExpanded = false;
         _isInputExpanded = true;
         _openedFromMemoList = true;
@@ -3629,6 +3646,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       setState(() {
         _editingMemoId = null;
         _focusInputTrigger++;
+        _pendingNewMemoCreation = true;
       });
     }
   }
@@ -3641,6 +3659,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 実際のメモ作成とタグ付与は MemoInputArea の先行作成 → onMemoCreated 経由で行う。
     setState(() {
       _pendingAttachCurrentFolderTags = true;
+      _pendingNewMemoCreation = true;
       _editingMemoId = null;
       _focusInputTrigger++;
     });
