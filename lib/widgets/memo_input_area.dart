@@ -534,6 +534,13 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     // 注: didUpdateWidget はビルドサイクル内なので、focus は次フレームに遅延させる
     if (widget.focusRequest != oldWidget.focusRequest) {
       _isViewMode = false;
+      // 「タグだけ指定して本文未入力」の状態で新規作成ボタンを押したケースでは
+      // editingMemoId が null → null（変化なし）になるため、上の editingMemoId
+      // 変化検知では _clearInput が呼ばれない。pending タグや前回の入力が
+      // 残ってしまうので、focusRequest 変化＋両方 null のときは明示的にクリアする。
+      if (widget.editingMemoId == null && oldWidget.editingMemoId == null) {
+        _clearInput(keepMarkdown: _isMarkdown);
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _blockEditorKey.currentState?.focusFirst();
@@ -544,11 +551,15 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   Future<void> _loadMemo(String id) async {
     final db = ref.read(databaseProvider);
     final memo = await db.getMemoById(id);
-    if (memo != null && mounted) {
+    // await 中にユーザーが新規作成ボタン等で別メモへ遷移すると
+    // widget.editingMemoId が変わっている。古いメモのデータで上書きしないよう
+    // ここでガード（さもないと _attachedTags が古いタグで残り続ける）。
+    if (!mounted || widget.editingMemoId != id) return;
+    if (memo != null) {
       _applyMemoData(memo);
-      // タグはバックグラウンドで読み込み
       _attachedTags = await db.getTagsForMemo(id);
-      if (mounted) setState(() {});
+      if (!mounted || widget.editingMemoId != id) return;
+      setState(() {});
     }
   }
 
@@ -556,10 +567,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   void loadMemoDirectly(Memo memo) {
     _directLoadApplied = true;
     _applyMemoData(memo);
-    // タグは非同期で読み込み
+    // タグは非同期で読み込み。
+    // .then() の発火時に既に別メモへ遷移していたら（widget.editingMemoId が
+    // memo.id と違う）古いタグで上書きしないようガード。
     final db = ref.read(databaseProvider);
     db.getTagsForMemo(memo.id).then((tags) {
-      if (mounted) {
+      if (mounted && widget.editingMemoId == memo.id) {
         _attachedTags = tags;
         setState(() {});
       }
