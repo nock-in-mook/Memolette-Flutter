@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../db/database.dart';
 import '../providers/database_provider.dart';
-import '../utils/safe_dialog.dart';
 import '../utils/toast.dart';
+import '../widgets/confirm_delete_dialog.dart';
 import 'font_lab_screen.dart';
 import 'font_weight_lab_screen.dart';
 import 'icon_lab_screen.dart';
@@ -613,28 +613,13 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _wipeAllData(BuildContext context, WidgetRef ref) async {
-    final ok = await focusSafe(
-      context,
-      () => showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('全データ削除'),
-          content: const Text('全てのメモとタグを削除します。よろしいですか？'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('キャンセル'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: const Text('削除'),
-            ),
-          ],
-        ),
-      ),
+    final ok = await showConfirmDeleteDialog(
+      context: context,
+      title: '全データ削除',
+      message: '全てのメモとタグを削除します。よろしいですか？',
+      confirmLabel: '削除する',
     );
-    if (ok != true) return;
+    if (!ok) return;
 
     final db = ref.read(databaseProvider);
     await db.wipeAll();

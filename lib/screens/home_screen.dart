@@ -20,6 +20,7 @@ import '../utils/toast.dart';
 import '../widgets/bg_color_picker_dialog.dart';
 import '../widgets/calendar_view.dart';
 import '../widgets/confirm_delete_dialog.dart';
+import '../widgets/frosted_alert_dialog.dart';
 import '../widgets/memo_card.dart';
 import '../widgets/memo_input_area.dart';
 import '../widgets/move_to_top_icon.dart';
@@ -3590,25 +3591,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final count = await db.countMemos();
     if (count >= _maxMemoCount) {
       if (!mounted) return true;
-      await focusSafe(
-        context,
-        () => showCupertinoDialog<void>(
-          context: context,
-          builder: (ctx) => CupertinoAlertDialog(
-            title: const Text('メモ数の上限に達しました'),
-            content: Text(
-              '現在 $count 件のメモがあります。これ以上は作成できません（上限: $_maxMemoCount 件）。\n'
-              '不要なメモを削除してください。',
-            ),
-            actions: [
-              CupertinoDialogAction(
-                isDefaultAction: true,
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
-        ),
+      await showFrostedAlert(
+        context: context,
+        title: 'メモ数の上限に達しました',
+        message:
+            '現在 $count 件のメモがあります。これ以上は作成できません（上限: $_maxMemoCount 件）。\n'
+            '不要なメモを削除してください。',
       );
       return true;
     }

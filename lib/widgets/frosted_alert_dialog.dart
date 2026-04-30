@@ -1,11 +1,10 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import '../utils/safe_dialog.dart';
+import 'dialog_styles.dart';
 
-/// すりガラス背景＋中央配置のカスタムアラートダイアログ
-/// Swift版 .alert() 相当（ただしカスタムUI）
+/// Memolette オリジナルデザインのカスタムアラートダイアログ。
+/// 白背景 + 角丸 + 縦並びボタン（showConfirmDeleteDialog と統一感あり）。
 ///
 /// 単一ボタン: showFrostedAlert(...)
 /// 複数ボタン: actions パラメータで複数渡せる
@@ -23,82 +22,40 @@ class FrostedAlertDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Materialで囲んでテキストの黄色下線（debug警告）を消す
     return Material(
       type: MaterialType.transparency,
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 280),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: BackdropFilter(
-              // 追加シートと同じすりガラス設定
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: Container(
-                color: Colors.white.withValues(alpha: 0.65),
-                child: Column(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: DialogStyles.bodyDecoration,
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // タイトル＋メッセージ
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-                    child: Column(
-                      children: [
-                        Text(
-                          title,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black,
-                          ),
-                        ),
-                        if (message != null) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            message!,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Colors.black,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  // 区切り線
-                  Container(
-                    height: 0.5,
-                    color: Colors.grey.withValues(alpha: 0.4),
-                  ),
-                  // ボタン行
-                  IntrinsicHeight(
-                    child: Row(
-                      children: [
-                        for (int i = 0; i < actions.length; i++) ...[
-                          if (i > 0)
-                            Container(
-                              width: 0.5,
-                              color: Colors.grey.withValues(alpha: 0.4),
-                            ),
-                          Expanded(
-                            child: _ActionButton(
-                              action: actions[i],
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
+                  Text(title,
+                      textAlign: TextAlign.center,
+                      style: DialogStyles.title),
+                  if (message != null) ...[
+                    const SizedBox(height: 12),
+                    Text(message!,
+                        textAlign: TextAlign.center,
+                        style: DialogStyles.message),
+                  ],
+                  const SizedBox(height: 16),
+                  for (int i = 0; i < actions.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 10),
+                    _ActionButton(action: actions[i]),
+                  ],
                 ],
               ),
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 }
 
@@ -108,6 +65,12 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDestructive = action.isDestructive;
+    final isDefault = action.isDefault;
+    final showBackground = isDestructive || isDefault;
+    final accent = isDestructive
+        ? DialogStyles.destructive
+        : DialogStyles.defaultAction;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
@@ -115,18 +78,16 @@ class _ActionButton extends StatelessWidget {
         action.onPressed?.call();
       },
       child: Container(
-        height: 44,
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: showBackground
+            ? DialogStyles.accentButtonDecoration(accent)
+            : null,
         alignment: Alignment.center,
         child: Text(
           action.label,
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight:
-                action.isDefault ? FontWeight.w600 : FontWeight.w400,
-            color: action.isDestructive
-                ? Colors.red
-                : const Color(0xFF007AFF),
-          ),
+          style: DialogStyles.actionLabel.copyWith(
+              color: showBackground ? accent : DialogStyles.textGrey),
         ),
       ),
     );

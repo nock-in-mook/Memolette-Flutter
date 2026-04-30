@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../utils/safe_dialog.dart';
+import 'dialog_styles.dart';
 
 /// 削除確認ダイアログ（Memolette オリジナルデザイン）。
 /// メモ・TODO等の「単体削除」確認で共通利用。
@@ -30,58 +31,30 @@ Future<bool> showConfirmDeleteDialog({
               color: Colors.transparent,
               child: Container(
                 padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.15),
-                      blurRadius: 20,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
+                decoration: DialogStyles.bodyDecoration,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      title,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'Hiragino Sans',
-                      ),
-                    ),
+                    Text(title,
+                        textAlign: TextAlign.center,
+                        style: DialogStyles.title),
                     const SizedBox(height: 12),
-                    Text(
-                      message,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontFamily: 'Hiragino Sans',
-                        color: Color(0x993C3C43),
-                      ),
-                    ),
+                    Text(message,
+                        textAlign: TextAlign.center,
+                        style: DialogStyles.message),
                     const SizedBox(height: 16),
                     GestureDetector(
                       onTap: () => Navigator.of(ctx).pop(true),
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+                        decoration: DialogStyles.accentButtonDecoration(
+                            DialogStyles.destructive),
                         alignment: Alignment.center,
                         child: Text(
                           confirmLabel,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            fontFamily: 'Hiragino Sans',
-                            color: Colors.red,
-                          ),
+                          style: DialogStyles.actionLabel.copyWith(
+                              color: DialogStyles.destructive),
                         ),
                       ),
                     ),
@@ -94,12 +67,8 @@ Future<bool> showConfirmDeleteDialog({
                         alignment: Alignment.center,
                         child: Text(
                           cancelLabel,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            fontFamily: 'Hiragino Sans',
-                            color: Color(0x993C3C43),
-                          ),
+                          style: DialogStyles.actionLabel
+                              .copyWith(color: DialogStyles.textGrey),
                         ),
                       ),
                     ),
