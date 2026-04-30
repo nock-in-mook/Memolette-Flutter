@@ -464,6 +464,11 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
   void _onFocusChange() {
     if (mounted) {
+      // タイトル/本文にフォーカスが入ったらルーレットは引っ込める。
+      // 共存させると入力中にルーレット側でタグが切り替わったりして混乱する。
+      if (_isInputFocused && _rouletteOpen) {
+        _closeRoulette();
+      }
       // フォーカスを得た時点でメモ未作成なら空メモを先行作成
       if (_isInputFocused && widget.editingMemoId == null && !_hasMemo) {
         _preCreateEmptyMemo();

@@ -563,8 +563,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     _searchFocusNode.addListener(() {
       setState(() => _isSearchFocused = _searchFocusNode.hasFocus);
       // 検索バーにフォーカスが移った瞬間、入力欄を明示的にクローズ
-      // （編集中の空メモが即削除され、ツールバー残留も防ぐ）
+      // （編集中の空メモが即削除され、ツールバー残留も防ぐ）。
+      // 同時に開いていればタグルーレットも畳む（共存はバグの元）。
       if (_searchFocusNode.hasFocus) {
+        _inputAreaKey.currentState?.closeRoulette();
         _inputAreaKey.currentState?.closeMemo();
         _editingMemoId = null;
       }
