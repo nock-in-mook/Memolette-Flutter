@@ -114,7 +114,23 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   final FocusNode _titleFocusNode = FocusNode();
 
   @override
+  void initState() {
+    super.initState();
+    // リストタイトル編集時、キーボード上の「完了」ボタンで unfocus した
+    // 場合でも保存して編集を抜けるようにする。onTapOutside だけだと
+    // 完了ボタン経由は拾えない。
+    _titleFocusNode.addListener(_handleTitleFocusChange);
+  }
+
+  void _handleTitleFocusChange() {
+    if (!_titleFocusNode.hasFocus && _isEditingTitle) {
+      _saveTitle();
+    }
+  }
+
+  @override
   void dispose() {
+    _titleFocusNode.removeListener(_handleTitleFocusChange);
     _titleController.dispose();
     _titleFocusNode.dispose();
     _swipeCloseNotifier.dispose();
@@ -881,7 +897,10 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       stream: _watchAllItems(),
       builder: (context, snap) {
         final allItems = snap.data ?? const <TodoItem>[];
-        if (allItems.isEmpty || _editingItemId != null || _memoEditingItemId != null) {
+        if (allItems.isEmpty ||
+            _editingItemId != null ||
+            _memoEditingItemId != null ||
+            _isEditingTitle) {
           return const SizedBox.shrink();
         }
         if (_isSelectMode) {
@@ -938,32 +957,46 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(CupertinoIcons.hand_draw, size: 12,
-                  color: Colors.black.withValues(alpha: 0.16)),
+                  color: Colors.black.withValues(alpha: 0.45)),
                 const SizedBox(width: 5),
                 Text('タップで編集 ・ 長押しで並び替え ・ 左スワイプで削除',
                   style: TextStyle(fontSize: 13, fontFamily: 'Hiragino Sans',
-                    color: Colors.black.withValues(alpha: 0.16))),
+                    color: Colors.black.withValues(alpha: 0.45))),
               ],
             ),
             const SizedBox(height: 8),
-            // 削除ボタン
+            // 選択削除ボタン
             GestureDetector(
               onTap: () => _showDeleteMenu(allItems),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
                 decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.15),
+                  // 半透明だとシャドウが透けて全体がグレーに染まるので
+                  // 不透明な light grey にして、シャドウを下に落とす。
+                  color: const Color(0xFFEEEEEE),
                   borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 4,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(CupertinoIcons.list_bullet, size: 14,
-                      color: Colors.red.withValues(alpha: 0.6)),
+                    Icon(CupertinoIcons.list_bullet,
+                        size: 14,
+                        color: Colors.red.withValues(alpha: 0.85)),
                     const SizedBox(width: 5),
-                    Text('削除', style: TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600, fontFamily: 'Hiragino Sans',
-                      color: Colors.red.withValues(alpha: 0.6))),
+                    Text('選択削除',
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'Hiragino Sans',
+                            color: Colors.red.withValues(alpha: 0.85))),
                   ],
                 ),
               ),
@@ -1111,7 +1144,9 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         decoration: const InputDecoration(
           isDense: true,
           border: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(horizontal: 12),
+          // 非編集時の Text には padding がないので、編集時もそろえて 0 に。
+          // 元は horizontal: 12 で字下げが発生していた。
+          contentPadding: EdgeInsets.zero,
         ),
         onSubmitted: (_) => _saveTitle(),
         onTapOutside: (_) => _saveTitle(),
@@ -2724,34 +2759,42 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       guideText = '子項目を追加できます';
     }
 
-    // ルート追加ボタン（シンプル）
-    // タップ領域は「アイコンとその周囲」だけに限定する。行全体をタップ判定に
-    // すると、項目のすぐ下の広い空間が意図せずヒットして誤発火しやすい。
+    // ルート追加ボタン
+    // 通常時はタップ領域を「アイコンとその周囲」だけに限定する（行全体だと
+    // 下の広い空間が意図せずヒットして誤発火する）。
+    // 項目ゼロ時（emptyState）はガイド文「最初の項目を追加しましょう」が
+    // 並んでいて、ユーザーは行全体をタップしたくなるので、その時だけ
+    // 行全体をタップ可能にする。
     if (!isChild) {
-      return Container(
+      final iconBox = Padding(
+        padding: const EdgeInsets.all(2),
+        child: SizedBox(
+          width: 40,
+          height: 40,
+          child: Center(
+            child: Icon(
+              CupertinoIcons.add_circled_solid,
+              size: 26,
+              color: accentColor,
+            ),
+          ),
+        ),
+      );
+      final body = Container(
         margin: const EdgeInsets.symmetric(horizontal: 16),
         padding: const EdgeInsets.only(left: 4, right: 4, bottom: 4),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            GestureDetector(
-              onTap: () => _createItem(parentId: null),
-              behavior: HitTestBehavior.opaque,
-              child: Padding(
-                padding: const EdgeInsets.all(2),
-                child: SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: Center(
-                    child: Icon(
-                      CupertinoIcons.add_circled_solid,
-                      size: 26,
-                      color: accentColor,
-                    ),
+            // emptyState 時は外側 GestureDetector に委譲、通常時はここだけ
+            // タップ反応する個別 GestureDetector
+            emptyState
+                ? iconBox
+                : GestureDetector(
+                    onTap: () => _createItem(parentId: null),
+                    behavior: HitTestBehavior.opaque,
+                    child: iconBox,
                   ),
-                ),
-              ),
-            ),
             const SizedBox(width: 12),
             Expanded(
               child: guideText != null
@@ -2763,6 +2806,14 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           ],
         ),
       );
+      if (emptyState) {
+        return GestureDetector(
+          onTap: () => _createItem(parentId: null),
+          behavior: HitTestBehavior.opaque,
+          child: body,
+        );
+      }
+      return body;
     }
 
     // 子追加ボタン
