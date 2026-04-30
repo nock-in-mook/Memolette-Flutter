@@ -6340,24 +6340,37 @@ class _ZOrderedRowRenderBox extends RenderBox
     size = constraints.constrain(Size(x, containerH));
   }
 
+  /// 選択中タブを最前面、そこから左右に遠ざかるにつれ後ろに下がる順序を返す
+  /// （前面 → 後ろ）。選択中タブが範囲外なら右→左の単純順序にフォールバック。
+  List<int> _frontToBackOrder(int n) {
+    if (_selectedIndex < 0 || _selectedIndex >= n) {
+      return [for (int i = 0; i < n; i++) i];
+    }
+    final order = <int>[_selectedIndex];
+    int maxDist = 0;
+    for (int i = 0; i < n; i++) {
+      final d = (i - _selectedIndex).abs();
+      if (d > maxDist) maxDist = d;
+    }
+    for (int dist = 1; dist <= maxDist; dist++) {
+      final right = _selectedIndex + dist;
+      if (right < n) order.add(right);
+      final left = _selectedIndex - dist;
+      if (left >= 0) order.add(left);
+    }
+    return order;
+  }
+
   @override
   void paint(PaintingContext context, Offset offset) {
-    // 子をリスト化
     final children = <RenderBox>[];
     var c = firstChild;
     while (c != null) {
       children.add(c);
       c = (c.parentData! as _ZOrderedRowParentData).nextSibling;
     }
-    // paint順: インデックス大→小（右が後ろ・左が前）
-    // ただし選択中の子は最後にpaint（最前面）
-    final order = <int>[];
-    for (int i = children.length - 1; i >= 0; i--) {
-      if (i != _selectedIndex) order.add(i);
-    }
-    if (_selectedIndex >= 0 && _selectedIndex < children.length) {
-      order.add(_selectedIndex);
-    }
+    // paint 順: 後ろ→前 = _frontToBackOrder の逆順
+    final order = _frontToBackOrder(children.length).reversed;
     for (final i in order) {
       final child = children[i];
       final pd = child.parentData! as _ZOrderedRowParentData;
@@ -6367,21 +6380,14 @@ class _ZOrderedRowRenderBox extends RenderBox
 
   @override
   bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
-    // hit test も paint と同じ順（前面のものが優先）
     final children = <RenderBox>[];
     var c = firstChild;
     while (c != null) {
       children.add(c);
       c = (c.parentData! as _ZOrderedRowParentData).nextSibling;
     }
-    final order = <int>[];
-    if (_selectedIndex >= 0 && _selectedIndex < children.length) {
-      order.add(_selectedIndex);
-    }
-    for (int i = 0; i < children.length; i++) {
-      if (i != _selectedIndex) order.add(i);
-    }
-    for (final i in order) {
+    // hit test は前面から（前にあるタブを優先的にヒット）
+    for (final i in _frontToBackOrder(children.length)) {
       final child = children[i];
       final pd = child.parentData! as _ZOrderedRowParentData;
       final hit = result.addWithPaintOffset(
