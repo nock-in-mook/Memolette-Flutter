@@ -345,13 +345,19 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     });
   }
 
-  bool _isCommitting = false;
-  Future<void> _commitEditWithText(String text, {bool chainNext = false}) async {
-    if (_isCommitting) return;
-    _isCommitting = true;
+  // 単一フラグだと「X の commit 中に Y を別経路で commit」が早期 return で
+  // 漏れる（特に追加ボタン経由で X→Y に編集が切り替わったあと Y を
+  // 白紙で抜けたとき）。itemId 単位のセットで二重 commit だけガードする。
+  final Set<String> _committingIds = <String>{};
+  Future<void> _commitEditWithText(String text,
+      {bool chainNext = false, String? itemId}) async {
+    // itemId が渡されていればそれを優先（呼び出し側で _editingItemId を
+    // 先に null 化していても commit を逃さないため）。
+    final id = itemId ?? _editingItemId;
+    if (id == null) return;
+    if (_committingIds.contains(id)) return;
+    _committingIds.add(id);
     try {
-      final id = _editingItemId;
-      if (id == null) return;
       final trimmed = text.trim();
       final db = ref.read(databaseProvider);
       final wasEmpty = trimmed.isEmpty;
@@ -367,8 +373,14 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       }
       if (!mounted) return;
       setState(() {
-        _editingItemId = null;
-        _addingParentId = null;
+        // commit 対象 id が現在の編集中 id と同じ場合のみ null にする。
+        // 「別項目をタップ → _editingItemId が新項目に変わる → 古い項目の
+        // dispose で commit が走る」ケースで、新項目の編集状態を上書き
+        // しないようにする。
+        if (_editingItemId == id) {
+          _editingItemId = null;
+          _addingParentId = null;
+        }
         // DBストリームが追いつくまで楽観的に新titleを表示
         if (!wasEmpty) {
           _optimisticTitles[id] = trimmed;
@@ -378,7 +390,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         await _createItem(parentId: parentId);
       }
     } finally {
-      _isCommitting = false;
+      _committingIds.remove(id);
     }
   }
 
@@ -404,17 +416,27 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   void _toggleMemo(TodoItem item) {
     if (_isSelectMode) return;
     if (_isAnySwipeOpen) { _closeSwipeIfOpen(); return; }
+    // リストタイトル編集中なら保存して抜ける（fire & forget。setState は
+    // 内部で走るので本処理と統合される）
+    if (_isEditingTitle) _saveTitle();
     setState(() {
+      // 別の編集状態を解除（自身のメモ編集/閲覧中の toggle は下で対応）。
+      // 項目名編集中の内容は _EditingItemField の dispose で onCommit が
+      // 走るため、ここで _editingItemId を null にするだけで自動保存される。
+      if (_editingItemId != null) {
+        _editingItemId = null;
+        _addingParentId = null;
+      }
       if (_memoEditingItemId == item.id || _memoViewItemId == item.id) {
-        // 展開中/編集中 → 折りたたみ
+        // 自身が展開中/編集中 → 折りたたみ
         _memoEditingItemId = null;
         _memoViewItemId = null;
       } else if ((item.memo ?? '').isEmpty) {
-        // メモ空 → 編集モード
+        // メモ空 → 編集モード（別アイテムのメモ編集/閲覧は上書きで解除される）
         _memoEditingItemId = item.id;
         _memoViewItemId = null;
       } else {
-        // メモあり＆折りたたみ中 → 展開
+        // メモあり → 全文展開モード
         _memoViewItemId = item.id;
         _memoEditingItemId = null;
       }
@@ -430,9 +452,12 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       updatedAt: Value(DateTime.now()),
     ));
     if (!mounted) return;
+    // 「保存対象のアイテム」が編集/閲覧中だった場合だけ解除する。
+    // 別のメモを開く操作経由で dispose → _saveMemo が呼ばれた場合に
+    // 新しく開いたアイテムの編集/閲覧状態を巻き込まないようにする。
     setState(() {
-      _memoEditingItemId = null;
-      _memoViewItemId = null;
+      if (_memoEditingItemId == itemId) _memoEditingItemId = null;
+      if (_memoViewItemId == itemId) _memoViewItemId = null;
     });
   }
 
@@ -450,7 +475,18 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       _closeSwipeIfOpen();
       return;
     }
+    // リストタイトル編集中なら保存して抜ける
+    if (_isEditingTitle) _saveTitle();
     setState(() {
+      // 項目名/メモ編集中なら抜けてから展開トグル
+      // （_EditingItemField / _MemoEditField の dispose 内で内容は自動保存）
+      if (_editingItemId != null) {
+        _editingItemId = null;
+        _addingParentId = null;
+      }
+      if (_memoEditingItemId != null) {
+        _memoEditingItemId = null;
+      }
       if (_expandedItems.contains(itemId)) {
         _expandedItems.remove(itemId);
       } else {
@@ -778,10 +814,13 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   // ========================================
   @override
   Widget build(BuildContext context) {
-    final content = GestureDetector(
-      onTap: () {
+    // ※GestureDetector + onTap だと Gesture Arena で内側のボタン onTap を
+    // 消費してしまうケース（特に項目名編集中に Tap Region が絡むとき）が
+    // あったため、Listener で onPointerDown を観察するだけにする。
+    // これなら子の onTap 伝播を阻害せず、_closeSwipeIfOpen だけ駆動できる。
+    final content = Listener(
+      onPointerDown: (_) {
         _closeSwipeIfOpen();
-        // ルーレット閉じはグレー背景タップで行う（ここで閉じると履歴ボタン等が競合する）
       },
       behavior: HitTestBehavior.translucent,
       child: Stack(
@@ -1219,6 +1258,23 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
 
   /// 個別アイテムに日付を付与・編集・消去する。
   Future<void> _showItemDatePicker(TodoItem item) async {
+    // リストタイトル / 項目名 / メモ編集中なら先に抜ける
+    // （いずれも内容は dispose / _saveTitle 内で自動保存される）
+    if (_isEditingTitle) _saveTitle();
+    final wasEditing =
+        _editingItemId != null || _memoEditingItemId != null;
+    if (wasEditing) {
+      setState(() {
+        _editingItemId = null;
+        _addingParentId = null;
+        _memoEditingItemId = null;
+      });
+      // setState の rebuild と dispose 経由の commit が走るのを待ってから
+      // ピッカーを開かないと、modal が出る前に裏で setState が連鎖して
+      // 結果的にピッカーが表示されない（or 即閉じる）ことがある。
+      await Future<void>.delayed(Duration.zero);
+      if (!mounted) return;
+    }
     final db = ref.read(databaseProvider);
     final result = await focusSafe<DatePickerResult?>(
       context,
@@ -2355,8 +2411,10 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                 ? _EditingItemField(
                     key: ValueKey('edit_${item.id}'),
                     initialText: item.title,
-                    onCommit: (text) => _commitEditWithText(text),
-                    onCommitChain: (text) => _commitEditWithText(text, chainNext: true),
+                    onCommit: (text) =>
+                        _commitEditWithText(text, itemId: item.id),
+                    onCommitChain: (text) => _commitEditWithText(text,
+                        chainNext: true, itemId: item.id),
                   )
                 : GestureDetector(
                     onTap: () {
@@ -2667,17 +2725,19 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     }
 
     // ルート追加ボタン（シンプル）
+    // タップ領域は「アイコンとその周囲」だけに限定する。行全体をタップ判定に
+    // すると、項目のすぐ下の広い空間が意図せずヒットして誤発火しやすい。
     if (!isChild) {
-      return GestureDetector(
-        onTap: () => _createItem(parentId: null),
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          padding: const EdgeInsets.only(left: 4, right: 4, bottom: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Padding(
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.only(left: 4, right: 4, bottom: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            GestureDetector(
+              onTap: () => _createItem(parentId: null),
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
                 padding: const EdgeInsets.all(2),
                 child: SizedBox(
                   width: 40,
@@ -2691,16 +2751,16 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: guideText != null
-                    ? Text(guideText, style: TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600,
-                        fontFamily: 'Hiragino Sans', color: accentColor))
-                    : const SizedBox(height: 44),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: guideText != null
+                  ? Text(guideText, style: TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600,
+                      fontFamily: 'Hiragino Sans', color: accentColor))
+                  : const SizedBox(height: 44),
+            ),
+          ],
         ),
       );
     }
@@ -2811,13 +2871,26 @@ class _EditingItemFieldState extends State<_EditingItemField> {
     super.initState();
     _controller = TextEditingController(text: widget.initialText);
     _focusNode = FocusNode();
+    _focusNode.addListener(_handleFocusChange);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
     });
   }
 
+  void _handleFocusChange() {
+    // フォーカスが外れたら commit。
+    // キーボード上の「完了」ボタンは unfocus するだけで widget 自体は残るため、
+    // ここで明示的に commit を走らせないと「白紙のまま編集が止まって行が
+    // 消えない」状態になる。dispose 経由でも commit するが、二重実行は
+    // _committed フラグで防がれる。
+    if (!_focusNode.hasFocus && !_committed) {
+      _doCommit(chain: false);
+    }
+  }
+
   @override
   void dispose() {
+    _focusNode.removeListener(_handleFocusChange);
     if (!_committed) {
       widget.onCommit(_controller.text);
     }
@@ -2857,7 +2930,12 @@ class _EditingItemFieldState extends State<_EditingItemField> {
       textInputAction: TextInputAction.next,
       scrollPadding: const EdgeInsets.only(bottom: 100),
       onSubmitted: (_) => _doCommit(chain: true),
-      onTapOutside: (_) => _doCommit(chain: false),
+      // onTapOutside を空にする。元は _doCommit(chain: false) だったが、
+      // これがあると編集中に同じ行のメモ/日付/シェブロンや別項目のボタン
+      // タップが GestureRecognizer 競合で onTap 不発になり「効かない」状態に。
+      // commit は親側からの状態変化（_editingItemId = null）→ アンマウント
+      // 経由で dispose の onCommit が走るので保存ロスなし。
+      onTapOutside: (_) {},
     );
   }
 }
@@ -2912,13 +2990,22 @@ class _MemoEditFieldState extends State<_MemoEditField> {
     super.initState();
     _controller = TextEditingController(text: widget.initialText);
     _focusNode = FocusNode();
+    _focusNode.addListener(_handleFocusChange);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
     });
   }
 
+  void _handleFocusChange() {
+    // フォーカスが外れたら commit（「完了」ボタン等で widget が残る経路向け）
+    if (!_focusNode.hasFocus && !_committed) {
+      _commit();
+    }
+  }
+
   @override
   void dispose() {
+    _focusNode.removeListener(_handleFocusChange);
     if (!_committed) {
       widget.onCommit(_controller.text);
     }
@@ -2960,7 +3047,13 @@ class _MemoEditFieldState extends State<_MemoEditField> {
       ),
       onTap: TextMenuDismisser.wrap(null),
       contextMenuBuilder: TextMenuDismisser.builder,
-      onTapOutside: (_) => _commit(),
+      // 外タップは「フォーカスを外す」だけにする。commit は編集モードを
+      // 抜けるとき（dispose）にまとめて走らせる。
+      // ここで _commit() を呼ぶと、メモボタン再タップ時に onTap の前に
+      // _saveMemo の setState で _memoEditingItemId が null にされてしまい、
+      // 続けて _toggleMemo が「メモ空 → 編集モード」分岐に入って再展開する
+      // ループが発生していた。
+      onTapOutside: (_) => _focusNode.unfocus(),
     );
   }
 }
