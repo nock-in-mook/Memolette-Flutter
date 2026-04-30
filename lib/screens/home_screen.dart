@@ -3206,6 +3206,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// ボトムバーのグリッドサイズボタン用ラベル（現在選択中の表示）
   String _gridSizeLabel() => _gridLabelFor(_gridSize);
 
+  /// ボトムバー内ボタン専用の短縮ラベル。
+  /// 「1×可変（20行まで）」のように極端に長いものは隣のボタンとくっつくので
+  /// 短縮するが、「タイトルのみ」は機種別フォント縮小（_gridSizeButtonFontSize）
+  /// で対応するためフル表記のまま返す。
+  String _gridSizeButtonLabel() {
+    if (_isFrequentTab) return _frequentGridSize.label;
+    if (_gridSize == GridSizeOption.grid1flex) {
+      return '${_gridSize.columns}×可変';
+    }
+    return _gridLabelFor(_gridSize);
+  }
+
+  /// ボトムバー内のグリッドサイズボタン用フォントサイズ。
+  /// 「タイトルのみ」のような長いラベルが SE 3rd / 13 mini で隣ボタンに
+  /// 接触するのを避けるため、その組合せだけフォントを 12pt に下げる。
+  double _gridSizeButtonFontSize(BuildContext context) {
+    final isTitleOnly = !_isFrequentTab &&
+            _gridSize == GridSizeOption.titleOnly ||
+        _isFrequentTab && _frequentGridSize.label == 'タイトルのみ';
+    if (!isTitleOnly) return 15;
+    final cls = _phoneSizeClass(context);
+    if (cls == _PhoneSizeClass.verySmall ||
+        cls == _PhoneSizeClass.smallTall) {
+      return 11;
+    }
+    return 15;
+  }
+
   // ========================================
   // 8. フォルダ内フロート ボトムバー
   // ========================================
@@ -3439,9 +3467,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           // ④ グリッドサイズ（よく見るタブは別オプション）
           Builder(
             builder: (btnContext) {
-              final label = _isFrequentTab
-                  ? _frequentGridSize.label
-                  : _gridSizeLabel();
+              final label = _gridSizeButtonLabel();
               return GestureDetector(
                 onTap: () => _showGridSizeMenu(btnContext),
                 child: Container(
@@ -3456,8 +3482,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       const SizedBox(width: 5),
                       Text(
                         label,
-                        style: const TextStyle(
-                          fontSize: 15,
+                        style: TextStyle(
+                          fontSize: _gridSizeButtonFontSize(context),
                           fontWeight: FontWeight.w700,
                           fontFamily: 'Hiragino Sans',
                           color: _secondary,
