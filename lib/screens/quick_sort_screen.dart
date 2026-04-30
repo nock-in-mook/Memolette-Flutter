@@ -285,12 +285,17 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           Expanded(
             child: LayoutBuilder(builder: (context, constraints) {
               final maxH = constraints.maxHeight;
-              final collapsedCardH =
-                  MediaQuery.of(context).size.height * 0.29;
+              final screenH = MediaQuery.of(context).size.height;
+              final collapsedCardH = screenH * 0.29;
               // 爆速モードはカード縮小固定（最大化撤去）。
               // ルーレット開: 上余白 10pt、カード縮め
               // 通常: 上余白 70pt、カードは collapsedCardH
-              final topSpacer = _rouletteOpen ? 10.0 : 70.0;
+              // SE 3rd 等の縦が短い機種では上余白を 30pt まで詰めて
+              // 下部のオーバーフロー（BOTTOM OVERFLOWED 警告）を回避。
+              final isShortPhone = screenH < 700;
+              final topSpacer = _rouletteOpen
+                  ? 10.0
+                  : (isShortPhone ? 30.0 : 70.0);
               final rouletteCardH = maxH - 238;
               final cardH = _rouletteOpen
                   ? rouletteCardH.clamp(100.0, collapsedCardH)
@@ -638,39 +643,20 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                       ],
                     ),
                   ),
-                  // 右端: 次へ or 完了
+                  // 右端: 次へ or 完了（最後は虹色三角）
                   Positioned(
                     right: 0,
                     top: 0,
                     bottom: 0,
                     child: Center(
-                      child: isLast
-                          ? _PressableButton(
-                              onTap: _finishCurrentSet,
-                              shadowHeight: 3,
-                              color: Colors.orange,
-                              borderRadius: 20,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 8),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text('完了',
-                                      style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white)),
-                                  SizedBox(width: 4),
-                                  Icon(Icons.chevron_right,
-                                      size: 16, color: Colors.white),
-                                ],
-                              ),
-                            )
-                          : _TriangleNavButton(
-                              onTap: canNext ? _nextCard : null,
-                              enabled: canNext,
-                              direction: _TriangleDirection.right,
-                            ),
+                      child: _TriangleNavButton(
+                        onTap: isLast
+                            ? _finishCurrentSet
+                            : (canNext ? _nextCard : null),
+                        enabled: isLast || canNext,
+                        direction: _TriangleDirection.right,
+                        rainbow: isLast,
+                      ),
                     ),
                   ),
                 ],
@@ -3830,11 +3816,14 @@ class _TriangleNavButton extends StatefulWidget {
   final VoidCallback? onTap;
   final bool enabled;
   final _TriangleDirection direction;
+  /// true なら塗りを虹色グラデーションにする（最後のカードでの「完了」演出）
+  final bool rainbow;
 
   const _TriangleNavButton({
     required this.onTap,
     required this.enabled,
     required this.direction,
+    this.rainbow = false,
   });
 
   @override
@@ -3871,6 +3860,7 @@ class _TriangleNavButtonState extends State<_TriangleNavButton> {
                 : Colors.black.withValues(alpha: 0.15),
             shadowHeight: (_isPressed || !widget.enabled) ? 0 : _sh,
             direction: widget.direction,
+            rainbow: widget.rainbow,
           ),
         ),
       ),
@@ -3883,12 +3873,14 @@ class _TrianglePainter extends CustomPainter {
   final Color shadowColor;
   final double shadowHeight;
   final _TriangleDirection direction;
+  final bool rainbow;
 
   const _TrianglePainter({
     required this.color,
     required this.shadowColor,
     required this.shadowHeight,
     required this.direction,
+    this.rainbow = false,
   });
 
   @override
@@ -3920,8 +3912,23 @@ class _TrianglePainter extends CustomPainter {
       canvas.restore();
     }
 
-    // 塗り
-    canvas.drawPath(path, Paint()..color = color);
+    // 塗り（rainbow なら虹色グラデーション）
+    final fill = Paint();
+    if (rainbow) {
+      fill.shader = const LinearGradient(
+        colors: [
+          Colors.red,
+          Colors.orange,
+          Colors.yellow,
+          Colors.green,
+          Colors.blue,
+          Colors.purple,
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    } else {
+      fill.color = color;
+    }
+    canvas.drawPath(path, fill);
   }
 
   @override
