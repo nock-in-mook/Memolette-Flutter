@@ -2,131 +2,112 @@
 
 ## 現在の状況
 
-- **セッション#32 完了**（2026-04-29、長め）
-- ブランチ: **`main`**（`feature/phase-16-responsive` をマージ済み）
-- Phase 15 Step 9（カードバッジ）/ Phase 16（レスポンシブ）/ ダイアログ統一 まで完了
-- 動作確認: SE 3rd シミュ + iPhone 13 mini シミュ（FIFO 二系統）
+- **セッション#33 完了**（2026-04-30 〜 05-01、長め）
+- ブランチ: **`main`**
+- 今回はバグ修正中心。タグシート関連の見た目統一 + iOS 風要素オリジナル化 + 重大バグ4件の修正
 
-## #32 のサマリ
+## #33 のサマリ
 
-### Phase 15 Step 9: メモ・ToDo カードにバッジ表示
-- メモカード: `eventDate`（橙）/ `containsMarkdown` ベースの MD（紫）/ Pin（青）/ Lock（赤）を Stack 右上にオーバーレイ
-- `containsMarkdown(text)` を `lib/utils/markdown_detect.dart` に新設（Swift 版から regex 移植）
-- ToDoカード（メモ一覧グリッド + ToDo一覧画面）にも同形式のバッジ追加
-- `StackFit.expand` でセル全体を満たすよう調整、サムネイル比率の潰れも修正
-- サムネイル更新時のチラつき → `ImageStorage.absolutePathSync` で同期取得し初フレームで決定
+### NewTagSheet のデザイン統一
+- 配置（左キャンセル/中央タイトル/右確定、シート高さ85%）は維持しつつ、色・フォント・太さ・背景を `DialogStyles` に統一
+- 背景: すりガラス（blur+alpha 0.65）→ 白ベース（上部角丸＋影）
+- フォント: Hiragino Sans 統一
+- 太さ: タイトル w600→w700、キャンセル w400→w600
+- グレー濃度: shade600 → `DialogStyles.textGrey`
+- 青: 直書き #007AFF → `DialogStyles.defaultAction`
 
-### Phase 16: レスポンシブ対応（SE 3rd / 13 mini / 標準）
-- 機種別グリッドオプション: SE は 3×2/2×2、mini は 3×4/2×4、標準は 3×6/2×5
-- `_phoneSizeClass` / `_gridRowsFor` / `_availableGridOptions` ヘルパーで分岐
-- カレンダー初期スクロール: 今日が常にビューポート中央に来るよう `weekIndex` 基準で算出
-- 爆速整理画面: 高さ 700px 未満で上部余白 70→30
-- 爆速整理 最終カードの右下「完了」ボタン → 虹色三角形（`_TriangleNavButton.rainbow`）に変更。ロックボタンとの視覚的被り回避
-- ToDo カードのセル高をメモカードと一致させる
+### 親タグ削除の CupertinoActionSheet → Memolette オリジナル化
+- `home_screen.dart:3968` の `showCupertinoModalPopup` + `CupertinoActionSheet` を撤去
+- 新規 `lib/widgets/tag_delete_choice_dialog.dart` を作成（`showTagDeleteChoiceDialog`）
+- 中央ダイアログ + 白背景 + 縦並びボタン、destructive(赤) / default(青) / キャンセル(グレー)
 
-### ダイアログデザイン共通化
-- `lib/widgets/dialog_styles.dart` 新設。`title` / `message` / `actionLabel` / `bodyDecoration` / `accentButtonDecoration` / `textGrey` / `destructive` / `defaultAction` を一箇所に集約
-- `confirm_delete_dialog.dart` と `frosted_alert_dialog.dart` を `DialogStyles` 参照にリファクタ
-- 視認性向上: タイトル w600→w700 / 本文 w400→w500 / ボタン w500→w600、グレー alpha 0x99→0xCC
-- メモ上限（旧 CupertinoAlertDialog）→ `showFrostedAlert` に統一
-- 設定画面の全データ削除（旧 AlertDialog）→ `showConfirmDeleteDialog` に統一
+### KeyboardDoneBar 二重表示の解消
+- `main.dart` の MaterialApp.builder で全画面に既に掛かっているのに、各画面とシートで再度包んでいた
+- シート内では Stack 位置計算がズレて「完了」ボタンが画面上部に2個目が出ていた
+- 削除: `home_screen.dart` / `todo_lists_screen.dart` / `quick_sort_screen.dart` / `new_tag_sheet.dart`
 
-### ToDo 編集画面の状態遷移修正（多数）
-- アイテム編集中に他アイテム / タイトル / メモ をタップ → 自動コミットしてから次の操作へ
-- `_committingIds: Set<String>` で per-id ガード（単一フラグだと Y commit が漏れる問題を解消）
-- dispose 時の commit が次アイテムを上書きしないよう `if (_editingItemId == id)` ガード
-- 「完了」 キーボードボタンで commit → `_focusNode.addListener(_handleFocusChange)` で focus loss 検知
-- 親 GestureDetector の onTap が子のタップを奪う問題 → outer `Listener(onPointerDown:)` に変更
-- onTapOutside は no-op（commit は dispose と focus listener に任せる）
+### 重大バグ修正
 
-### 選択モード見た目調整
-- 「削除するメモを選択してください」バナー位置をフォルダタブより前面 + ノッチ回避位置に
-- 選択削除ボタンのドロップシャドウ・不透明背景化（半透明だとシャドウが透けて灰色っぽく見える問題）
-- ToDo 一覧の選択削除ラベル「削除」→「選択削除」、alpha 0.6→0.85
+#### A. 新規メモが保存されないバグ（`onMemoCreated` の早期 return）
+- 原因: 920c0bd で追加された `if (!_isInputExpanded && !_isEditingCompact) return;` が、`_focusInputTrigger++` 直後の「フォーカス・キーボード立ち上がりかけ」も弾いていた
+- `_isEditingCompact` は「フォーカス入力中＋キーボード表示中」が条件 → `_preCreateEmptyMemo` 完了時にまだ満たしていない
+- 修正: `_pendingNewMemoCreation` フラグ追加、`onClosed` で必ずリセット → 立ち上がりかけだけ通し、戻り矢印で抜けた後の遅延コールバックは元のガードが効く（920c0bd の最大化ループ防止と両立）
 
-### タグ周り
-- タブ z-index: 選択中=最前面、隣接=次、遠い=奥（`_ZOrderedRow._frontToBackOrder`）
-- 親タグ追加直後にそのタブへ自動スクロール（リトライ付き）
-- ルーレットの親タグ削除後リセット（`_syncToSelection` に `selectedParentId == null` 分岐追加）
-- タグ表示の動的配分: TextPainter で自然幅を測り、短辺は自然 / 長辺に余白配分
+#### B. ルーレット親タグの内側端が子タグ判定に吸われる
+- 原因: `borderX = cx - parentInnerR` の **垂直線**で親/子を分けていた。視覚的境界は半径 `parentInnerR` の **円弧**なので、上下に傾いたセクター（中心軸から離れたもの）の内側端が borderX より右側に来て子判定されていた
+- 修正: タップ/ドラッグ開始位置の中心からの距離（半径）で判定 → `dr < parentInnerR` なら子、それ以上なら親
+
+#### C. タグ残存バグ（async レース）
+- 症状: 親タグルーレットを切り替えてもバッジ表示と子タグルーレットが古いまま固着
+- ログで確認: `editingMemoId=null` なのに `_attachedTags=[長文テスト]` が残存
+- 原因: `_loadMemo` / `loadMemoDirectly` の async タグ取得が、await 中にユーザーが新規作成等で別メモへ遷移した後に完了し、古いメモのタグで `_attachedTags` を上書きしていた
+- 修正: await 完了時に `widget.editingMemoId` が変化していないかガード
+
+#### D. タグ残存バグ（pending 残留）
+- 症状: タグだけ指定して本文未入力の状態で新規作成ボタンを押すと pending タグが残る
+- 原因: `editingMemoId` が null → null（変化なし）になるため `didUpdateWidget` の `_clearInput` が呼ばれない
+- 修正: `focusRequest` 変化＋両方 null の場合に明示的に `_clearInput` を実行
+
+### ルーレット開時のフォーカス排他
+- ルーレットが開いた状態で入力欄に文字を打てると状態が壊れる原因になっていた
+- 入力フォーカスとルーレット表示は排他にする
+- `memo_input_area`: タイトル/本文にフォーカスが入った瞬間に `_onFocusChange` で `_closeRoulette()`
+- `home_screen`: 検索欄フォーカス時の listener で `_inputAreaKey.currentState?.closeRoulette()`
+
+### グローバル CLAUDE.md に「★ 回帰バグ防止ルール」追記
+- 「こっちを立てたらあっちが死んだ」型の回帰バグ（920c0bd の早期 return が新規作成を阻害したパターン）を防ぐためのルール
+- ガード追加・変更前: ① 通すべき正常ケースの列挙 / ② コールバック呼び出し元の grep / ③ 既存ガードは `git blame` で意図確認
 
 ### ROADMAP 追記
-- フィルタボタンに「名前順」ソート（昇/降順トグル）
-- **タグ追加シート（NewTagSheet）を Memolette オリジナル風に改修**（次セッション最有力タスク）
-- アプリ全体の iOS 風 UI 要素を洗い出して脱却（Android リリース見据えて）
+- メモカードのテキスト行数最適化: グリッド3×4(mini)/3×2(SE)で本文をもう1行多く表示できそう
 
-## 次のアクション（次セッション #33）
+## 次のアクション（次セッション #34）
 
-### 直近最優先
-- **NewTagSheet のオリジナル風改修**
-  - 現状: iOS ナビゲーションバー風（左キャンセル / 中央タイトル / 右確定 / 背景すりガラス）+ 入力欄が背景同化
-  - 改修: 白背景 + ボタン縦並び（confirm_delete_dialog 系統）/ 入力欄も白背景 + 明確な枠線
-  - ToDoリスト新規作成（_NewListDialog）はそのまま据え置き
-- **アプリ全体の iOS 風要素の洗い出し**
-  - showCupertinoModalPopup / CupertinoActionSheet / CupertinoDialogAction 系の使用箇所
-  - Memolette オリジナル風に置き換え
-
-### ダイアログ巡回の続き（途中）
-カテゴリ別の確認・統一作業は途中で中断。次は：
-- **C 選択肢・メニュー**: フィルタプルダウン / 背景色ピッカー / グリッドサイズ選択メニュー
-- **D 入力シート**: NewTagSheet（上記タスクと統合）
-- **E ピッカー**: showCustomDatePickerSheet / showCupertinoModalPopup
-- **F バナー**: 選択モードバナー類
-
-### 残課題（前セッションから継続）
+### 残タスク
+- **アプリ全体の iOS 風要素の追加洗い出し**（CupertinoActionSheet は #33 で潰した。残: フィルタプルダウン / 背景色ピッカー の `DialogStyles` 統一など）
+- **BgColorPickerDialog の DialogStyles 統一**（メモ・ToDoリスト背景色ダイアログ。直書きで `DialogStyles` 未使用）
+- **ダイアログ巡回の続き**: C 選択肢メニュー / E ピッカー / F バナー
 - 実機 / iPad での Phase 15 Step 9 + Phase 16 動作確認
-- Phase 14: アクセシビリティ文字サイズ対応（リリース前タスク、現状はアプリ固定方針）
-- iPad 横画面 (embedded mode) での選択モード対応（Phase 8 で確認）
-- `FOCUS_REGRESSION_CHECKLIST.md` の全項目チェック
+- Phase 14: アクセシビリティ文字サイズ対応（リリース前タスク）
+
+### 短期備忘
+- メモカードのテキスト行数最適化（ROADMAP アイデアメモ）
 
 ## 技術メモ
 
-### Phase 16 グリッド分岐
-```dart
-enum _PhoneSizeClass { se, mini, standard }
-_PhoneSizeClass _phoneSizeClass(Size size) {
-  if (size.width < 380 && size.height < 700) return _PhoneSizeClass.se;       // 375x667
-  if (size.width < 380) return _PhoneSizeClass.mini;                          // 375x812
-  return _PhoneSizeClass.standard;
-}
-```
+### 回帰防止ルール（グローバル CLAUDE.md より）
+ガード（early return / 条件分岐）を追加・変更する前に：
+1. 通すべき正常ケースを箇条書きで列挙し、新条件下でそれぞれ通過することを確認
+2. そのコールバック / 関数の呼び出し元を grep で全部洗う（async コールバックは複数経路から呼ばれがち）
+3. 既存ガードを削除・緩和する前に `git blame` で過去の意図確認
+
+### hot reload と addListener
+`addListener` は initState で1回しか呼ばれない。**hot reload では新しいリスナー登録が反映されない**。検証時は **hot restart** が必要（`echo R > /tmp/flutter_pipe`）。
 
 ### 二系統 FIFO（SE + mini 並列起動）
 ```bash
 # SE 3rd
 nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe' > /dev/null 2>&1 &
-
 # mini
 nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe_13' > /dev/null 2>&1 &
-
-# 別 /tmp/memolette-run-13 に rsync して並列 flutter run
+# 別 /tmp/memolette-run-13mini に rsync して並列 flutter run
 ```
 
-### DialogStyles の使い方
-共通スタイルは `lib/widgets/dialog_styles.dart` 一箇所で管理。新規ダイアログは：
-```dart
-import '../widgets/dialog_styles.dart';
-// タイトル
-Text(title, style: DialogStyles.title)
-// 本文
-Text(message, style: DialogStyles.message)
-// アクションボタン
-Container(
-  decoration: DialogStyles.accentButtonDecoration(DialogStyles.destructive),
-  child: Text(label, style: DialogStyles.actionLabel.copyWith(color: DialogStyles.destructive)),
-)
-// ダイアログ全体
-Container(decoration: DialogStyles.bodyDecoration, ...)
+### flutter logs でデバッグ
+```bash
+flutter logs -d 47003836-6426-4AB1-90FC-C5E73DA251C1 > /tmp/se_logs.txt 2>&1 &
 ```
+debugPrint がリアルタイムで /tmp/se_logs.txt に書かれる。`grep "[Tag" /tmp/se_logs.txt` でフィルタ。
 
-### shimu / 実機 ID
+### シミュ / 実機 ID
 - iPhone 17 Pro シミュ: `ACE500F3-AA23-44EC-AB93-C4EA636FC3BC`
 - iPad Pro 12.9-inch (6th gen): `1F181174-7768-44DB-9BDA-E9E9976695F0`
 - iPhone 15 Pro Max（実機 wireless）: `00008130-0006252E2E40001C`
-- iPhone SE 3rd / iPhone 13 mini はセッション中に作成した iOS 26.3 ランタイムシミュ（次回再作成可）
+- iPhone SE 3rd iOS26: `47003836-6426-4AB1-90FC-C5E73DA251C1`
+- iPhone 13 mini iOS26: `B5B2C694-8EAB-4C14-AA4D-8BCE464CE49D`
 
 ## 関連メモ（自動メモリ）
 
 - `feedback_no_monitor_for_build.md`: flutter run のビルド完了待ちで Monitor を使わない
-- `feedback_layout_immutable.md`: 既存レイアウト（白カードサイズ等）は新機能で動かさない、オーバーレイで実装
-- `build_workaround.md`: Google Drive 上では codesign エラーで `flutter build ios` が失敗 → `/tmp/memolette-run` 経由
+- `feedback_layout_immutable.md`: 既存レイアウトは新機能で動かさない、オーバーレイで実装
+- `build_workaround.md`: Google Drive 上では codesign エラー → `/tmp/memolette-run` 経由

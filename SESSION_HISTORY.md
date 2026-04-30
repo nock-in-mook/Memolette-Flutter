@@ -950,3 +950,26 @@
 - ダイアログ巡回の続き: フィルタプルダウン / 背景色ピッカー / グリッドサイズ選択メニュー / ピッカー / バナー
 - 実機 / iPad での Phase 15 Step 9 + Phase 16 動作確認
 - Phase 14: アクセシビリティ文字サイズ対応（リリース前タスク）
+
+---
+## #33 (2026-04-30 〜 05-01) — タグシート系総整備 + 重大バグ4件修正 + 回帰防止ルール追加
+
+### 主な変更
+- NewTagSheet のデザインを DialogStyles 統一（白背景・Hiragino Sans・w700/w500/w600・defaultAction）
+- 親タグ削除の CupertinoActionSheet を Memolette オリジナルに置換（lib/widgets/tag_delete_choice_dialog.dart 新規）
+- KeyboardDoneBar 二重表示の解消（main.dart で全画面に既掛かりのため、各画面・シート側を削除）
+- ルーレット親タグ内側端が子タグ判定に吸われるバグ修正（垂直線判定→半径判定）
+- ルーレット開時に入力欄/検索欄フォーカスで自動クローズ（共存はバグの元なので排他）
+
+### 重大バグ修正
+- **新規メモが保存されない**: 920c0bd の早期 return ガードが立ち上がりかけの onMemoCreated も弾いていた。`_pendingNewMemoCreation` フラグで両立
+- **タグ残存（async レース）**: `_loadMemo` / `loadMemoDirectly` の await 中に別メモへ遷移すると古いタグで `_attachedTags` を上書きしていた。await 完了時に `widget.editingMemoId` 一致チェック
+- **タグ残存（pending）**: editingMemoId が null→null だと `_clearInput` が呼ばれない。`focusRequest` 変化＋両方 null で明示クリア
+
+### グローバル CLAUDE.md
+- 「★ 回帰バグ防止ルール」追記。ガード追加・変更前の3項目チェックリスト
+
+### 次セッション最有力タスク
+- BgColorPickerDialog の DialogStyles 統一
+- アプリ全体の iOS 風要素の追加洗い出し
+- ダイアログ巡回の続き（C 選択肢メニュー / E ピッカー / F バナー）
