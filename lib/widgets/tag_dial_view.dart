@@ -188,11 +188,14 @@ class _TagDialViewState extends State<TagDialView>
     // 左方向(pi)が中心、上はpi+α、下はpi-α
     final displayAngle = (pi - angleRad) * 180 / pi;
 
-    // タッチX位置で親/子を判定
-    // 視覚的な境界は canvas 上の X = cx - parentInnerR にある
-    // （親の内半径＝子の外半径）。それより右（中心寄り）なら子エリア
-    final borderX = cx - parentInnerR;
-    final isChild = showChild && pos.dx > borderX;
+    // タッチ位置の中心からの距離（半径）で親/子を判定。
+    // 視覚的な境界は半径 parentInnerR の円弧（親の内半径＝子の外半径）。
+    // 距離 < parentInnerR なら子エリア、それ以上なら親エリア。
+    // ※ 旧実装の「borderX = cx - parentInnerR」の垂直線判定だと、
+    //   上下に傾いたセクター（中心軸から離れた親セクター）の内側端付近が
+    //   borderX より右側に来てしまい、子タグ判定として吸われていた。
+    final dr = sqrt(dx * dx + dy * dy);
+    final isChild = showChild && dr < parentInnerR;
 
     final rotation = isChild ? _childRotation : _parentRotation;
     final options = isChild ? widget.childOptions : widget.parentOptions;
@@ -293,10 +296,12 @@ class _TagDialViewState extends State<TagDialView>
       },
       onVerticalDragStart: (d) {
         if (!widget.isOpen) return;
-        // ドラッグ開始時にターゲットを確定（途中で切り替えない）
-        final touchX = d.localPosition.dx;
-        final borderX = cx - parentInnerR;
-        _dragTargetIsChild = showChild && touchX > borderX;
+        // ドラッグ開始時にターゲットを確定（途中で切り替えない）。
+        // 中心からの距離（半径）で親/子を判定（タップと同じロジック）。
+        final ddx = d.localPosition.dx - cx;
+        final ddy = d.localPosition.dy - cy;
+        final dr = sqrt(ddx * ddx + ddy * ddy);
+        _dragTargetIsChild = showChild && dr < parentInnerR;
       },
       onVerticalDragUpdate: (d) {
         if (!widget.isOpen || _dragTargetIsChild == null) return;
