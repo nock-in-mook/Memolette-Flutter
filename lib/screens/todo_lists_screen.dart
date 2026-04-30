@@ -619,18 +619,25 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
                     ],
                   ),
                     ),
-                    // ピン・ロックアイコン（右上に横並び）
-                    if (list.isPinned || list.isLocked)
+                    // eventDate / ピン / ロックアイコン（右上に横並び）
+                    if (list.eventDate != null ||
+                        list.isPinned ||
+                        list.isLocked)
                       Positioned(
                         right: 4, top: 4,
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (list.isPinned)
+                            if (list.eventDate != null) ...[
+                              const Icon(Icons.event_outlined,
+                                  size: 11, color: Colors.orange),
+                              const SizedBox(width: 3),
+                            ],
+                            if (list.isPinned) ...[
                               const Icon(Icons.push_pin,
                                   size: 10, color: Colors.orange),
-                            if (list.isPinned && list.isLocked)
-                              const SizedBox(width: 3),
+                              if (list.isLocked) const SizedBox(width: 3),
+                            ],
                             if (list.isLocked)
                               const Icon(Icons.lock,
                                   size: 11, color: Colors.red),

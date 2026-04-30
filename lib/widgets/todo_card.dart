@@ -84,10 +84,10 @@ class TodoCard extends ConsumerWidget {
         final total = items.length;
         final done = items.where((i) => i.isDone).length;
 
-        return GestureDetector(
-          onTap: onTap,
-          behavior: HitTestBehavior.opaque,
-          child: Container(
+        final hasStatusBadges = todoList.eventDate != null ||
+            todoList.isPinned ||
+            todoList.isLocked;
+        final cardBody = Container(
             padding: EdgeInsets.all(_cardPadding),
             // フラッシュ枠は foregroundDecoration で中身に重ねてレイアウトを変えない
             foregroundDecoration: flashLevel > 0
@@ -182,27 +182,8 @@ class TodoCard extends ConsumerWidget {
                     ],
                   ],
                 ),
-                // ピン・ロックアイコン（右上）
-                if (todoList.isPinned || todoList.isLocked)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (todoList.isPinned)
-                          Icon(Icons.push_pin,
-                              size: 8,
-                              color: Colors.orange.withValues(alpha: 0.6)),
-                        if (todoList.isPinned && todoList.isLocked)
-                          const SizedBox(width: 2),
-                        if (todoList.isLocked)
-                          Icon(Icons.lock,
-                              size: 8,
-                              color: Colors.orange.withValues(alpha: 0.6)),
-                      ],
-                    ),
-                  ),
+                // ピン/ロック/eventDate バッジは外側の Stack（カード上端から
+                // はみ出す形）に配置するため、ここでは何も描画しない。
                 // 結合で生成されたリスト: しおり上端寄り (カード上端から 3/4 位置) に配置
                 // 水平は しおり中心 x = _cardPadding + _bookmarkSize/2 (通常時)
                 // 垂直は しおり上端(y=_cardPadding)の 3/4 位置 y=_cardPadding*0.75
@@ -223,6 +204,52 @@ class TodoCard extends ConsumerWidget {
                   ),
               ],
             ),
+          );
+
+        return GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              cardBody,
+              // ステータスバッジ（メモカードと同じ方針: カード上端からはみ出す
+              // 横並び。色: eventDate=オレンジ / Pin=青 / Lock=赤）
+              if (hasStatusBadges)
+                Positioned(
+                  right: 6,
+                  top: -5,
+                  child: IgnorePointer(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (todoList.eventDate != null) ...[
+                          const Icon(
+                            Icons.event_outlined,
+                            size: 12,
+                            color: Color(0xE6FF9500), // orange
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        if (todoList.isPinned) ...[
+                          const Icon(
+                            Icons.push_pin,
+                            size: 12,
+                            color: Color(0xE6007AFF), // blue
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        if (todoList.isLocked)
+                          const Icon(
+                            Icons.lock,
+                            size: 12,
+                            color: Color(0xE6FF3B30), // red
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
           ),
         );
       },
