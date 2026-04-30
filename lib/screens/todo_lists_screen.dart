@@ -8,7 +8,6 @@ import 'package:drift/drift.dart' hide Column;
 import '../constants/memo_bg_colors.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
-import '../utils/keyboard_done_bar.dart';
 import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
@@ -276,7 +275,8 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: false,
-      body: KeyboardDoneBar(child: Padding(
+      // KeyboardDoneBar は MaterialApp.builder で全体に掛かっているためここで包まない
+      body: Padding(
         padding: EdgeInsets.only(
           top: MediaQuery.of(context).viewPadding.top - 4,
         ),
@@ -291,7 +291,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
             return _buildNarrowLayout(lists);
           },
         ),
-      )),
+      ),
     );
   }
 

@@ -12,7 +12,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
-import '../utils/keyboard_done_bar.dart';
 import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
@@ -687,14 +686,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: false, // キーボードでオーバーフローしないように
       // 入力欄以外の任意の場所をタップしたらキーボード+コンテキストメニューを閉じる
-      body: KeyboardDoneBar(child: GestureDetector(
+      // KeyboardDoneBar は MaterialApp.builder で全体に掛かっているためここで包まない
+      body: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: () {
           ContextMenuController.removeAny();
           FocusManager.instance.primaryFocus?.unfocus();
         },
         child: _buildMainContent(parentTags, parentTagsAsync, currentColor),
-      )),
+      ),
     );
   }
 

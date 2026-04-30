@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
-import '../utils/keyboard_done_bar.dart';
 import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
@@ -103,44 +102,43 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       resizeToAvoidBottomInset: false,
-      body: KeyboardDoneBar(
-        child: Stack(
-          children: [
-            switch (_phase) {
-              _Phase.intro => _QuickSortIntro(
-                  onNext: () => setState(() => _phase = _Phase.filter),
-                  onCancel: () => Navigator.of(context).pop(),
-                ),
-              _Phase.filter => _QuickSortFilterPhase(
-                  onStart: (memos) {
-                    setState(() {
-                      _allFilteredMemos = memos;
-                      _currentSetIndex = 0;
-                      // 50件超ならまずセット確認、それ以外はロード→カルーセル
-                      _phase = memos.length > _setSize
-                          ? _Phase.setConfirm
-                          : _Phase.loading;
-                    });
-                  },
-                  onBack: () => setState(() => _phase = _Phase.intro),
-                  onCancel: () => Navigator.of(context).pop(),
-                ),
-              _Phase.loading => _QuickSortLoading(
-                  memoCount: _currentSetMemoCount,
-                  onComplete: () {
-                    setState(() {
-                      _loadCurrentSet();
-                      _phase = _Phase.carousel;
-                    });
-                  },
-                ),
-              _Phase.setConfirm => _buildSetConfirmPhase(),
-              _Phase.carousel => _buildCarouselPhase(),
-              _Phase.result => _buildResultPhase(),
-            },
+      // KeyboardDoneBar は MaterialApp.builder で全体に掛かっているためここで包まない
+      body: Stack(
+        children: [
+          switch (_phase) {
+            _Phase.intro => _QuickSortIntro(
+                onNext: () => setState(() => _phase = _Phase.filter),
+                onCancel: () => Navigator.of(context).pop(),
+              ),
+            _Phase.filter => _QuickSortFilterPhase(
+                onStart: (memos) {
+                  setState(() {
+                    _allFilteredMemos = memos;
+                    _currentSetIndex = 0;
+                    // 50件超ならまずセット確認、それ以外はロード→カルーセル
+                    _phase = memos.length > _setSize
+                        ? _Phase.setConfirm
+                        : _Phase.loading;
+                  });
+                },
+                onBack: () => setState(() => _phase = _Phase.intro),
+                onCancel: () => Navigator.of(context).pop(),
+              ),
+            _Phase.loading => _QuickSortLoading(
+                memoCount: _currentSetMemoCount,
+                onComplete: () {
+                  setState(() {
+                    _loadCurrentSet();
+                    _phase = _Phase.carousel;
+                  });
+                },
+              ),
+            _Phase.setConfirm => _buildSetConfirmPhase(),
+            _Phase.carousel => _buildCarouselPhase(),
+            _Phase.result => _buildResultPhase(),
+          },
 
-          ],
-        ),
+        ],
       ),
     );
   }
