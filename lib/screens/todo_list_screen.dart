@@ -1158,11 +1158,13 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                         constraints: const BoxConstraints(maxWidth: 160),
                         child: _buildTagBadge(),
                       ),
-                      // リセットボタン（チェックが1つ以上あるとき）
-                      if (done > 0) ...[
+                      // リセットボタン（項目があれば常に表示、チェック 0 件は無効）
+                      if (total > 0) ...[
                         const SizedBox(width: 6),
                         GestureDetector(
-                          onTap: () => _showResetDialog(rootItems, done),
+                          onTap: done > 0
+                              ? () => _showResetDialog(rootItems, done)
+                              : null,
                           behavior: HitTestBehavior.opaque,
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -1170,7 +1172,8 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                               Icon(
                                 CupertinoIcons.checkmark_square,
                                 size: 10,
-                                color: Colors.black.withValues(alpha: 0.4),
+                                color: Colors.black
+                                    .withValues(alpha: done > 0 ? 0.4 : 0.2),
                               ),
                               const SizedBox(width: 2),
                               Text(
@@ -1179,7 +1182,8 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                                   fontSize: 10,
                                   fontWeight: FontWeight.w500,
                                   fontFamily: 'Hiragino Sans',
-                                  color: Colors.black.withValues(alpha: 0.4),
+                                  color: Colors.black
+                                      .withValues(alpha: done > 0 ? 0.4 : 0.2),
                                 ),
                               ),
                             ],
@@ -1316,7 +1320,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                 ? _buildTagDisplay(parentTag, childTag)
                 : Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                        horizontal: 10, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(10),
