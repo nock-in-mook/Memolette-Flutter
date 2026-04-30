@@ -83,6 +83,84 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
+/// 端末サイズクラス。グリッド選択肢の最小行数とラベルを機種ごとに調整するために使う。
+/// - verySmall: SE 3rd など（375×667 系）
+/// - smallTall: 13/12 mini など（375×812 系、iPhone 16 系の 390 はここ）
+/// - standard: 17 Pro / Pro Max など（393pt 以上）
+/// - tablet: iPad（shortestSide >= 600）
+enum _PhoneSizeClass { verySmall, smallTall, standard, tablet }
+
+_PhoneSizeClass _phoneSizeClass(BuildContext context) {
+  final s = MediaQuery.of(context).size;
+  if (s.shortestSide >= 600) return _PhoneSizeClass.tablet;
+  if (s.width < 380 && s.height < 700) return _PhoneSizeClass.verySmall;
+  if (s.width < 400 && s.height < 850) return _PhoneSizeClass.smallTall;
+  return _PhoneSizeClass.standard;
+}
+
+/// 端末サイズに応じたグリッド行数。GridSizeOption の固定値ではなく機種別。
+int _gridRowsFor(GridSizeOption opt, BuildContext context) {
+  final cls = _phoneSizeClass(context);
+  if (cls == _PhoneSizeClass.verySmall) {
+    return switch (opt) {
+      GridSizeOption.grid3x6 => 2,
+      GridSizeOption.grid2x5 => 2,
+      GridSizeOption.grid2x3 => 2,
+      GridSizeOption.grid1x2 => 2,
+      _ => 0,
+    };
+  }
+  if (cls == _PhoneSizeClass.smallTall) {
+    return switch (opt) {
+      GridSizeOption.grid3x6 => 4,
+      GridSizeOption.grid2x5 => 4,
+      GridSizeOption.grid2x3 => 2,
+      GridSizeOption.grid1x2 => 2,
+      _ => 0,
+    };
+  }
+  return switch (opt) {
+    GridSizeOption.grid3x6 => 6,
+    GridSizeOption.grid2x5 => 5,
+    GridSizeOption.grid2x3 => 3,
+    GridSizeOption.grid1x2 => 2,
+    _ => 0,
+  };
+}
+
+/// 端末サイズに応じたグリッド選択肢の絞り込み。
+/// 機種が小さいほど中間サイズ（grid2x3 / grid1x2）を間引いて、選択肢が
+/// 「3列」「2列」「可変」「タイトルのみ」程度に整理されるようにする。
+List<GridSizeOption> _availableGridOptions(BuildContext context) {
+  switch (_phoneSizeClass(context)) {
+    case _PhoneSizeClass.verySmall:
+      return const [
+        GridSizeOption.grid3x6,
+        GridSizeOption.grid2x5,
+        GridSizeOption.grid1flex,
+        GridSizeOption.titleOnly,
+      ];
+    case _PhoneSizeClass.smallTall:
+      return const [
+        GridSizeOption.grid3x6,
+        GridSizeOption.grid2x5,
+        GridSizeOption.grid2x3,
+        GridSizeOption.grid1flex,
+        GridSizeOption.titleOnly,
+      ];
+    case _PhoneSizeClass.tablet:
+      // iPad 縦画面は grid1x2 を除外（既存仕様）
+      if (Responsive.isTablet(context) && !Responsive.isWide(context)) {
+        return GridSizeOption.values
+            .where((o) => o != GridSizeOption.grid1x2)
+            .toList();
+      }
+      return GridSizeOption.values.toList();
+    case _PhoneSizeClass.standard:
+      return GridSizeOption.values.toList();
+  }
+}
+
 // タブの特殊キー
 const String kAllTabKey = '__all__';
 const String kUntaggedTabKey = '__untagged__';
@@ -546,6 +624,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final parentTags = parentTagsAsync.valueOrNull ?? const <Tag>[];
     _tabOrder = _syncTabOrder(parentTags);
     final currentColor = _currentTabColor(parentTags);
+
+    // 端末サイズで現状の _gridSize が利用不可なら、利用可能な最初の値に補正。
+    // （例: 17 Pro で grid2x3 を使っていた状態で SE 3rd 起動など）
+    final availableGrid = _availableGridOptions(context);
+    if (!availableGrid.contains(_gridSize)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (!_availableGridOptions(context).contains(_gridSize)) {
+          setState(() => _gridSize = availableGrid.first);
+        }
+      });
+    }
 
     // 親タグ新規追加検出: 前回 build から増えたタグがあれば、そのタブを
     // 画面内に確実に表示する（フォルダタブ末尾の「+」だけでなく、ルーレット
@@ -3080,14 +3170,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (isWide && opt.iPadWideRows > 0) {
         return '$cols×${opt.iPadWideRows}';
       }
-      return switch (opt) {
-        GridSizeOption.titleOnly => 'タイトルのみ',
-        GridSizeOption.grid1flex => '$cols×可変（20行まで）',
-        GridSizeOption.grid3x6 => '$cols×6',
-        GridSizeOption.grid2x5 => '$cols×5',
-        GridSizeOption.grid2x3 => '$cols×3',
-        GridSizeOption.grid1x2 => '$cols×2',
-      };
+      if (opt == GridSizeOption.titleOnly) return 'タイトルのみ';
+      if (opt == GridSizeOption.grid1flex) return '$cols×可変（20行まで）';
+      // 機種ごとの行数（小型機種は行数を減らす）
+      final rows = _gridRowsFor(opt, context);
+      return '$cols×$rows';
     }
 
     if (!_isMemoListExpanded) return baseLabel();
@@ -3446,14 +3533,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           return _GridSizeMenuOverlay(
             current: _gridSize,
             buttonRect: btnRect,
-            // 最大化時は動的「cols×N」、iPad はラベルが enum と異なるので上書き
-            labelOverrides: (_isMemoListExpanded ||
-                    Responsive.isTablet(context))
-                ? {
-                    for (final o in GridSizeOption.values)
-                      o: _gridLabelFor(o),
-                  }
-                : null,
+            // 機種別の行数に応じた「cols×N」表記をするため常に override で
+            // ラベルを生成（_gridLabelFor が画面サイズと最大化状態を見て決める）
+            labelOverrides: {
+              for (final o in GridSizeOption.values) o: _gridLabelFor(o),
+            },
           );
         },
         transitionBuilder: (_, anim, _, child) {
@@ -5778,13 +5862,7 @@ class _MemoGridView extends StatelessWidget {
     final isWide = Responsive.isWide(context);
     final rows = isWide && gridSize.iPadWideRows > 0
         ? gridSize.iPadWideRows
-        : switch (gridSize) {
-            GridSizeOption.grid3x6 => 6,
-            GridSizeOption.grid2x5 => 5,
-            GridSizeOption.grid2x3 => 3,
-            GridSizeOption.grid1x2 => 2,
-            _ => 0,
-          };
+        : _gridRowsFor(gridSize, context);
     if (rows == 0) return 100; // fallback
     const spacing = 8.0;
     const peek = 0.2;
@@ -6001,15 +6079,11 @@ class _GridSizeMenuOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 本家normalOptions: [3×6, 2×5, 2×3, 1×2, 1(全文), タイトルのみ]
-    // iPad縦画面: grid1x2 (2×2) は他の選択肢と重複して冗長なため除外。
-    // iPad横画面: grid1x2 は「2×3」として独立した価値があるので含める。
-    final options = (Responsive.isTablet(context) &&
-            !Responsive.isWide(context))
-        ? GridSizeOption.values
-            .where((o) => o != GridSizeOption.grid1x2)
-            .toList()
-        : GridSizeOption.values.toList();
+    // 端末サイズに応じて選択肢を出し分ける。
+    //  - SE 3rd（verySmall）: 3×2 / 2×2 / 1×可変 / タイトルのみ
+    //  - 13 mini（smallTall）: 3×4 / 2×4 / 2×2 / 1×可変 / タイトルのみ
+    //  - 17 Pro 以上 / iPad: 既存の全選択肢
+    final options = _availableGridOptions(context);
 
     const menuWidth = 220.0;
     // 行数: 見出し + N 項目
