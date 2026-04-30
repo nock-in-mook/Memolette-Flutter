@@ -1725,82 +1725,131 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     );
   }
 
+  /// テキスト 1 行の自然描画幅を測る（タグ表示の動的配分用）
+  double _measureTextWidth(String text, TextStyle style) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout();
+    return painter.size.width;
+  }
+
   /// 親タグ＋子タグの重ね合わせ表示（Swift版 tagDisplay 準拠）
   Widget _buildTagDisplay() {
     final parent = _parentTag!;
     final child = _childTag;
     final parentColor = TagColors.getColor(parent.colorIndex);
-    final screenWidth = MediaQuery.of(context).size.width;
-    // 親タグ・子タグそれぞれの最大幅（長いタグ名で片方が押し出されないように）
-    final maxParentTagWidth = screenWidth * 0.18;
-    final maxChildTagWidth = screenWidth * 0.14;
 
     if (child != null) {
       final childColor = TagColors.getColor(child.colorIndex);
-      // 親タグと子タグを4ptめり込ませる（本家 HStack(spacing: -4) 準拠）
-      final parentWidget = ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxParentTagWidth),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
-          decoration: BoxDecoration(
-            color: parentColor,
-            borderRadius: BorderRadius.circular(CornerRadius.badge),
-            border: Border.all(
-              color: _tagFlashActive ? Colors.orange : Colors.transparent,
-              width: 2,
+      // 親と子の合算予算で動的配分する。固定 maxWidth を個別に与えると、
+      //  - 周囲の Flexible 制約より合算が大きくなった場合にオーバーフロー
+      //  - 親が短くても子は固定値で打ち切られて余りを活かせない
+      // という問題が起きる。LayoutBuilder で実利用可能幅を取り、TextPainter
+      // で各タグの自然幅を測って配分する（短い側は自然幅、長い側に余りを譲る）。
+      const overlap = 4.0; // 子タグの -4 マージン（描画上の重なり、layout 上は無視）
+      // 装飾分の幅: padding + border + 計測誤差吸収マージン
+      // Transform.translate は layout に影響しないため、Row の実 layout 幅は
+      // 単純に pMax + cMax。これを available にぴったり合わせてオーバーフロー
+      // を回避する。
+      const parentDecoration = 16.0; // padding 4+4 + border 2*2 + 余裕 4
+      const childDecoration = 13.0; // padding 3+3 + border 1.5*2 + 余裕 4
+      return LayoutBuilder(
+        builder: (ctx, constraints) {
+          final available = constraints.maxWidth.isFinite
+              ? constraints.maxWidth
+              : MediaQuery.of(context).size.width * 0.32;
+          // 自然幅（テキスト + 装飾）
+          final pTextW = _measureTextWidth(parent.name, _parentTagTextStyle);
+          final cTextW = _measureTextWidth(child.name, _childTagTextStyle);
+          final pNat = pTextW + parentDecoration;
+          final cNat = cTextW + childDecoration;
+          double pMax, cMax;
+          if (pNat + cNat <= available) {
+            // 余裕あり: 自然幅
+            pMax = pNat;
+            cMax = cNat;
+          } else {
+            // 短い側は自然幅、長い側に残りを譲る。最低でも半々は確保。
+            final half = available / 2;
+            if (pNat <= half) {
+              pMax = pNat;
+              cMax = available - pMax;
+            } else if (cNat <= half) {
+              cMax = cNat;
+              pMax = available - cMax;
+            } else {
+              pMax = half;
+              cMax = half;
+            }
+          }
+          final parentWidget = ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: pMax),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+              decoration: BoxDecoration(
+                color: parentColor,
+                borderRadius: BorderRadius.circular(CornerRadius.badge),
+                border: Border.all(
+                  color:
+                      _tagFlashActive ? Colors.orange : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+              child: Text(
+                parent.name,
+                style: _parentTagTextStyle,
+                strutStyle: _parentStrutStyle,
+                textHeightBehavior: _tightHeightBehavior,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
-          child: Text(
-            parent.name,
-            style: _parentTagTextStyle,
-            strutStyle: _parentStrutStyle,
-            textHeightBehavior: _tightHeightBehavior,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      );
-      final childWidget = ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxChildTagWidth),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
-          decoration: BoxDecoration(
-            color: childColor,
-            borderRadius: BorderRadius.circular(CornerRadius.badge),
-            border: Border.all(
-              color: _tagFlashActive ? Colors.orange : Colors.white,
-              width: _tagFlashActive ? 2 : 1.5,
+          );
+          final childWidget = ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: cMax),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+              decoration: BoxDecoration(
+                color: childColor,
+                borderRadius: BorderRadius.circular(CornerRadius.badge),
+                border: Border.all(
+                  color: _tagFlashActive ? Colors.orange : Colors.white,
+                  width: _tagFlashActive ? 2 : 1.5,
+                ),
+              ),
+              child: Text(
+                child.name,
+                style: _childTagTextStyle,
+                strutStyle: _childStrutStyle,
+                textHeightBehavior: _tightHeightBehavior,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
-          child: Text(
-            child.name,
-            style: _childTagTextStyle,
-            strutStyle: _childStrutStyle,
-            textHeightBehavior: _tightHeightBehavior,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      );
-      // IntrinsicHeight + Row で bottom-align、子タグを -4pt マージンで重ねる
-      return IntrinsicHeight(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            parentWidget,
-            Transform.translate(
-              offset: const Offset(-4, 1.5),
-              child: childWidget,
+          );
+          return IntrinsicHeight(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                parentWidget,
+                Transform.translate(
+                  offset: const Offset(-overlap, 1.5),
+                  child: childWidget,
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       );
     }
+    final screenWidth = MediaQuery.of(context).size.width;
 
     // 親タグのみ（子タグなしなら少し広めに使える）
     final maxParentOnly = screenWidth * 0.35;
