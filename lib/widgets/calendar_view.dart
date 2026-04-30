@@ -55,7 +55,22 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
     _scrollController = ScrollController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
-      final offset = _approxMonthHeight * _monthsBefore;
+      // 今日の日付がスクロールビューの「見えている範囲の中央くらい」に
+      // 来るように初期位置を計算する（SE 3rd 等の縦が短い機種でも
+      // 今日のセルが画面外にならないように）。
+      // - 今日の月の上端: _approxMonthHeight * _monthsBefore
+      // - 月内の今日の週インデックス（日曜始まり）を加味
+      // - viewport 中央に合わせる
+      final firstDay = DateTime(_today.year, _today.month, 1);
+      final firstWeekdaySunBase = firstDay.weekday % 7; // 0=Sun, 1=Mon...
+      final weekIndex =
+          ((_today.day - 1) + firstWeekdaySunBase) ~/ 7;
+      const headerH = 36.0; // 月ヘッダ概算
+      const weekH = (_approxMonthHeight - headerH) / 6;
+      final monthTop = _approxMonthHeight * _monthsBefore;
+      final todayY = monthTop + headerH + weekIndex * weekH;
+      final viewportH = _scrollController.position.viewportDimension;
+      final offset = todayY - viewportH / 2 + weekH / 2;
       _scrollController.jumpTo(offset.clamp(
         0.0,
         _scrollController.position.maxScrollExtent,

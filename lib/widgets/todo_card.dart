@@ -113,6 +113,10 @@ class TodoCard extends ConsumerWidget {
             ),
             child: Stack(
               clipBehavior: Clip.none,
+              // 親（GridView の mainAxisExtent）からの tight constraint を
+              // 受けてセル全体に広がるようにする。これがないと中身
+              // （Column.min）の高さしか取らず、メモカードと高さが揃わない。
+              fit: StackFit.expand,
               children: [
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
