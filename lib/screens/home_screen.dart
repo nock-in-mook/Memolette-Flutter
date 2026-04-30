@@ -24,6 +24,7 @@ import '../widgets/memo_card.dart';
 import '../widgets/memo_input_area.dart';
 import '../widgets/move_to_top_icon.dart';
 import '../widgets/new_tag_sheet.dart';
+import '../widgets/tag_delete_choice_dialog.dart';
 import '../widgets/todo_card.dart';
 import '../widgets/trapezoid_tab_shape.dart';
 import '../widgets/wide_todo_pane.dart';
@@ -3962,32 +3963,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       return;
     }
 
-    // ステップ1: メモの扱いを選ぶ
-    final mode = await focusSafe(
-      context,
-      () => showCupertinoModalPopup<String>(
-        context: context,
-        builder: (ctx) => CupertinoActionSheet(
-          title: Text('「${tag.name}」を削除します'),
-          message: const Text('このタグに含まれるメモの扱いを選んでください'),
-          actions: [
-            CupertinoActionSheetAction(
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(ctx, 'withMemos'),
-              child: const Text('メモも一緒に削除'),
-            ),
-            CupertinoActionSheetAction(
-              onPressed: () => Navigator.pop(ctx, 'keepMemos'),
-              child: const Text('メモは残す（タグなしに変更）'),
-            ),
-          ],
-          cancelButton: CupertinoActionSheetAction(
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-        ),
-      ),
+    // ステップ1: メモの扱いを選ぶ（Memolette オリジナルダイアログ）
+    final mode = await showTagDeleteChoiceDialog(
+      context: context,
+      tagName: tag.name,
     );
     if (mode == null || !mounted) return;
 
