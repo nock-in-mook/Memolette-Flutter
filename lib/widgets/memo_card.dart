@@ -64,7 +64,8 @@ class MemoCard extends ConsumerWidget {
     final isWide = Responsive.isWide(context);
     final isTablet = Responsive.isTablet(context);
     return switch (gridSize) {
-      GridSizeOption.grid3x6 => isWide ? 4 : (isTablet ? 3 : 1),
+      // mobile cap を 1→2 に（mini 3×4 / SE 3×2 の余白活用）
+      GridSizeOption.grid3x6 => isWide ? 4 : (isTablet ? 3 : 2),
       GridSizeOption.grid2x5 => isTablet ? 5 : 3,
       GridSizeOption.grid2x3 => isTablet ? 8 : 5,
       GridSizeOption.grid1x2 => isTablet ? 6 : 4,
@@ -74,12 +75,21 @@ class MemoCard extends ConsumerWidget {
   }
 
   double get _cardPadding => switch (gridSize) {
-        GridSizeOption.grid3x6 => 4,
+        // grid3x6 は mini の 3×4 表示でカード高さが切迫するので少し小さく
+        GridSizeOption.grid3x6 => 3,
         GridSizeOption.grid2x5 => 8,
         GridSizeOption.grid2x3 => 10,
         GridSizeOption.grid1x2 => 12,
         GridSizeOption.grid1flex => 10,
         GridSizeOption.titleOnly => 6,
+      };
+
+  /// タイトルと本文の間の divider のマージン。
+  /// grid3x6 のように高さが切迫するモードでは縮める。
+  EdgeInsets get _dividerMargin => switch (gridSize) {
+        GridSizeOption.grid3x6 =>
+          const EdgeInsets.only(top: 1, bottom: 1),
+        _ => const EdgeInsets.only(top: 4, bottom: 3),
       };
 
   /// 本文右端の小サムネ一辺サイズ（正方形、グリッドサイズ連動）。0 は非表示
@@ -439,7 +449,7 @@ class MemoCard extends ConsumerWidget {
                 ),
                 Container(
                   height: 0.5,
-                  margin: const EdgeInsets.only(top: 4, bottom: 3),
+                  margin: _dividerMargin,
                   color: Colors.grey.withValues(alpha: 0.6),
                 ),
                 if (displayBody.isNotEmpty) ...[
