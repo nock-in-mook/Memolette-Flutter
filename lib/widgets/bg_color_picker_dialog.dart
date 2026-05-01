@@ -1,19 +1,56 @@
 import 'package:flutter/material.dart';
 
 import '../constants/memo_bg_colors.dart';
+import '../utils/safe_dialog.dart';
+import 'dialog_styles.dart';
 
-/// 背景色選択ダイアログ（メモ・ToDoリスト共通）
-/// 8×4 パレット（31色 + 色なし）/ 色名 / サンプルパネル / 決定・キャンセル
-/// 戻り値: 選択された index（キャンセル時は null）
-class BgColorPickerDialog extends StatefulWidget {
-  final int current;
-  const BgColorPickerDialog({super.key, required this.current});
-
-  @override
-  State<BgColorPickerDialog> createState() => _BgColorPickerDialogState();
+/// 背景色選択ダイアログ（メモ・ToDoリスト共通・Memolette オリジナルデザイン）
+/// 8×4 パレット（31色 + 色なし）/ 色名 / サンプルパネル / キャンセル・決定
+///
+/// 戻り値: 選択された index（キャンセル / barrier タップ時は null）
+Future<int?> showBgColorPickerDialog({
+  required BuildContext context,
+  required int current,
+}) async {
+  return focusSafe(
+    context,
+    () => showGeneralDialog<int>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      transitionDuration: const Duration(milliseconds: 150),
+      pageBuilder: (ctx, _, _) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: DialogStyles.bodyDecoration,
+                child: _BgColorPickerContent(current: current),
+              ),
+            ),
+          ),
+        ),
+      ),
+      transitionBuilder: (_, anim, _, child) =>
+          FadeTransition(opacity: anim, child: child),
+    ),
+  );
 }
 
-class _BgColorPickerDialogState extends State<BgColorPickerDialog> {
+class _BgColorPickerContent extends StatefulWidget {
+  final int current;
+  const _BgColorPickerContent({required this.current});
+
+  @override
+  State<_BgColorPickerContent> createState() => _BgColorPickerContentState();
+}
+
+class _BgColorPickerContentState extends State<_BgColorPickerContent> {
   late int _selected;
 
   @override
@@ -28,137 +65,125 @@ class _BgColorPickerDialogState extends State<BgColorPickerDialog> {
         _selected == 0 ? Colors.white : MemoBgColors.getColor(_selected);
     final name = MemoBgColors.getName(_selected);
 
-    return Dialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '背景色',
+          textAlign: TextAlign.center,
+          style: DialogStyles.title,
+        ),
+        const SizedBox(height: 12),
+        Row(
           children: [
-            const Center(
-              child: Text('背景色',
-                  style:
-                      TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(
+              name,
+              style: DialogStyles.message.copyWith(fontSize: 12),
             ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Text(
-                  name,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.grey.shade700,
+            const Spacer(),
+          ],
+        ),
+        const SizedBox(height: 6),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: 32,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 8,
+            mainAxisSpacing: 6,
+            crossAxisSpacing: 6,
+            mainAxisExtent: 30,
+          ),
+          itemBuilder: (_, i) {
+            final isNone = i == MemoBgColors.count;
+            final index = isNone ? 0 : i + 1;
+            final isSelected = index == _selected;
+            return GestureDetector(
+              onTap: () => setState(() => _selected = index),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: isNone
+                      ? Colors.white
+                      : MemoBgColors.getColor(index),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: isSelected
+                        ? Colors.black
+                        : (isNone
+                            ? Colors.grey.shade300
+                            : Colors.transparent),
+                    width: isSelected ? 2 : 1,
                   ),
                 ),
-                const Spacer(),
-              ],
-            ),
-            const SizedBox(height: 4),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: 32,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 8,
-                mainAxisSpacing: 6,
-                crossAxisSpacing: 6,
-                mainAxisExtent: 30,
+                child: isNone
+                    ? Icon(Icons.block, size: 14, color: Colors.grey[500])
+                    : null,
               ),
-              itemBuilder: (_, i) {
-                final isNone = i == MemoBgColors.count;
-                final index = isNone ? 0 : i + 1;
-                final isSelected = index == _selected;
-                return GestureDetector(
-                  onTap: () => setState(() => _selected = index),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: isNone
-                          ? Colors.white
-                          : MemoBgColors.getColor(index),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: isSelected
-                            ? Colors.black
-                            : (isNone
-                                ? Colors.grey.shade300
-                                : Colors.transparent),
-                        width: isSelected ? 2 : 1,
-                      ),
-                    ),
-                    child: isNone
-                        ? Icon(Icons.block,
-                            size: 14, color: Colors.grey[500])
-                        : null,
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 22),
-              decoration: BoxDecoration(
-                color: sampleBg,
-                borderRadius: BorderRadius.circular(8),
-                border:
-                    Border.all(color: Colors.grey.shade300, width: 0.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 2,
-                    offset: const Offset(0, 1),
-                  ),
-                ],
+            );
+          },
+        ),
+        const SizedBox(height: 18),
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 22),
+          decoration: BoxDecoration(
+            color: sampleBg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade300, width: 0.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 2,
+                offset: const Offset(0, 1),
               ),
-              child: const Center(
-                child: Text(
-                  'サンプル',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
+            ],
+          ),
+          child: Center(
+            child: Text(
+              'サンプル',
+              style: DialogStyles.message,
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration:
+                      DialogStyles.accentButtonDecoration(DialogStyles.textGrey),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'キャンセル',
+                    style: DialogStyles.actionLabel
+                        .copyWith(color: DialogStyles.textGrey),
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                      foregroundColor: Colors.grey.shade700,
-                      backgroundColor: Colors.grey.shade100,
-                    ),
-                    child: const Text('キャンセル'),
+            const SizedBox(width: 10),
+            Expanded(
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(_selected),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: DialogStyles.accentButtonDecoration(
+                      DialogStyles.defaultAction),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '決定',
+                    style: DialogStyles.actionLabel
+                        .copyWith(color: DialogStyles.defaultAction),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(context, _selected),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                      foregroundColor: Colors.white,
-                      backgroundColor: const Color(0xFF007AFF),
-                    ),
-                    child: const Text('決定',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ],
+              ),
             ),
           ],
         ),
-      ),
+      ],
     );
   }
 }

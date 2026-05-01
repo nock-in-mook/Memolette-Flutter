@@ -2602,12 +2602,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     final wasEditing = _isInputFocused;
     if (wasEditing) widget.onDialogOpenChanged?.call(true);
     try {
-      final selected = await focusSafe(
-        context,
-        () => showDialog<int>(
-          context: context,
-          builder: (ctx) => BgColorPickerDialog(current: _bgColorIndex),
-        ),
+      final selected = await showBgColorPickerDialog(
+        context: context,
+        current: _bgColorIndex,
       );
       if (selected == null || !mounted) return;
       setState(() => _bgColorIndex = selected);

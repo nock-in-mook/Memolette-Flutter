@@ -4272,12 +4272,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         break;
       case 'bgColor':
         if (!mounted) return;
-        final selected = await focusSafe(
-          context,
-          () => showDialog<int>(
-            context: context,
-            builder: (_) => BgColorPickerDialog(current: memo.bgColorIndex),
-          ),
+        final selected = await showBgColorPickerDialog(
+          context: context,
+          current: memo.bgColorIndex,
         );
         if (selected != null && mounted) {
           await db.updateMemo(id: memo.id, bgColorIndex: selected);
@@ -4474,13 +4471,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         break;
       case 'bgColor':
         if (!mounted) return;
-        final selected = await focusSafe(
-          context,
-          () => showDialog<int>(
-            context: context,
-            builder: (_) =>
-                BgColorPickerDialog(current: list.bgColorIndex),
-          ),
+        final selected = await showBgColorPickerDialog(
+          context: context,
+          current: list.bgColorIndex,
         );
         if (selected != null && mounted) {
           await db.setTodoListBgColor(list.id, selected);
