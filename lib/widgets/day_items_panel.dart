@@ -865,8 +865,11 @@ class _SwipeDeleteRowState extends ConsumerState<_SwipeDeleteRow>
           _controller.reverse();
         }
       },
-      child: Stack(
-        clipBehavior: Clip.none,
+      // 列の幅（メモ列 / ToDo列）を超えてカードがはみ出さないよう clip する。
+      // 中央の仕切り線をまたいで反対側のエリアに侵入するのを防ぐ。
+      child: ClipRect(
+        child: Stack(
+        clipBehavior: Clip.hardEdge,
         children: [
           // 赤い削除ボタン（背面）。_CardShell の外側 Padding 分内側にずらす。
           Positioned(
@@ -935,6 +938,7 @@ class _SwipeDeleteRowState extends ConsumerState<_SwipeDeleteRow>
             ),
           ),
         ],
+      ),
       ),
     );
   }
