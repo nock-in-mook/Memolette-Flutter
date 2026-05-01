@@ -183,11 +183,15 @@ enum _AllTabSubFilter {
 /// 表示タイプのフィルタ（メモ/TODO/タグなしで絞る軸）
 /// どのタブでも共通に使える。親タグタブでは untagged は選べない。
 /// label は「フィルタ:<label>」の形でボタンに出る。未適用時は all=「なし」。
+/// フィルタメニューの選択肢。種別フィルタ + 並び順を排他選択で持つ。
+/// nameAsc / nameDesc を選ぶと種別フィルタなし + 名前順ソート。
 enum _TypeFilter {
   all('なし', Icons.apps),
   memo('メモのみ', Icons.note_outlined),
   todo('TODOのみ', Icons.checklist),
-  untagged('タグなし', Icons.label_off_outlined);
+  untagged('タグなし', Icons.label_off_outlined),
+  nameAsc('名前順', Icons.arrow_upward),
+  nameDesc('名前順', Icons.arrow_downward);
 
   final String label;
   final IconData icon;
@@ -2978,7 +2982,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             padding: const EdgeInsets.symmetric(horizontal: 14),
             child: Row(
               children: [
-                // 全ファイル/なし はアイコンなし（幅だけ合わせる）
+                // 「なし」だけアイコンなし（幅だけ合わせる）
                 if (opt != _TypeFilter.all)
                   Icon(opt.icon, size: 16, color: Colors.black54)
                 else
@@ -3188,6 +3192,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             _isMemoListExpanded ? _normalFolderHeight : null,
         onAvailableHeight: _onFolderAvailableHeight,
         scrollController: _memosScrollController,
+        typeFilter: _typeFilter,
       );
     } else if (_selectedTabKey == kUntaggedTabKey) {
       return _MemoGridView(
@@ -3212,6 +3217,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         cardHeightReference: _isMemoListExpanded ? _normalFolderHeight : null,
         onAvailableHeight: _onFolderAvailableHeight,
         scrollController: _memosScrollController,
+        typeFilter: _typeFilter,
       );
     } else {
       final parentId = _currentParentTagId(parentTags);
@@ -3241,6 +3247,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         cardHeightReference: _isMemoListExpanded ? _normalFolderHeight : null,
         onAvailableHeight: _onFolderAvailableHeight,
         scrollController: _memosScrollController,
+        typeFilter: _typeFilter,
       );
     }
   }
@@ -5918,6 +5925,7 @@ sealed class _GridItem {
   int get manualSortOrder;
   DateTime get createdAt;
   String get id;
+  String get title;
 
   factory _GridItem.memo(Memo m) = _MemoGridItem;
   factory _GridItem.todo(TodoList t) = _TodoGridItem;
@@ -5930,6 +5938,7 @@ class _MemoGridItem implements _GridItem {
   @override int get manualSortOrder => memo.manualSortOrder;
   @override DateTime get createdAt => memo.createdAt;
   @override String get id => memo.id;
+  @override String get title => memo.title;
 }
 
 class _TodoGridItem implements _GridItem {
@@ -5939,6 +5948,7 @@ class _TodoGridItem implements _GridItem {
   @override int get manualSortOrder => todoList.manualSortOrder;
   @override DateTime get createdAt => todoList.createdAt;
   @override String get id => todoList.id;
+  @override String get title => todoList.title;
 }
 
 // カードを CupertinoContextMenu などで包みたいときに使う
@@ -5980,6 +5990,9 @@ class _MemoGridView extends StatelessWidget {
   /// スクロール位置を外部から制御するためのコントローラ
   final ScrollController? scrollController;
 
+  /// フィルタメニューの選択（名前順ソートに使う）
+  final _TypeFilter typeFilter;
+
   const _MemoGridView({
     required this.stream,
     this.todoListStream,
@@ -6002,6 +6015,7 @@ class _MemoGridView extends StatelessWidget {
     this.cardHeightReference,
     this.onAvailableHeight,
     this.scrollController,
+    this.typeFilter = _TypeFilter.all,
   });
 
   Widget _buildCard(Memo memo) {
@@ -6083,9 +6097,19 @@ class _MemoGridView extends StatelessWidget {
       ...memos.map(_GridItem.memo),
       ...todoLists.map(_GridItem.todo),
     ];
+    final isNameSort = typeFilter == _TypeFilter.nameAsc ||
+        typeFilter == _TypeFilter.nameDesc;
     items.sort((a, b) {
       // ピン留め優先
       if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
+      // 名前順指定があれば最優先（ピン留めの次）
+      if (isNameSort) {
+        final cmp = a.title.compareTo(b.title);
+        if (cmp != 0) {
+          return typeFilter == _TypeFilter.nameAsc ? cmp : -cmp;
+        }
+        return b.createdAt.compareTo(a.createdAt);
+      }
       // manualSortOrder 降順
       if (a.manualSortOrder != b.manualSortOrder) {
         return b.manualSortOrder.compareTo(a.manualSortOrder);
@@ -6210,7 +6234,13 @@ class _MemoGridView extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 14, bottom: bottomPad),
                   itemCount: merged.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 2),
-                  itemBuilder: (_, i) => _buildGridItem(merged[i]),
+                  // 各行を固定高さで包む。TodoCard は Stack(fit: StackFit.expand)
+                  // を使うため tight constraint がないとレイアウトが 0 になって
+                  // 表示が消えてしまう（フィルタなしで TODO 混在時に発生）。
+                  itemBuilder: (_, i) => SizedBox(
+                    height: 32,
+                    child: _buildGridItem(merged[i]),
+                  ),
                 );
               }
 
