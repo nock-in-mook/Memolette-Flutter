@@ -1345,21 +1345,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// 消しゴムなど編集用ボタンは入力エリアフッターに集約する。
   Widget _buildFunctionBarSection() {
     final isWide = Responsive.isWide(context);
+    // 機能バー本体が高さ0（非表示）になる条件
+    final functionBarHidden = !isWide &&
+        (_isInputExpanded ||
+            _isMemoListExpanded ||
+            _isInFolderSearch ||
+            _isEditingCompact ||
+            (_isSearchFocused && !_isSearchActive));
+    // eventDate を非表示にする条件は機能バーより緩い：
+    // 編集コンパクト中（_isEditingCompact）はメモを開いてる文脈なので残す。
+    // フォルダ最大化・入力エリア最大化・検索フォーカス時のみ非表示。
+    final eventDateHidden = !isWide &&
+        (_isInputExpanded ||
+            _isMemoListExpanded ||
+            _isInFolderSearch ||
+            (_isSearchFocused && !_isSearchActive));
     return Stack(
       clipBehavior: Clip.none,
       children: [
         AnimatedContainer(
           duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
           curve: Curves.easeInOut,
-          height: isWide
-              ? null
-              : (_isInputExpanded ||
-                      _isMemoListExpanded ||
-                      _isInFolderSearch ||
-                      _isEditingCompact ||
-                      (_isSearchFocused && !_isSearchActive))
-                  ? 0
-                  : null,
+          height: functionBarHidden ? 0 : null,
           // 選択モードのバーは Transform で上に食い込むので clip しない
           clipBehavior: _isSelectMode ? Clip.none : Clip.hardEdge,
           decoration: const BoxDecoration(),
@@ -1386,10 +1393,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ],
           ),
         ),
-        // eventDate 表示（付与時のみ、機能バーの外側に重ねるので
-        // 機能バーが非表示（編集中等）でも独立に出る）。
+        // eventDate 表示（付与時のみ、機能バーの外側に重ねる）。
+        // 機能バーが消えていても編集中（_isEditingCompact）なら残す。
+        // フォルダ最大化中・入力最大化中・検索中は出さない。
         // タップで unfocus してから日付ピッカー起動。
-        if (_currentMemoEventDate != null && !_isSelectMode)
+        if (_currentMemoEventDate != null && !_isSelectMode && !eventDateHidden)
           Positioned(
             right: 10,
             top: 0,
