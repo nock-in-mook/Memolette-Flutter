@@ -27,10 +27,10 @@ class CalendarView extends ConsumerStatefulWidget {
   final ValueChanged<TodoList> onTodoListTap;
   final ValueChanged<TodoItem>? onTodoItemTap;
   final ValueChanged<Memo> onMemoCreated;
-  // DayItemsPanel のスワイプ削除用
-  final ValueChanged<Memo>? onMemoDelete;
-  final ValueChanged<TodoList>? onTodoListDelete;
-  final ValueChanged<TodoItem>? onTodoItemDelete;
+  // DayItemsPanel のスワイプ削除用（確認ダイアログの完了を await できるよう Future<void>）
+  final Future<void> Function(Memo)? onMemoDelete;
+  final Future<void> Function(TodoList)? onTodoListDelete;
+  final Future<void> Function(TodoItem)? onTodoItemDelete;
 
   const CalendarView({
     super.key,

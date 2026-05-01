@@ -26,10 +26,11 @@ class DayItemsPanel extends ConsumerStatefulWidget {
   final VoidCallback? onAddTodoList;
   // 指定するとヘッダ右端に × ボタンが出てパネルを閉じる UI を提供
   final VoidCallback? onClose;
-  // スワイプ削除のコールバック（指定された種別のみスワイプ可能になる）
-  final ValueChanged<Memo>? onMemoDelete;
-  final ValueChanged<TodoList>? onTodoListDelete;
-  final ValueChanged<TodoItem>? onTodoItemDelete;
+  // スワイプ削除のコールバック（指定された種別のみスワイプ可能になる）。
+  // Future<void> を返すこと。確認ダイアログの完了を await できるようにするため。
+  final Future<void> Function(Memo)? onMemoDelete;
+  final Future<void> Function(TodoList)? onTodoListDelete;
+  final Future<void> Function(TodoItem)? onTodoItemDelete;
 
   const DayItemsPanel({
     super.key,
@@ -804,11 +805,13 @@ class _TodoItemTile extends StatelessWidget {
 
 /// iOS 風スワイプ削除: 左スワイプで赤い「削除」ボタン露出、タップで onDelete。
 /// onDelete が null の場合は素通り（child のみ表示）。
+/// 削除ボタンタップ時は onDelete を await し、完了後にボタンを閉じる
+/// （確認ダイアログ表示中に削除ボタンが消えるのを防ぐ）。
 /// シート内の他の場所がタップされたら（calendarSheetSwipeCloseProvider 経由）
 /// 自動で閉じる。
 class _SwipeDeleteRow extends ConsumerStatefulWidget {
   final Widget child;
-  final VoidCallback? onDelete;
+  final Future<void> Function()? onDelete;
 
   const _SwipeDeleteRow({required this.child, this.onDelete});
 
@@ -820,6 +823,10 @@ class _SwipeDeleteRowState extends ConsumerState<_SwipeDeleteRow>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   static const double _buttonWidth = 72;
+  // 自分の削除ボタンタップ中は close 通知を無視する。Listener.onPointerUp が
+  // 削除ボタン押下でも発火 → calendarSheetSwipeCloseProvider++ で自分が
+  // close されるのを防ぐ。
+  bool _holdingForDialog = false;
 
   @override
   void initState() {
@@ -843,6 +850,7 @@ class _SwipeDeleteRowState extends ConsumerState<_SwipeDeleteRow>
     if (widget.onDelete == null) return widget.child;
     // シート内の別の場所がタップされたら自分の削除ボタンを閉じる
     ref.listen<int>(calendarSheetSwipeCloseProvider, (_, _) {
+      if (_holdingForDialog) return;
       if (_controller.value > 0) _close();
     });
     return GestureDetector(
@@ -866,12 +874,26 @@ class _SwipeDeleteRowState extends ConsumerState<_SwipeDeleteRow>
             top: 3,
             bottom: 3,
             width: _buttonWidth,
-            child: GestureDetector(
-              onTap: () {
-                _close();
-                widget.onDelete!();
-              },
-              child: Container(
+            child: Listener(
+              // 削除ボタンへの pointer down で flag を立て、外側 Listener の
+              // onPointerUp が calendarSheetSwipeCloseProvider を increment しても
+              // 自分の close 通知を無視できるようにする。onTapDown より早い順序。
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: (_) => _holdingForDialog = true,
+              onPointerCancel: (_) => _holdingForDialog = false,
+              child: GestureDetector(
+                onTapCancel: () => _holdingForDialog = false,
+                onTap: () async {
+                  // ダイアログ完了まで閉じない（どのカードへの操作だったか
+                  // ユーザーが見失わないように削除ボタンを保持する）
+                  try {
+                    await widget.onDelete!();
+                  } finally {
+                    _holdingForDialog = false;
+                  }
+                  if (mounted) _close();
+                },
+                child: Container(
                 decoration: const BoxDecoration(
                   color: Colors.red,
                   borderRadius: BorderRadius.all(Radius.circular(8)),
@@ -893,6 +915,7 @@ class _SwipeDeleteRowState extends ConsumerState<_SwipeDeleteRow>
                     ),
                   ],
                 ),
+              ),
               ),
             ),
           ),
