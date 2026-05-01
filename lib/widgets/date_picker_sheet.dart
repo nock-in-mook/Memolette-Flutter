@@ -317,12 +317,9 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
                     DatePickerResult(date: _selected),
                   ),
                   style: OutlinedButton.styleFrom(
-                    backgroundColor: Colors.grey.shade200,
-                    side: const BorderSide(
-                      color: Colors.orange,
-                      width: 0.8,
-                    ),
-                    foregroundColor: Colors.orange,
+                    backgroundColor: Colors.orange,
+                    side: BorderSide.none,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -330,8 +327,10 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
                   ),
                   child: Text(
                     '決定',
-                    style: DialogStyles.actionLabel
-                        .copyWith(fontWeight: FontWeight.w800),
+                    style: DialogStyles.actionLabel.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ),
