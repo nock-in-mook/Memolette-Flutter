@@ -154,26 +154,36 @@ class DayItemsPanel extends ConsumerWidget {
                           ),
                         ],
                       ),
-                      // フロート FAB（左下: メモ追加）
-                      if (onAddMemo != null)
+                      // フロート FAB（各列の下端中央配置）
+                      if (onAddMemo != null || onAddTodoList != null)
                         Positioned(
-                          left: 14,
+                          left: 0,
+                          right: 0,
                           bottom: 14,
-                          child: _FloatAddFab(
-                            icon: Icons.note_outlined,
-                            iconColor: Colors.amber.shade700,
-                            onTap: onAddMemo!,
-                          ),
-                        ),
-                      // フロート FAB（右下: ToDo追加）
-                      if (onAddTodoList != null)
-                        Positioned(
-                          right: 14,
-                          bottom: 14,
-                          child: _FloatAddFab(
-                            icon: Icons.checklist,
-                            iconColor: Colors.green.shade600,
-                            onTap: onAddTodoList!,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Center(
+                                  child: onAddMemo != null
+                                      ? _FloatAddFab(
+                                          accent: Colors.amber.shade700,
+                                          onTap: onAddMemo!,
+                                        )
+                                      : const SizedBox.shrink(),
+                                ),
+                              ),
+                              const SizedBox(width: 0.5),
+                              Expanded(
+                                child: Center(
+                                  child: onAddTodoList != null
+                                      ? _FloatAddFab(
+                                          accent: Colors.green.shade600,
+                                          onTap: onAddTodoList!,
+                                        )
+                                      : const SizedBox.shrink(),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                     ],
@@ -230,15 +240,13 @@ class _ColumnList extends StatelessWidget {
   }
 }
 
-/// 円形フロート追加ボタン（テキストなし、アイコン + 右下に小さい +）。
+/// 円形フロート追加ボタン。＋アイコンのみのシンプル仕様。
 class _FloatAddFab extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
+  final Color accent;
   final VoidCallback onTap;
 
   const _FloatAddFab({
-    required this.icon,
-    required this.iconColor,
+    required this.accent,
     required this.onTap,
   });
 
@@ -253,31 +261,10 @@ class _FloatAddFab extends StatelessWidget {
         customBorder: const CircleBorder(),
         onTap: onTap,
         child: SizedBox(
-          width: 48,
-          height: 48,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Icon(icon, size: 22, color: iconColor),
-              // 右下に小さい + バッジ
-              Positioned(
-                right: 4,
-                bottom: 4,
-                child: Container(
-                  width: 16,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.grey.shade600,
-                  ),
-                  child: const Icon(
-                    Icons.add,
-                    size: 12,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ],
+          width: 32,
+          height: 32,
+          child: Center(
+            child: Icon(Icons.add, size: 18, color: accent),
           ),
         ),
       ),
@@ -685,10 +672,12 @@ class _TodoItemTile extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const Icon(
-                  CupertinoIcons.bookmark_fill,
-                  size: 11,
-                  color: Colors.orange,
+                Icon(
+                  item.isDone
+                      ? Icons.check_box
+                      : Icons.check_box_outline_blank,
+                  size: 13,
+                  color: Colors.green.shade600,
                 ),
                 const SizedBox(width: 5),
                 Expanded(
