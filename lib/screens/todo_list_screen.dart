@@ -208,6 +208,9 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
 
   @override
   void dispose() {
+    // タイトル空 + アイテム0件のリストはここで自動削除（保存価値なし）。
+    // fire-and-forget。super.dispose の前に呼ぶ。
+    ref.read(databaseProvider).purgeEmptyTodoLists();
     _titleFocusNode.removeListener(_handleTitleFocusChange);
     _titleController.dispose();
     _titleFocusNode.dispose();
@@ -1250,13 +1253,13 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       },
       behavior: HitTestBehavior.opaque,
       child: Text(
-        list.title.isEmpty ? '無題のリスト' : list.title,
+        list.title.isEmpty ? 'タイトル（任意）' : list.title,
         style: TextStyle(
           fontSize: 22,
           fontWeight: FontWeight.w800,
           fontFamily: 'Hiragino Sans',
           color: list.title.isEmpty
-              ? Colors.black.withValues(alpha: 0.4)
+              ? Colors.grey.withValues(alpha: 0.4)
               : Colors.black,
         ),
         maxLines: 1,

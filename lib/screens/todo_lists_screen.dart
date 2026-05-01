@@ -46,6 +46,17 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
   bool _isSelectDeleteMode = false;
   final Set<String> _selectedDeleteIds = <String>{};
 
+  @override
+  void initState() {
+    super.initState();
+    // タイトル空 + アイテム0件のリストを起動時に一掃。
+    // ToDoタブを開くたびに走るのでカレンダー経由作成等で残った無題リストも消える。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(databaseProvider).purgeEmptyTodoLists();
+    });
+  }
+
   void _enterMergeMode() {
     setState(() {
       _isMergeMode = true;
@@ -1226,7 +1237,8 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
             FadeTransition(opacity: anim, child: child),
       ),
     );
-    if (title == null || title.isEmpty) return;
+    // null = キャンセル。空文字 = タイトルなしで作成（カレンダー経由作成と同等）
+    if (title == null) return;
     final db = ref.read(databaseProvider);
     final created = await db.createTodoList(title: title);
     final id = created.id;
@@ -1720,9 +1732,7 @@ class _NewListDialogState extends State<_NewListDialog> {
   }
 
   void _commit() {
-    final t = _controller.text.trim();
-    if (t.isEmpty) return;
-    Navigator.of(context).pop(t);
+    Navigator.of(context).pop(_controller.text.trim());
   }
 
   @override
@@ -1808,7 +1818,6 @@ class _NewListDialogState extends State<_NewListDialog> {
                         borderSide: BorderSide.none,
                       ),
                     ),
-                    onChanged: (_) => setState(() {}),
                     onSubmitted: (_) => _commit(),
                   ),
                 ),
@@ -1817,12 +1826,11 @@ class _NewListDialogState extends State<_NewListDialog> {
                   height: 0.5,
                   color: Colors.black.withValues(alpha: 0.15),
                 ),
-                // 作成ボタン
+                // 作成ボタン（タイトル空でも作成OK）
                 GestureDetector(
-                  onTap:
-                      _controller.text.trim().isEmpty ? null : _commit,
+                  onTap: _commit,
                   behavior: HitTestBehavior.opaque,
-                  child: SizedBox(
+                  child: const SizedBox(
                     height: 48,
                     child: Center(
                       child: Text(
@@ -1831,9 +1839,7 @@ class _NewListDialogState extends State<_NewListDialog> {
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                           fontFamily: 'Hiragino Sans',
-                          color: _controller.text.trim().isEmpty
-                              ? Colors.grey
-                              : Colors.blue,
+                          color: Colors.blue,
                         ),
                       ),
                     ),

@@ -579,6 +579,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(databaseProvider).purgeEmptyMemos();
+      // タイトル空 + アイテム0件の ToDo リストも一掃（保存価値なし）
+      ref.read(databaseProvider).purgeEmptyTodoLists();
       FocusManager.instance.primaryFocus?.unfocus();
     });
   }
