@@ -6,8 +6,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
 
+/// DayItemsPanel 内で発生した最後の pointer down/up のタイムスタンプ（epoch ms）。
+/// home_screen の `_wrapUnfocusOnTap.onPointerUp` がこれを参照して、シート内
+/// タップで誤ってシートを閉じないように判定する。
+final calendarSheetLastTouchProvider = StateProvider<int>((_) => 0);
+
+/// シート内のカード以外でタップが起きるたびに increment。
+/// 各 _SwipeDeleteRow が watch していて、値が変わると自身の削除ボタンを閉じる
+/// （iOS 風のキャンセル動作）。
+final calendarSheetSwipeCloseProvider = StateProvider<int>((_) => 0);
+
 /// カレンダー画面の「選択された日のアイテム一覧」パネル
-class DayItemsPanel extends ConsumerWidget {
+class DayItemsPanel extends ConsumerStatefulWidget {
   final DateTime day;
   final ValueChanged<Memo> onMemoTap;
   final ValueChanged<TodoList> onTodoListTap;
@@ -16,6 +26,10 @@ class DayItemsPanel extends ConsumerWidget {
   final VoidCallback? onAddTodoList;
   // 指定するとヘッダ右端に × ボタンが出てパネルを閉じる UI を提供
   final VoidCallback? onClose;
+  // スワイプ削除のコールバック（指定された種別のみスワイプ可能になる）
+  final ValueChanged<Memo>? onMemoDelete;
+  final ValueChanged<TodoList>? onTodoListDelete;
+  final ValueChanged<TodoItem>? onTodoItemDelete;
 
   const DayItemsPanel({
     super.key,
@@ -26,12 +40,33 @@ class DayItemsPanel extends ConsumerWidget {
     this.onAddMemo,
     this.onAddTodoList,
     this.onClose,
+    this.onMemoDelete,
+    this.onTodoListDelete,
+    this.onTodoItemDelete,
   });
 
   static const _weekdayLabels = ['月', '火', '水', '木', '金', '土', '日'];
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DayItemsPanel> createState() => _DayItemsPanelState();
+}
+
+class _DayItemsPanelState extends ConsumerState<DayItemsPanel> {
+  // シート内タップ vs ドラッグ判定用の起点座標
+  Offset? _downPos;
+
+  @override
+  Widget build(BuildContext context) {
+    final day = widget.day;
+    final onMemoTap = widget.onMemoTap;
+    final onTodoListTap = widget.onTodoListTap;
+    final onTodoItemTap = widget.onTodoItemTap;
+    final onAddMemo = widget.onAddMemo;
+    final onAddTodoList = widget.onAddTodoList;
+    final onClose = widget.onClose;
+    final onMemoDelete = widget.onMemoDelete;
+    final onTodoListDelete = widget.onTodoListDelete;
+    final onTodoItemDelete = widget.onTodoItemDelete;
     final memos = ref.watch(memosForDayProvider(day)).valueOrNull ??
         const <Memo>[];
     final todoLists = ref.watch(todoListsForDayProvider(day)).valueOrNull ??
@@ -40,16 +75,40 @@ class DayItemsPanel extends ConsumerWidget {
         const <TodoItem>[];
     final totalCount = memos.length + todoLists.length + todoItems.length;
 
-    final wd = _weekdayLabels[day.weekday - 1];
+    final wd = DayItemsPanel._weekdayLabels[day.weekday - 1];
     final wdColor = day.weekday == DateTime.sunday
         ? Colors.red.shade400
         : day.weekday == DateTime.saturday
             ? Colors.blue.shade400
             : Colors.black54;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
+    // シート内 pointer 発生を Provider に記録。home_screen の
+    // `_wrapUnfocusOnTap.onPointerUp` が、シート内タップでは閉じないように参照する。
+    // また、タップ（座標差分小）ならスワイプ削除ボタンを一斉に閉じる。
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (e) {
+        _downPos = e.position;
+        ref.read(calendarSheetLastTouchProvider.notifier).state =
+            DateTime.now().millisecondsSinceEpoch;
+      },
+      onPointerUp: (e) {
+        ref.read(calendarSheetLastTouchProvider.notifier).state =
+            DateTime.now().millisecondsSinceEpoch;
+        final down = _downPos;
+        _downPos = null;
+        if (down == null) return;
+        final dx = (e.position.dx - down.dx).abs();
+        final dy = (e.position.dy - down.dy).abs();
+        if (dx <= 8 && dy <= 8) {
+          // タップとみなして全 SwipeDeleteRow に閉じる通知。カードタップ時も
+          // 通知が走るが、削除ボタンが開いていない行は無視するので無害。
+          ref.read(calendarSheetSwipeCloseProvider.notifier).state++;
+        }
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
         // ヘッダ（日付 + × ボタン、上下 padding は 80%）
         Container(
           padding: const EdgeInsets.fromLTRB(16, 11, 16, 10),
@@ -118,9 +177,14 @@ class DayItemsPanel extends ConsumerWidget {
                               isEmpty: memos.isEmpty,
                               children: [
                                 for (final m in memos)
-                                  _MemoTile(
-                                      memo: m,
-                                      onTap: () => onMemoTap(m)),
+                                  _SwipeDeleteRow(
+                                    onDelete: onMemoDelete == null
+                                        ? null
+                                        : () => onMemoDelete!(m),
+                                    child: _MemoTile(
+                                        memo: m,
+                                        onTap: () => onMemoTap(m)),
+                                  ),
                               ],
                             ),
                           ),
@@ -139,15 +203,25 @@ class DayItemsPanel extends ConsumerWidget {
                                   todoItems.isEmpty,
                               children: [
                                 for (final l in todoLists)
-                                  _TodoListTile(
-                                      list: l,
-                                      onTap: () => onTodoListTap(l)),
-                                for (final it in todoItems)
-                                  _TodoItemTile(
-                                    item: it,
-                                    onTap: onTodoItemTap == null
+                                  _SwipeDeleteRow(
+                                    onDelete: onTodoListDelete == null
                                         ? null
-                                        : () => onTodoItemTap!(it),
+                                        : () => onTodoListDelete!(l),
+                                    child: _TodoListTile(
+                                        list: l,
+                                        onTap: () => onTodoListTap(l)),
+                                  ),
+                                for (final it in todoItems)
+                                  _SwipeDeleteRow(
+                                    onDelete: onTodoItemDelete == null
+                                        ? null
+                                        : () => onTodoItemDelete!(it),
+                                    child: _TodoItemTile(
+                                      item: it,
+                                      onTap: onTodoItemTap == null
+                                          ? null
+                                          : () => onTodoItemTap!(it),
+                                    ),
                                   ),
                               ],
                             ),
@@ -191,6 +265,7 @@ class DayItemsPanel extends ConsumerWidget {
           ),
         ),
       ],
+    ),
     );
   }
 }
@@ -721,6 +796,121 @@ class _TodoItemTile extends StatelessWidget {
                 height: 1.3,
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// iOS 風スワイプ削除: 左スワイプで赤い「削除」ボタン露出、タップで onDelete。
+/// onDelete が null の場合は素通り（child のみ表示）。
+/// シート内の他の場所がタップされたら（calendarSheetSwipeCloseProvider 経由）
+/// 自動で閉じる。
+class _SwipeDeleteRow extends ConsumerStatefulWidget {
+  final Widget child;
+  final VoidCallback? onDelete;
+
+  const _SwipeDeleteRow({required this.child, this.onDelete});
+
+  @override
+  ConsumerState<_SwipeDeleteRow> createState() => _SwipeDeleteRowState();
+}
+
+class _SwipeDeleteRowState extends ConsumerState<_SwipeDeleteRow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  static const double _buttonWidth = 72;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _close() => _controller.reverse();
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.onDelete == null) return widget.child;
+    // シート内の別の場所がタップされたら自分の削除ボタンを閉じる
+    ref.listen<int>(calendarSheetSwipeCloseProvider, (_, _) {
+      if (_controller.value > 0) _close();
+    });
+    return GestureDetector(
+      onHorizontalDragUpdate: (d) {
+        final v = _controller.value - d.primaryDelta! / _buttonWidth;
+        _controller.value = v.clamp(0.0, 1.0);
+      },
+      onHorizontalDragEnd: (_) {
+        if (_controller.value > 0.5) {
+          _controller.forward();
+        } else {
+          _controller.reverse();
+        }
+      },
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // 赤い削除ボタン（背面）。_CardShell の外側 Padding 分内側にずらす。
+          Positioned(
+            right: 4,
+            top: 3,
+            bottom: 3,
+            width: _buttonWidth,
+            child: GestureDetector(
+              onTap: () {
+                _close();
+                widget.onDelete!();
+              },
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.all(Radius.circular(8)),
+                ),
+                alignment: Alignment.center,
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(CupertinoIcons.trash, color: Colors.white, size: 14),
+                    SizedBox(width: 3),
+                    Text(
+                      '削除',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Hiragino Sans',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          AnimatedBuilder(
+            animation: _controller,
+            builder: (_, child) => Transform.translate(
+              offset: Offset(-_buttonWidth * _controller.value, 0),
+              child: child,
+            ),
+            child: SizedBox(
+              width: double.infinity,
+              child: GestureDetector(
+                onTap: _controller.value > 0 ? _close : null,
+                behavior: HitTestBehavior.translucent,
+                child: widget.child,
+              ),
+            ),
+          ),
         ],
       ),
     );

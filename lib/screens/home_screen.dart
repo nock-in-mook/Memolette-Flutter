@@ -18,6 +18,7 @@ import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
 import '../widgets/bg_color_picker_dialog.dart';
 import '../widgets/calendar_view.dart';
+import '../widgets/day_items_panel.dart' show calendarSheetLastTouchProvider;
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/dialog_styles.dart';
 import '../widgets/frosted_alert_dialog.dart';
@@ -1065,10 +1066,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// しまい、ナビゲーションが空振りする（カレンダー → DayItemsPanel カードが
   /// 飛ばないバグの原因）。onPointerUp なら InkWell.onTap → Navigator.push の
   /// 後に走るので、遷移後の clear で実害なし。
+  // _wrapUnfocusOnTap 内の pointer 起点位置（タップ判定用）
+  Offset? _wrapDownPos;
   Widget _wrapUnfocusOnTap(Widget child) {
     return Listener(
       behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) {
+      onPointerDown: (e) {
+        _wrapDownPos = e.position;
         final hasInputFocus =
             _inputAreaKey.currentState?.isInputFocused ?? false;
         final hasSearchFocus = _searchFocusNode.hasFocus;
@@ -1076,8 +1080,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           FocusManager.instance.primaryFocus?.unfocus();
         }
       },
-      onPointerUp: (_) {
-        // カレンダーのシート表示中は、機能バー / ナビバー / 余白タップで閉じる
+      onPointerUp: (e) {
+        // カレンダーのシート表示中は、機能バー / ナビバー / 余白タップで閉じる。
+        // ただし以下では閉じない:
+        //  - ドラッグ（DayItemsPanel のスワイプ削除など）: 起点との座標差分で判定
+        //  - シート（DayItemsPanel）内のタップ: 直近の Provider タッチ時刻で判定
+        final down = _wrapDownPos;
+        _wrapDownPos = null;
+        if (down != null) {
+          final dx = (e.position.dx - down.dx).abs();
+          final dy = (e.position.dy - down.dy).abs();
+          if (dx > 8 || dy > 8) return;
+        }
+        final lastTouch = ref.read(calendarSheetLastTouchProvider);
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (now - lastTouch < 200) return;
         if (ref.read(calendarSelectedDayProvider) != null) {
           ref.read(calendarSelectedDayProvider.notifier).state = null;
         }
@@ -1533,6 +1550,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                   onTodoListTap: _openTodoList,
                                   onTodoItemTap: _openTodoItemFromCalendar,
                                   onMemoCreated: _openNewlyCreatedMemo,
+                                  onMemoDelete: _deleteMemoFromCalendar,
+                                  onTodoListDelete: _deleteTodoListFromCalendar,
+                                  onTodoItemDelete: _deleteTodoItemFromCalendar,
                                 ),
                               )
                             else ...[
@@ -3189,6 +3209,70 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         .getSingleOrNull();
     if (!mounted || list == null) return;
     _openTodoList(list, highlightItemId: item.id);
+  }
+
+  /// カレンダーシートのスワイプ削除（メモ）
+  Future<void> _deleteMemoFromCalendar(Memo memo) async {
+    if (!mounted) return;
+    final confirmed = await showConfirmDeleteDialog(
+      context: context,
+      title: 'メモを削除',
+      message: 'このメモを削除します。よろしいですか？',
+    );
+    if (!confirmed || !mounted) return;
+    await ref.read(databaseProvider).deleteMemo(memo.id);
+    if (!mounted) return;
+    if (_editingMemoId == memo.id) {
+      _inputAreaKey.currentState?.closeMemo();
+      setState(() => _editingMemoId = null);
+    }
+  }
+
+  /// カレンダーシートのスワイプ削除（ToDoリスト）
+  Future<void> _deleteTodoListFromCalendar(TodoList list) async {
+    if (!mounted) return;
+    final confirmed = await showConfirmDeleteDialog(
+      context: context,
+      title: 'ToDoリストを削除',
+      message: 'このリストを削除します。配下の項目もすべて削除されます。',
+    );
+    if (!confirmed || !mounted) return;
+    final db = ref.read(databaseProvider);
+    await db.transaction(() async {
+      await (db.delete(db.todoListTags)
+            ..where((t) => t.todoListId.equals(list.id)))
+          .go();
+      await (db.delete(db.todoItems)
+            ..where((t) => t.listId.equals(list.id)))
+          .go();
+      await (db.delete(db.todoLists)..where((t) => t.id.equals(list.id))).go();
+    });
+  }
+
+  /// カレンダーシートのスワイプ削除（ToDo項目、子孫も再帰削除）
+  Future<void> _deleteTodoItemFromCalendar(TodoItem item) async {
+    if (!mounted) return;
+    final confirmed = await showConfirmDeleteDialog(
+      context: context,
+      title: 'ToDo項目を削除',
+      message: 'この項目を削除します。よろしいですか？',
+    );
+    if (!confirmed || !mounted) return;
+    final db = ref.read(databaseProvider);
+    final allItems = await (db.select(db.todoItems)
+          ..where((t) => t.listId.equals(item.listId)))
+        .get();
+    await _deleteTodoItemAndDescendants(item.id, allItems);
+  }
+
+  Future<void> _deleteTodoItemAndDescendants(
+      String itemId, List<TodoItem> allItems) async {
+    final db = ref.read(databaseProvider);
+    final children = allItems.where((i) => i.parentId == itemId).toList();
+    for (final child in children) {
+      await _deleteTodoItemAndDescendants(child.id, allItems);
+    }
+    await (db.delete(db.todoItems)..where((t) => t.id.equals(itemId))).go();
   }
 
   /// _MemoGridView から渡される実際の利用可能高さを通常/最大化別に保存。

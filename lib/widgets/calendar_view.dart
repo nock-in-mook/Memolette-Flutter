@@ -27,6 +27,10 @@ class CalendarView extends ConsumerStatefulWidget {
   final ValueChanged<TodoList> onTodoListTap;
   final ValueChanged<TodoItem>? onTodoItemTap;
   final ValueChanged<Memo> onMemoCreated;
+  // DayItemsPanel のスワイプ削除用
+  final ValueChanged<Memo>? onMemoDelete;
+  final ValueChanged<TodoList>? onTodoListDelete;
+  final ValueChanged<TodoItem>? onTodoItemDelete;
 
   const CalendarView({
     super.key,
@@ -34,6 +38,9 @@ class CalendarView extends ConsumerStatefulWidget {
     required this.onTodoListTap,
     this.onTodoItemTap,
     required this.onMemoCreated,
+    this.onMemoDelete,
+    this.onTodoListDelete,
+    this.onTodoItemDelete,
   });
 
   @override
@@ -162,6 +169,9 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
               onTodoItemTap: widget.onTodoItemTap,
               onAddMemo: () => _createMemoForDay(day),
               onAddTodoList: () => _createTodoListForDay(day),
+              onMemoDelete: widget.onMemoDelete,
+              onTodoListDelete: widget.onTodoListDelete,
+              onTodoItemDelete: widget.onTodoItemDelete,
             ),
           ),
         ],
@@ -206,6 +216,9 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
                     onTodoItemTap: widget.onTodoItemTap,
                     onAddMemo: () => _createMemoForDay(selectedDay),
                     onAddTodoList: () => _createTodoListForDay(selectedDay),
+                    onMemoDelete: widget.onMemoDelete,
+                    onTodoListDelete: widget.onTodoListDelete,
+                    onTodoItemDelete: widget.onTodoItemDelete,
                     onClose: () => ref
                         .read(calendarSelectedDayProvider.notifier)
                         .state = null,
