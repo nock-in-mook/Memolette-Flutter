@@ -540,7 +540,7 @@ class _MemoTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 11,
+                fontSize: 13,
                 fontWeight: FontWeight.w700,
                 fontFamily: 'Hiragino Sans',
                 color: Colors.black87,
@@ -553,7 +553,7 @@ class _MemoTile extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 10,
+                fontSize: 12,
                 color: Colors.black54,
                 fontFamily: 'Hiragino Sans',
                 height: 1.3,
@@ -597,7 +597,7 @@ class _TodoListTile extends ConsumerWidget {
                   children: [
                     const Icon(
                       CupertinoIcons.bookmark_fill,
-                      size: 11,
+                      size: 13,
                       color: Colors.orange,
                     ),
                     const SizedBox(width: 5),
@@ -607,7 +607,7 @@ class _TodoListTile extends ConsumerWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 11,
+                          fontSize: 13,
                           fontWeight: FontWeight.w700,
                           fontFamily: 'Hiragino Sans',
                           color: Colors.black87,
@@ -619,35 +619,39 @@ class _TodoListTile extends ConsumerWidget {
               if (hasTitle && items.isNotEmpty) const _Divider(),
               for (var i = 0; i < items.length; i++) ...[
                 if (i > 0) const SizedBox(height: 3),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Icon(
-                      items[i].isDone
-                          ? Icons.check_box
-                          : Icons.check_box_outline_blank,
-                      size: 12,
-                      color: Colors.green.shade600,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        items[i].title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontFamily: 'Hiragino Sans',
-                          color: items[i].isDone
-                              ? Colors.black38
-                              : Colors.black54,
-                          decoration: items[i].isDone
-                              ? TextDecoration.lineThrough
-                              : null,
+                // 配下項目はリスト名より少しインデントして階層を表現
+                Padding(
+                  padding: EdgeInsets.only(left: hasTitle ? 12 : 0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Icon(
+                        items[i].isDone
+                            ? Icons.check_box
+                            : Icons.check_box_outline_blank,
+                        size: 14,
+                        color: Colors.green.shade600,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          items[i].title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'Hiragino Sans',
+                            color: items[i].isDone
+                                ? Colors.black38
+                                : Colors.black54,
+                            decoration: items[i].isDone
+                                ? TextDecoration.lineThrough
+                                : null,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ],
@@ -682,7 +686,7 @@ class _TodoItemTile extends StatelessWidget {
                   item.isDone
                       ? Icons.check_box
                       : Icons.check_box_outline_blank,
-                  size: 13,
+                  size: 15,
                   color: Colors.green.shade600,
                 ),
                 const SizedBox(width: 5),
@@ -692,7 +696,7 @@ class _TodoItemTile extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                       fontFamily: 'Hiragino Sans',
                       color: item.isDone ? Colors.black45 : Colors.black87,
@@ -711,7 +715,7 @@ class _TodoItemTile extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 10,
+                fontSize: 12,
                 color: Colors.black54,
                 fontFamily: 'Hiragino Sans',
                 height: 1.3,
