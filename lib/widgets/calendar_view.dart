@@ -172,6 +172,8 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
               onMemoDelete: widget.onMemoDelete,
               onTodoListDelete: widget.onTodoListDelete,
               onTodoItemDelete: widget.onTodoItemDelete,
+              // iPad 横画面のカレンダー右カラムは横幅が狭いので縦積みに
+              stacked: true,
             ),
           ),
         ],

@@ -31,6 +31,9 @@ class DayItemsPanel extends ConsumerStatefulWidget {
   final Future<void> Function(Memo)? onMemoDelete;
   final Future<void> Function(TodoList)? onTodoListDelete;
   final Future<void> Function(TodoItem)? onTodoItemDelete;
+  // 縦積みレイアウト。iPad 横画面のカレンダー右カラム等、横幅が狭い時に true。
+  // 上にメモボックス、下に ToDo ボックス、各々独立に FAB を持つ。
+  final bool stacked;
 
   const DayItemsPanel({
     super.key,
@@ -44,6 +47,7 @@ class DayItemsPanel extends ConsumerStatefulWidget {
     this.onMemoDelete,
     this.onTodoListDelete,
     this.onTodoItemDelete,
+    this.stacked = false,
   });
 
   static const _weekdayLabels = ['月', '火', '水', '木', '金', '土', '日'];
@@ -68,6 +72,7 @@ class _DayItemsPanelState extends ConsumerState<DayItemsPanel> {
     final onMemoDelete = widget.onMemoDelete;
     final onTodoListDelete = widget.onTodoListDelete;
     final onTodoItemDelete = widget.onTodoItemDelete;
+    final stacked = widget.stacked;
     final memos = ref.watch(memosForDayProvider(day)).valueOrNull ??
         const <Memo>[];
     final todoLists = ref.watch(todoListsForDayProvider(day)).valueOrNull ??
@@ -157,112 +162,146 @@ class _DayItemsPanelState extends ConsumerState<DayItemsPanel> {
             ],
           ),
         ),
-        // アイテム一覧（横 2 列、左 = メモ / 右 = ToDo）+ 各列下端にフロート FAB
+        // アイテム一覧 + 各列下端にフロート FAB
+        // stacked=false: 横 2 列（左=メモ / 右=ToDo）
+        // stacked=true:  縦並び（上=メモ / 下=ToDo）— iPad 横画面の右カラム等の狭幅向け
         Expanded(
           child: Container(
             // grey.shade100 と shade200 の中間（ほんのり濃い）
             color: const Color(0xFFF1F1F1),
             child: totalCount == 0 && onAddMemo == null && onAddTodoList == null
                 ? const _EmptyState()
-                : Stack(
-                    children: [
-                      Row(
+                : Builder(builder: (_) {
+                    final memoColumn = _ColumnList(
+                      sectionLabel: 'メモ',
+                      sectionIcon: Icons.note_outlined,
+                      sectionColor: Colors.amber.shade700,
+                      isEmpty: memos.isEmpty,
+                      children: [
+                        for (final m in memos)
+                          _SwipeDeleteRow(
+                            onDelete: onMemoDelete == null
+                                ? null
+                                : () => onMemoDelete(m),
+                            child: _MemoTile(
+                                memo: m, onTap: () => onMemoTap(m)),
+                          ),
+                      ],
+                    );
+                    final todoColumn = _ColumnList(
+                      sectionLabel: 'ToDo',
+                      sectionIcon: Icons.checklist,
+                      sectionColor: Colors.green.shade600,
+                      isEmpty: todoLists.isEmpty && todoItems.isEmpty,
+                      children: [
+                        for (final l in todoLists)
+                          _SwipeDeleteRow(
+                            onDelete: onTodoListDelete == null
+                                ? null
+                                : () => onTodoListDelete(l),
+                            child: _TodoListTile(
+                                list: l, onTap: () => onTodoListTap(l)),
+                          ),
+                        for (final it in todoItems)
+                          _SwipeDeleteRow(
+                            onDelete: onTodoItemDelete == null
+                                ? null
+                                : () => onTodoItemDelete(it),
+                            child: _TodoItemTile(
+                              item: it,
+                              onTap: onTodoItemTap == null
+                                  ? null
+                                  : () => onTodoItemTap(it),
+                            ),
+                          ),
+                      ],
+                    );
+                    final memoFab = onAddMemo != null
+                        ? _FloatAddFab(
+                            accent: Colors.amber.shade700,
+                            onTap: onAddMemo,
+                          )
+                        : null;
+                    final todoFab = onAddTodoList != null
+                        ? _FloatAddFab(
+                            accent: Colors.green.shade600,
+                            onTap: onAddTodoList,
+                          )
+                        : null;
+                    final dividerColor =
+                        Colors.black.withValues(alpha: 0.15);
+                    if (stacked) {
+                      // 縦並び: 各エリアごとに独立した Stack(List + FAB)
+                      return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          // 左列: メモ
                           Expanded(
-                            child: _ColumnList(
-                              sectionLabel: 'メモ',
-                              sectionIcon: Icons.note_outlined,
-                              sectionColor: Colors.amber.shade700,
-                              isEmpty: memos.isEmpty,
+                            child: Stack(
                               children: [
-                                for (final m in memos)
-                                  _SwipeDeleteRow(
-                                    onDelete: onMemoDelete == null
-                                        ? null
-                                        : () => onMemoDelete!(m),
-                                    child: _MemoTile(
-                                        memo: m,
-                                        onTap: () => onMemoTap(m)),
+                                memoColumn,
+                                if (memoFab != null)
+                                  Positioned(
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 14,
+                                    child: Center(child: memoFab),
                                   ),
                               ],
                             ),
                           ),
-                          // 中央の仕切り線
-                          Container(
-                            width: 0.5,
-                            color: Colors.black.withValues(alpha: 0.15),
-                          ),
-                          // 右列: ToDo
+                          Container(height: 0.5, color: dividerColor),
                           Expanded(
-                            child: _ColumnList(
-                              sectionLabel: 'ToDo',
-                              sectionIcon: Icons.checklist,
-                              sectionColor: Colors.green.shade600,
-                              isEmpty: todoLists.isEmpty &&
-                                  todoItems.isEmpty,
+                            child: Stack(
                               children: [
-                                for (final l in todoLists)
-                                  _SwipeDeleteRow(
-                                    onDelete: onTodoListDelete == null
-                                        ? null
-                                        : () => onTodoListDelete!(l),
-                                    child: _TodoListTile(
-                                        list: l,
-                                        onTap: () => onTodoListTap(l)),
-                                  ),
-                                for (final it in todoItems)
-                                  _SwipeDeleteRow(
-                                    onDelete: onTodoItemDelete == null
-                                        ? null
-                                        : () => onTodoItemDelete!(it),
-                                    child: _TodoItemTile(
-                                      item: it,
-                                      onTap: onTodoItemTap == null
-                                          ? null
-                                          : () => onTodoItemTap!(it),
-                                    ),
+                                todoColumn,
+                                if (todoFab != null)
+                                  Positioned(
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 14,
+                                    child: Center(child: todoFab),
                                   ),
                               ],
                             ),
                           ),
                         ],
-                      ),
-                      // フロート FAB（各列の下端中央配置）
-                      if (onAddMemo != null || onAddTodoList != null)
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 14,
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Center(
-                                  child: onAddMemo != null
-                                      ? _FloatAddFab(
-                                          accent: Colors.amber.shade700,
-                                          onTap: onAddMemo!,
-                                        )
-                                      : const SizedBox.shrink(),
-                                ),
-                              ),
-                              const SizedBox(width: 0.5),
-                              Expanded(
-                                child: Center(
-                                  child: onAddTodoList != null
-                                      ? _FloatAddFab(
-                                          accent: Colors.green.shade600,
-                                          onTap: onAddTodoList!,
-                                        )
-                                      : const SizedBox.shrink(),
-                                ),
-                              ),
-                            ],
-                          ),
+                      );
+                    }
+                    // 横 2 列
+                    return Stack(
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(child: memoColumn),
+                            Container(width: 0.5, color: dividerColor),
+                            Expanded(child: todoColumn),
+                          ],
                         ),
-                    ],
-                  ),
+                        if (memoFab != null || todoFab != null)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 14,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Center(
+                                      child:
+                                          memoFab ?? const SizedBox.shrink()),
+                                ),
+                                const SizedBox(width: 0.5),
+                                Expanded(
+                                  child: Center(
+                                      child:
+                                          todoFab ?? const SizedBox.shrink()),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    );
+                  }),
           ),
         ),
       ],
