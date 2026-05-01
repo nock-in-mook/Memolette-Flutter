@@ -478,6 +478,10 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         // DBストリームが追いつくまで楽観的に新titleを表示
         if (!wasEmpty) {
           _optimisticTitles[id] = trimmed;
+        } else {
+          // 空コミットで DB から削除した場合、onChanged で残った
+          // 可能性のある楽観値もクリア（保険）
+          _optimisticTitles.remove(id);
         }
       });
       if (chainNext && !wasEmpty) {
@@ -2552,6 +2556,14 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                         _commitEditWithText(text, itemId: item.id),
                     onCommitChain: (text) => _commitEditWithText(text,
                         chainNext: true, itemId: item.id),
+                    // 入力のたびに楽観タイトルを更新しておく。
+                    // 「項目追加」タップで _editingItemId が新規項目に
+                    // 切り替わると、この行は通常表示モードに戻る。その瞬間
+                    // optimistic がないと DB の空文字を読んで「（空のアイテム）」
+                    // が一瞬表示され、commit 完了後に正しい text に戻るチラつきが出る。
+                    onChanged: (text) {
+                      _optimisticTitles[item.id] = text;
+                    },
                   )
                 : GestureDetector(
                     onTap: () {
@@ -3002,12 +3014,17 @@ class _EditingItemField extends StatefulWidget {
   final String initialText;
   final void Function(String text) onCommit;
   final void Function(String text) onCommitChain;
+  // 入力のたびに呼ばれる。親側で楽観タイトルを更新しておくと、
+  // 「項目追加」ボタンで _editingItemId が新規項目に切り替わった瞬間に
+  // 古い項目の表示が「（空のアイテム）」になるのを防げる。
+  final void Function(String text)? onChanged;
 
   const _EditingItemField({
     super.key,
     required this.initialText,
     required this.onCommit,
     required this.onCommitChain,
+    this.onChanged,
   });
 
   @override
@@ -3082,6 +3099,7 @@ class _EditingItemFieldState extends State<_EditingItemField> {
       contextMenuBuilder: TextMenuDismisser.builder,
       textInputAction: TextInputAction.next,
       scrollPadding: const EdgeInsets.only(bottom: 100),
+      onChanged: widget.onChanged,
       onSubmitted: (_) => _doCommit(chain: true),
       // onTapOutside を空にする。元は _doCommit(chain: false) だったが、
       // これがあると編集中に同じ行のメモ/日付/シェブロンや別項目のボタン
