@@ -2,106 +2,140 @@
 
 ## 現在の状況
 
-- **セッション#34 完了**（2026-05-01、長め）
+- **セッション#35 完了**（2026-05-01〜2026-05-02、超長め・17コミット）
 - ブランチ: **`main`**
-- 今回はダイアログ統一の仕上げ + メモカード行数最適化 + カレンダー周りバグ修正・機能追加 + FAB簡素化
+- 今回は #34 の積み残し（既知バグ修正＋実機 release 検証）から始まり、
+  ROADMAP 備忘の小〜中サイズタスクを次々潰していく流れ
+- iPad 関連の修正が中盤以降多く、最終的に wireless 接続不安定で
+  実機検証が一部未完。シミュでは全項目動作確認済み
 
-## #34 のサマリ
+## #35 のサマリ（時系列）
 
-### BgColorPickerDialog 完全 DialogStyles 統一
-- `Dialog()` ウィジェット → `showGeneralDialog` + `Material(transparent) + Container(bodyDecoration)` パターンに変換
-- クラス `BgColorPickerDialog` を削除 → 関数 `showBgColorPickerDialog(context, current)` に変更
-- 直書きの色・フォント・太さ・角丸・影を全て DialogStyles 経由
-- ボタンを `accentButtonDecoration` の薄色背景＋色付きテキストに統一
-- 呼び出し元 4 箇所（home_screen × 2 / todo_lists_screen / memo_input_area）を新 API に更新
+### 既知バグ修正
+- ToDo項目入力中に「項目追加」ボタン → 入力中項目が一瞬「空のアイテム」に
+  なる不具合修正。`_EditingItemField.onChanged` で常時 `_optimisticTitles`
+  を更新する設計に変更（`_commitEditWithText` の wasEmpty 分岐に保険の remove も）
 
-### ダイアログ巡回 C/E/F の DialogStyles 統一
-- **C 選択肢メニュー**: メモ長押し / ToDo長押し / ToDoリスト長押しのキャンセルボタン `Color(0xFF007AFF)` → `DialogStyles.defaultAction`、タグピッカーのタイトル → `DialogStyles.title`
-- **E 日付ピッカー**: タイトル「日付を指定」+ サブタイトル + フッター3ボタン (キャンセル / 決定 / カレンダーから消去) を DialogStyles トークン経由に
-- **F バナー**: メモ選択モード / ToDo選択削除 / ToDo結合 の 3 バナーで accent カラー & テキストスタイルを DialogStyles 経由に
+### 実機 release 検証（前回 #34 から持ち越し）
+- 15 Pro Max + iPad 両方を release ビルドして Phase 15 Step 9 + Phase 16
+  確認済み。**release では debug のカクカクが完全に消えて快適**
 
-### Phase 14 文字サイズ方針更新
-- アクセシビリティは見送り。将来案を「スライダー → ノーマル/大の2段階トグル」に書き換え
-- スライダーや3段階以上は影響範囲が広すぎる（カード行数・高さ計算が崩壊）
+### eventDate 表示まわり大幅整理
+1. 機能バー位置の eventDate がフォルダ最大化中などに画面最上部に居残る
+   バグを `eventDateHidden` 条件追加で修正
+2. iPad 横画面 / メモ最大化中は機能バー位置の表示が使えないので、
+   `_buildInputAreaSection` の AnimatedContainer の下に eventDateFooter
+   （高さ22px、Column 構造）を追加。タップで日付ピッカー起動
 
-### メモカード grid3x6 で本文 1→2行表示
-- mini 3×4 表示でカード高さが切迫していた（body Flex maxH=30.9px、2行に必要な 36.4px に届かず）
-- `_bodyLinesFor` の grid3x6 mobile cap: 1→2
-- `_cardPadding` の grid3x6: 4→3
-- 新設 `_dividerMargin` で grid3x6 のみ縦余白縮小 (top:1, bottom:1)
-- 計 7px 確保 → maxH=37.9px → SE 3×2 / mini 3×4 / standard 3×6 で本文 2行 OK
+### 日付ピッカー
+- 「決定」ボタンをオレンジ塗りつぶし+白文字に変更（薄背景+色文字から強調）
 
-### カレンダー DayItemsPanel カードタップ遷移バグ修正（2件）
-- **原因 1**: `_wrapUnfocusOnTap` の Listener が `onPointerDown` 時点で `selectedDay=null` していたため、シート内カードの InkWell.onTap 発火前にシートが unmount されてナビゲーション空振り → `onPointerUp` に移動（InkWell.onTap → Navigator.push の後に走るので実害なし）
-- **原因 2**: DayItemsPanel の ToDoアイテム個別タップで `onTodoItemTap` が wire されておらず InkWell.onTap が null → CalendarView 経由で `_openTodoItemFromCalendar` を渡し、アイテムの listId から親 TodoList を引いて `_openTodoList` で遷移
+### ToDoリスト関連の整理
+- 戻るボタンを「戻る」テキスト+白カード から `CupertinoIcons.back` 青色
+  シェブロンに（メモ画面と統一）。pop 前に `purgeEmptyTodoLists` を await して
+  「無題で項目0件のリスト」を確実に削除（dispose の fire-and-forget では
+  一覧画面の rebuild に間に合わなかった）
+- 新規作成ダイアログの「作成する」ボタンを常時押せるように。空タイトルでも
+  作成OKに（カレンダー経由作成と挙動を統一）
+- 個別画面タイトル placeholder を「無題のリスト」→「タイトル（任意）」、
+  色を `Colors.grey 0.4` にしてメモ統一
+- 起動時 cleanup に `purgeEmptyTodoLists` 追加（`home_screen.initState`）
 
-### カレンダー経由オープン時のスクロール+ハイライト
-- TodoListScreen に `highlightItemId` パラメータ追加
-- 起動直後に対象項目を画面内にスクロール (`Scrollable.ensureVisible` + `alignmentPolicy.explicit`) + オレンジ枠で 2 回フラッシュ点滅
-- 対象項目の祖先がいる場合は強制展開してから走らせる
-- `_didInitialExpand` の自動全展開と競合しないよう **150ms 遅延**を挟む（タイミングバグ回避）
-- `_openTodoItemFromCalendar` が listId 経由で親リスト取得し `highlightItemId` 付きで `_openTodoList` を呼ぶ
+### DayItemsPanel（カレンダーシート）大幅改修
+- FAB を白背景+色アイコンから **accent.withValues(alpha: 0.55)** 塗りつぶし
+  +白抜き「＋」（Container 2本を Stack で組む。Text/Icon だとフォント
+  ベースラインで下にずれるため）。直径 33、太さ 3px
+- セクション見出し（メモ/ToDo）の上余白を 14→7px に半減
+- メモ・ToDoリスト・ToDoアイテムカードのフォントを +2 で視認性 up、
+  ToDoリスト配下の項目を Padding(left: 12) でリスト名よりインデント
+- 全カードに**左スワイプで削除**機能追加。確認ダイアログ付き、
+  ToDoリストは配下アイテム+ taggings まで transaction 削除、ToDoアイテムは
+  子孫を再帰削除。仕切り線を超えないよう ClipRect でラップ
+- ダイアログ表示中も削除ボタンを保持（`_holdingForDialog` フラグ +
+  `Listener.onPointerDown` で確実に flag 立て）
+- iPad 横画面のカレンダー右カラムは横幅が狭いので **メモ上 / ToDo下** の
+  縦積み表示（`DayItemsPanel.stacked` プロパティ追加）
 
-### TodoListScreen のヒントテキスト自動隠蔽
-- 項目数が 6 件超のときは「タップで編集 ・ 長押しで並び替え ・ 左スワイプで削除」ヒントを非表示にして縦余白を稼ぐ
+### iPad 横画面の右カラム
+- メモ編集中に左上「閉じる」テキストボタン追加（ToDoリスト一覧と統一）。
+  右カラム上余白を 36px に確保
+- 機能バー位置の eventDate を消して、白カード下端外側に新規 eventDateFooter
 
-### DayItemsPanel の FAB 簡素化 + ToDoアイテムをチェックボックス表示に
-- FAB を 48×48 → 32×32 にコンパクト化、＋アイコンのみのシンプル仕様（テキスト・サブバッジ撤去）
-- 配置を左下/右下 → メモ列・ToDo列それぞれの**中央**に
-- `_TodoItemTile` のしおりアイコン (オレンジ) → チェックボックス (緑、isDone でチェック有無を切替) に変更し ToDoリストとの視認差を明確化
+### フィルタメニュー
+- `_TypeFilter` enum に `nameAsc`, `nameDesc` を追加（種別フィルタと排他選択
+  で「名前順 ↑」「名前順 ↓」をフィルタ項目として並べる）
+- `_GridItem` に `String get title` 追加。`_MemoGridView._mergeItems` で
+  名前順ソート対応。`_MemoGridView` には `typeFilter` パラメータを追加して伝搬
 
-## 次のアクション（次セッション #35）
+### グリッドサイズ「タイトルのみ」表示バグ修正
+- フィルタなし＋TODO 混在時に何も表示されないバグ。原因は ListView.separated
+  の loose constraint 下で TodoCard の `Stack(fit: StackFit.expand)` が
+  0 高さになって描画消失。各行を `SizedBox(height: 32)` で包んで tight
+  制約を与える形で修正
 
-### 残タスク
-- **既知バグ**: ToDo項目入力中に「項目追加」ボタンを押すと、入力中の項目名が一瞬「空のアイテム」に変わってから確定される不具合（編集中アイテムの commit タイミングと新規追加の競合）
-- **実機 / iPad での Phase 15 Step 9 + Phase 16 動作確認**（残）
-  - SE/mini シミュ/15 Pro Max 実機/iPad 実機 4 台並列起動済み（FIFO + rsync 経由）
-- 子タグドロワー「都度収納/常時表示」設定（ROADMAP アイデアメモ）
-- アプリ内文字サイズ「ノーマル/大」2段階トグル（ROADMAP アイデアメモ）
+## 次のアクション（次セッション #36）
 
-### 短期備忘
-- 直書きの `Color(0xFF007AFF)` がアプリ全体（機能バーやアクセント等）にまだ残っている — ダイアログ巡回外なので別タスク
+### 残タスク（ROADMAP「備忘」より）
+- ToDo の複数リスト結合機能（実装済みかも要確認）
+- ToDo / 爆速モードを開くときの遷移アニメーション短縮
+- 爆速整理モードと ToDo の iPad 対応
+- 5階層 ToDo 結合 6階層目挙動確認
+- 爆速メモ編集中のキーボードもツールバー付きに
+- メモ入力エリア枠外右下の eventDate 表示を機種ごとに確認（直したばかりだが
+  全機種で再確認）
+- 選択モード関連の iPad 対応チェック
+- NewTagSheet オリジナル風改修
+- アプリ全体の iOS 風 UI 要素を Memolette オリジナル風に置き換え
+- ToDoリスト内項目の日付表示縦に広げない方法
+- iPad 縦↔横回転時の編集状態維持
+- 日付シート内カードに背景色指定を反映
+
+### 実機検証の積み残し
+- iPad / 15 Pro Max wireless 接続が後半不安定で「unlock recovery」エラー
+  連発。直近の修正（DayItemsPanel スワイプ削除、ToDo 戻るシェブロン、
+  iPad 横画面の eventDate 移動など）は **シミュ確認のみ**で実機未確認
+- 次回はワイヤード接続 or シミュレータ単体で進める想定
+
+### アイデアメモ系（後回し）
+- 子タグドロワー「都度収納/常時表示」設定
+- アプリ内文字サイズ「ノーマル/大」2段階トグル
 
 ## 技術メモ
 
-### iOS 実機ワイヤレス debug ビルドは遅い
-- 15 Pro Max 実機で全体的にカクカク → 主に debug build 由来。release build (`flutter run --release`) で本来の速度
-- 実機検証は debug 動作 OK ならとりあえず合格、UX は release で別途確認
+### Listener.onPointerDown 順序の罠
+- 外側 Listener.onPointerUp が削除ボタンタップで発火 → Provider 増分 → 自分が
+  close される問題は、 `GestureDetector.onTapDown` では順序が遅すぎて間に
+  合わない（PointerUpEvent 後に発火）。**削除ボタンを内側 Listener で
+  ラップして onPointerDown で flag 立てる**のが確実
 
-### カレンダー経由項目ハイライトのタイミング
-- TodoListScreen 初回 build → `_didInitialExpand` が postFrame で `_expandAll` を setState
-- これによりレイアウトが変わるので、ハイライトの scroll 計算は `_expandAll` の setState を待たないと古い座標で計算してしまう
-- 対策: postFrame の中でさらに 150ms 遅延 → 自動展開後に flash を走らせる
+### Stack.clipBehavior だけでは効かない場合
+- Stack(clipBehavior: Clip.hardEdge) では中身の Transform.translate がはみ出す
+  ことがある。確実にクリップしたい時は `ClipRect` で包む
 
-### Listener.onPointerDown vs onPointerUp の使い分け
-- フォーカス解除（`unfocus`）は **onPointerDown**（タップ前にキーボードを閉じてレイアウトを安定させる）
-- 何かを「閉じる」処理は **onPointerUp**（子の InkWell.onTap が先に走り、その後で閉じる）
-- `onPointerDown` で閉じると、子要素が unmount されて InkWell.onTap 発火タイミングで子が tree に居らず、タップが空振りする
+### release ビルド再起動のコマンド
+```bash
+echo "q" > /tmp/flutter_pipe_15pm  # 既存停止
+rsync -a --delete lib/ /tmp/memolette-run-15pm/lib/
+# Bash run_in_background=true で:
+cd /tmp/memolette-run-15pm && flutter run --release -d 00008130-0006252E2E40001C \
+  < /tmp/flutter_pipe_15pm > /tmp/15pm_release_log.txt 2>&1
+```
 
 ### シミュ / 実機 ID
-- iPhone 17 Pro シミュ: `ACE500F3-AA23-44EC-AB93-C4EA636FC3BC`
-- iPad Pro 12.9-inch (6th gen): `1F181174-7768-44DB-9BDA-E9E9976695F0`
-- iPhone 15 Pro Max（実機 wireless）: `00008130-0006252E2E40001C`
-- iPad（のっくりのiPad、wireless）: `00008103-000470C63E04C01E`
 - iPhone SE 3rd iOS26: `47003836-6426-4AB1-90FC-C5E73DA251C1`
 - iPhone 13 mini iOS26: `B5B2C694-8EAB-4C14-AA4D-8BCE464CE49D`
+- iPhone 15 Pro Max（実機 wireless）: `00008130-0006252E2E40001C`
+- iPad（のっくりのiPad、wireless）: `00008103-000470C63E04C01E`
+- iPad Pro 12.9-inch (6th gen): `1F181174-7768-44DB-9BDA-E9E9976695F0`
+- iPhone 17 Pro シミュ: `ACE500F3-AA23-44EC-AB93-C4EA636FC3BC`
 
-### 4台並列実行の FIFO セットアップ
-```bash
-# SE 3rd
-nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe' > /dev/null 2>&1 &
-# mini
-nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe_13' > /dev/null 2>&1 &
-# 15 Pro Max
-nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe_15pm' > /dev/null 2>&1 &
-# iPad
-nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe_ipad' > /dev/null 2>&1 &
-# 各々別 /tmp/memolette-run-XXX に rsync して並列 flutter run
-# ログは /tmp/{se,mini,15pm,ipad}_logs.txt
-```
+### Mac で `py` コマンドはない
+- グローバル CLAUDE.md の Python 実行ルールは Windows 用。Mac では `python3`
+  で代用（transcript_export.py 等）
 
 ## 関連メモ（自動メモリ）
 
+- `feedback_dialog_style.md`: AskUserQuestion の選択肢形式は使わず自然な対話
 - `feedback_no_monitor_for_build.md`: flutter run のビルド完了待ちで Monitor を使わない
-- `feedback_layout_immutable.md`: 既存レイアウトは新機能で動かさない、オーバーレイで実装
+- `feedback_layout_immutable.md`: 既存レイアウトは新機能で動かさない
 - `build_workaround.md`: Google Drive 上では codesign エラー → `/tmp/memolette-run` 経由

@@ -993,3 +993,54 @@
 - 実機 / iPad での動作確認（残）
 - 子タグドロワー「都度収納/常時表示」設定（ROADMAP アイデアメモ）
 - アプリ内文字サイズ「ノーマル/大」2段階トグル
+
+---
+## #35 (2026-05-01〜02 超長め・17コミット)
+
+### 既知バグ修正
+- ToDo項目入力中に「項目追加」ボタンで一瞬「空のアイテム」になる不具合修正（`_EditingItemField.onChanged` で常時 `_optimisticTitles` 更新）
+
+### 実機 release 検証
+- 15 Pro Max + iPad で Phase 15 Step 9 + Phase 16 確認、release で快適動作
+
+### eventDate 表示整理
+- 機能バー位置の eventDate がフォルダ最大化中に画面最上部に居残るバグ修正
+- iPad 横画面 / メモ最大化時は白カード下に新規 eventDateFooter（高さ22px、Column 構造、タップで日付ピッカー）
+
+### 日付ピッカー
+- 「決定」ボタンをオレンジ塗りつぶし+白文字に強調
+
+### ToDoリスト
+- 戻るボタンを「戻る」テキスト+白カード から青シェブロン (CupertinoIcons.back) に統一
+- pop 前に `purgeEmptyTodoLists` を await（dispose の fire-and-forget では rebuild に間に合わない）
+- 新規作成ダイアログで空タイトル作成OK、起動時 cleanup に `purgeEmptyTodoLists` 追加
+- 個別画面タイトル placeholder「無題のリスト」→「タイトル（任意）」に統一
+
+### DayItemsPanel 改修
+- FAB を accent.alpha(0.55) 塗りつぶし+白「＋」（Container 2本を Stack で組む）。直径33、太さ3px
+- セクション見出し上余白 14→7px に半減
+- カードフォント +2 で視認性 up、ToDoリスト配下を Padding(left:12) でインデント
+- カード**左スワイプで削除**追加（確認ダイアログ + キャンセル機構 + ClipRect で仕切り線越え防止）
+- ダイアログ表示中も削除ボタン保持（`_holdingForDialog` フラグ + 内側 Listener.onPointerDown）
+- iPad 横画面の右カラムは横幅狭いので **メモ上 / ToDo下** 縦積み（`stacked: true` で切替）
+
+### iPad 横画面の右カラム
+- メモ編集中に左上「閉じる」テキストボタン追加、上余白 36px に
+- 機能バー位置の eventDate を消して白カード下端外側に移動
+
+### フィルタメニュー
+- `_TypeFilter` に `nameAsc` `nameDesc` を追加（種別フィルタと排他選択で「名前順 ↑」「名前順 ↓」が並ぶ）
+- `_GridItem` に title getter、`_MemoGridView._mergeItems` で名前順ソート対応
+
+### グリッドサイズ「タイトルのみ」表示バグ修正
+- フィルタなし+TODO 混在で何も表示されないバグ。原因は ListView.separated の loose constraint 下で TodoCard の Stack(fit: StackFit.expand) が 0 高さに → SizedBox(height:32) で tight 制約付与で修正
+
+### 学び
+- `Listener.onPointerDown` 順序: 外側 Listener と GestureDetector.onTapDown の順序は **GestureDetector が後**。同じレイヤで flag 立てるなら**内側 Listener.onPointerDown** が確実
+- `Stack.clipBehavior=hardEdge` だけでは効かない場合あり、`ClipRect` で確実に
+- iPad / 15 Pro Max の wireless 接続は後半不安定で「unlock recovery」エラー連発。実機検証は要 USB or 別途やり直し
+
+### 次セッション (#36) 候補
+- ROADMAP 備忘の残り（複数リスト結合・遷移アニメ短縮・名前なしフィルタ等多数）
+- 実機検証の積み残し（DayItemsPanel スワイプ削除・ToDo シェブロン等）
+- iPad 関連の改修確認（USB 接続 or シミュレータで）
