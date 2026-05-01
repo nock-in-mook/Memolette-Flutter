@@ -1057,6 +1057,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// Listener は子の GestureDetector を阻害せず、PointerDown を横取りしない。
   /// これで メモタップ・タブ切替・爆速/ToDo 遷移など、遷移前に一律でキーボードを閉じる。
   /// 入力エリアだけでなく検索バーにフォーカスがあるときも抜ける。
+  ///
+  /// カレンダー閉鎖は **onPointerUp** で行う。onPointerDown だと、シート内
+  /// カードタップ時に InkWell.onTap が発火する前にシートが unmount されて
+  /// しまい、ナビゲーションが空振りする（カレンダー → DayItemsPanel カードが
+  /// 飛ばないバグの原因）。onPointerUp なら InkWell.onTap → Navigator.push の
+  /// 後に走るので、遷移後の clear で実害なし。
   Widget _wrapUnfocusOnTap(Widget child) {
     return Listener(
       behavior: HitTestBehavior.translucent,
@@ -1067,6 +1073,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         if (hasInputFocus || hasSearchFocus) {
           FocusManager.instance.primaryFocus?.unfocus();
         }
+      },
+      onPointerUp: (_) {
         // カレンダーのシート表示中は、機能バー / ナビバー / 余白タップで閉じる
         if (ref.read(calendarSelectedDayProvider) != null) {
           ref.read(calendarSelectedDayProvider.notifier).state = null;
@@ -1513,6 +1521,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                 child: CalendarView(
                                   onMemoTap: _openMemo,
                                   onTodoListTap: _openTodoList,
+                                  onTodoItemTap: _openTodoItemFromCalendar,
                                   onMemoCreated: _openNewlyCreatedMemo,
                                 ),
                               )
@@ -3151,6 +3160,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         reverseTransitionDuration: Duration.zero,
       ),
     );
+  }
+
+  /// カレンダーの DayItemsPanel から ToDoアイテム個別タップ時のハンドラ。
+  /// アイテムの親 TodoList を開く（個別アイテム編集はリスト内で行う想定）。
+  void _openTodoItemFromCalendar(TodoItem item) async {
+    if (_isSelectMode || _isReorderMode) return;
+    final db = ref.read(databaseProvider);
+    final list = await (db.select(db.todoLists)
+          ..where((t) => t.id.equals(item.listId)))
+        .getSingleOrNull();
+    if (!mounted || list == null) return;
+    _openTodoList(list);
   }
 
   /// _MemoGridView から渡される実際の利用可能高さを通常/最大化別に保存。

@@ -25,12 +25,14 @@ final calendarSelectedDayProvider =
 class CalendarView extends ConsumerStatefulWidget {
   final ValueChanged<Memo> onMemoTap;
   final ValueChanged<TodoList> onTodoListTap;
+  final ValueChanged<TodoItem>? onTodoItemTap;
   final ValueChanged<Memo> onMemoCreated;
 
   const CalendarView({
     super.key,
     required this.onMemoTap,
     required this.onTodoListTap,
+    this.onTodoItemTap,
     required this.onMemoCreated,
   });
 
@@ -157,6 +159,7 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
               day: day,
               onMemoTap: widget.onMemoTap,
               onTodoListTap: widget.onTodoListTap,
+              onTodoItemTap: widget.onTodoItemTap,
               onAddMemo: () => _createMemoForDay(day),
               onAddTodoList: () => _createTodoListForDay(day),
             ),
@@ -200,6 +203,7 @@ class _CalendarViewState extends ConsumerState<CalendarView> {
                     day: selectedDay,
                     onMemoTap: widget.onMemoTap,
                     onTodoListTap: widget.onTodoListTap,
+                    onTodoItemTap: widget.onTodoItemTap,
                     onAddMemo: () => _createMemoForDay(selectedDay),
                     onAddTodoList: () => _createTodoListForDay(selectedDay),
                     onClose: () => ref
