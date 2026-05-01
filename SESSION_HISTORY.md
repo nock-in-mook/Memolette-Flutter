@@ -973,3 +973,23 @@
 - BgColorPickerDialog の DialogStyles 統一
 - アプリ全体の iOS 風要素の追加洗い出し
 - ダイアログ巡回の続き（C 選択肢メニュー / E ピッカー / F バナー）
+
+---
+## #34 (2026-05-01) — ダイアログ統一仕上げ + メモカード行数最適化 + カレンダー周りバグ修正/機能追加
+
+### 主な変更
+- BgColorPickerDialog 完全 DialogStyles 統一（クラス → showBgColorPickerDialog 関数化、showGeneralDialog + Material + bodyDecoration パターン）
+- ダイアログ巡回 C/E/F: 選択肢メニュー（メモ/ToDo長押しキャンセルボタン）/ 日付ピッカー / バナー（メモ選択モード/ToDo選択削除/ToDo結合）の DialogStyles 統一
+- Phase 14 文字サイズ方針更新（スライダー → ノーマル/大の2段階トグル）
+- メモカード grid3x6 で本文 1→2行表示（mini 3×4 / SE 3×2 でカード高さ切迫していた、divider margin + cardPadding 縮小で 7px 確保）
+- カレンダー DayItemsPanel カードタップ遷移バグ修正（onPointerDown→onPointerUp + onTodoItemTap wire 不足）
+- カレンダー経由オープン時の項目スクロール + オレンジ枠フラッシュ実装
+- TodoListScreen ヒントテキスト自動隠蔽（項目数 6 超で非表示）
+- DayItemsPanel FAB 簡素化（48→32px、＋のみ）+ ToDoアイテムをチェックボックス表示に
+- iPhone 15 Pro Max / iPad 実機をワイヤレスで認識・並列起動できるよう FIFO + rsync を 4 台に拡張
+
+### 次セッション (#35) 候補
+- 既知バグ: ToDo項目入力中の項目追加で「空のアイテム」一瞬表示
+- 実機 / iPad での動作確認（残）
+- 子タグドロワー「都度収納/常時表示」設定（ROADMAP アイデアメモ）
+- アプリ内文字サイズ「ノーマル/大」2段階トグル

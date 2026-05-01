@@ -2,109 +2,103 @@
 
 ## 現在の状況
 
-- **セッション#33 完了**（2026-04-30 〜 05-01、長め）
+- **セッション#34 完了**（2026-05-01、長め）
 - ブランチ: **`main`**
-- 今回はバグ修正中心。タグシート関連の見た目統一 + iOS 風要素オリジナル化 + 重大バグ4件の修正
+- 今回はダイアログ統一の仕上げ + メモカード行数最適化 + カレンダー周りバグ修正・機能追加 + FAB簡素化
 
-## #33 のサマリ
+## #34 のサマリ
 
-### NewTagSheet のデザイン統一
-- 配置（左キャンセル/中央タイトル/右確定、シート高さ85%）は維持しつつ、色・フォント・太さ・背景を `DialogStyles` に統一
-- 背景: すりガラス（blur+alpha 0.65）→ 白ベース（上部角丸＋影）
-- フォント: Hiragino Sans 統一
-- 太さ: タイトル w600→w700、キャンセル w400→w600
-- グレー濃度: shade600 → `DialogStyles.textGrey`
-- 青: 直書き #007AFF → `DialogStyles.defaultAction`
+### BgColorPickerDialog 完全 DialogStyles 統一
+- `Dialog()` ウィジェット → `showGeneralDialog` + `Material(transparent) + Container(bodyDecoration)` パターンに変換
+- クラス `BgColorPickerDialog` を削除 → 関数 `showBgColorPickerDialog(context, current)` に変更
+- 直書きの色・フォント・太さ・角丸・影を全て DialogStyles 経由
+- ボタンを `accentButtonDecoration` の薄色背景＋色付きテキストに統一
+- 呼び出し元 4 箇所（home_screen × 2 / todo_lists_screen / memo_input_area）を新 API に更新
 
-### 親タグ削除の CupertinoActionSheet → Memolette オリジナル化
-- `home_screen.dart:3968` の `showCupertinoModalPopup` + `CupertinoActionSheet` を撤去
-- 新規 `lib/widgets/tag_delete_choice_dialog.dart` を作成（`showTagDeleteChoiceDialog`）
-- 中央ダイアログ + 白背景 + 縦並びボタン、destructive(赤) / default(青) / キャンセル(グレー)
+### ダイアログ巡回 C/E/F の DialogStyles 統一
+- **C 選択肢メニュー**: メモ長押し / ToDo長押し / ToDoリスト長押しのキャンセルボタン `Color(0xFF007AFF)` → `DialogStyles.defaultAction`、タグピッカーのタイトル → `DialogStyles.title`
+- **E 日付ピッカー**: タイトル「日付を指定」+ サブタイトル + フッター3ボタン (キャンセル / 決定 / カレンダーから消去) を DialogStyles トークン経由に
+- **F バナー**: メモ選択モード / ToDo選択削除 / ToDo結合 の 3 バナーで accent カラー & テキストスタイルを DialogStyles 経由に
 
-### KeyboardDoneBar 二重表示の解消
-- `main.dart` の MaterialApp.builder で全画面に既に掛かっているのに、各画面とシートで再度包んでいた
-- シート内では Stack 位置計算がズレて「完了」ボタンが画面上部に2個目が出ていた
-- 削除: `home_screen.dart` / `todo_lists_screen.dart` / `quick_sort_screen.dart` / `new_tag_sheet.dart`
+### Phase 14 文字サイズ方針更新
+- アクセシビリティは見送り。将来案を「スライダー → ノーマル/大の2段階トグル」に書き換え
+- スライダーや3段階以上は影響範囲が広すぎる（カード行数・高さ計算が崩壊）
 
-### 重大バグ修正
+### メモカード grid3x6 で本文 1→2行表示
+- mini 3×4 表示でカード高さが切迫していた（body Flex maxH=30.9px、2行に必要な 36.4px に届かず）
+- `_bodyLinesFor` の grid3x6 mobile cap: 1→2
+- `_cardPadding` の grid3x6: 4→3
+- 新設 `_dividerMargin` で grid3x6 のみ縦余白縮小 (top:1, bottom:1)
+- 計 7px 確保 → maxH=37.9px → SE 3×2 / mini 3×4 / standard 3×6 で本文 2行 OK
 
-#### A. 新規メモが保存されないバグ（`onMemoCreated` の早期 return）
-- 原因: 920c0bd で追加された `if (!_isInputExpanded && !_isEditingCompact) return;` が、`_focusInputTrigger++` 直後の「フォーカス・キーボード立ち上がりかけ」も弾いていた
-- `_isEditingCompact` は「フォーカス入力中＋キーボード表示中」が条件 → `_preCreateEmptyMemo` 完了時にまだ満たしていない
-- 修正: `_pendingNewMemoCreation` フラグ追加、`onClosed` で必ずリセット → 立ち上がりかけだけ通し、戻り矢印で抜けた後の遅延コールバックは元のガードが効く（920c0bd の最大化ループ防止と両立）
+### カレンダー DayItemsPanel カードタップ遷移バグ修正（2件）
+- **原因 1**: `_wrapUnfocusOnTap` の Listener が `onPointerDown` 時点で `selectedDay=null` していたため、シート内カードの InkWell.onTap 発火前にシートが unmount されてナビゲーション空振り → `onPointerUp` に移動（InkWell.onTap → Navigator.push の後に走るので実害なし）
+- **原因 2**: DayItemsPanel の ToDoアイテム個別タップで `onTodoItemTap` が wire されておらず InkWell.onTap が null → CalendarView 経由で `_openTodoItemFromCalendar` を渡し、アイテムの listId から親 TodoList を引いて `_openTodoList` で遷移
 
-#### B. ルーレット親タグの内側端が子タグ判定に吸われる
-- 原因: `borderX = cx - parentInnerR` の **垂直線**で親/子を分けていた。視覚的境界は半径 `parentInnerR` の **円弧**なので、上下に傾いたセクター（中心軸から離れたもの）の内側端が borderX より右側に来て子判定されていた
-- 修正: タップ/ドラッグ開始位置の中心からの距離（半径）で判定 → `dr < parentInnerR` なら子、それ以上なら親
+### カレンダー経由オープン時のスクロール+ハイライト
+- TodoListScreen に `highlightItemId` パラメータ追加
+- 起動直後に対象項目を画面内にスクロール (`Scrollable.ensureVisible` + `alignmentPolicy.explicit`) + オレンジ枠で 2 回フラッシュ点滅
+- 対象項目の祖先がいる場合は強制展開してから走らせる
+- `_didInitialExpand` の自動全展開と競合しないよう **150ms 遅延**を挟む（タイミングバグ回避）
+- `_openTodoItemFromCalendar` が listId 経由で親リスト取得し `highlightItemId` 付きで `_openTodoList` を呼ぶ
 
-#### C. タグ残存バグ（async レース）
-- 症状: 親タグルーレットを切り替えてもバッジ表示と子タグルーレットが古いまま固着
-- ログで確認: `editingMemoId=null` なのに `_attachedTags=[長文テスト]` が残存
-- 原因: `_loadMemo` / `loadMemoDirectly` の async タグ取得が、await 中にユーザーが新規作成等で別メモへ遷移した後に完了し、古いメモのタグで `_attachedTags` を上書きしていた
-- 修正: await 完了時に `widget.editingMemoId` が変化していないかガード
+### TodoListScreen のヒントテキスト自動隠蔽
+- 項目数が 6 件超のときは「タップで編集 ・ 長押しで並び替え ・ 左スワイプで削除」ヒントを非表示にして縦余白を稼ぐ
 
-#### D. タグ残存バグ（pending 残留）
-- 症状: タグだけ指定して本文未入力の状態で新規作成ボタンを押すと pending タグが残る
-- 原因: `editingMemoId` が null → null（変化なし）になるため `didUpdateWidget` の `_clearInput` が呼ばれない
-- 修正: `focusRequest` 変化＋両方 null の場合に明示的に `_clearInput` を実行
+### DayItemsPanel の FAB 簡素化 + ToDoアイテムをチェックボックス表示に
+- FAB を 48×48 → 32×32 にコンパクト化、＋アイコンのみのシンプル仕様（テキスト・サブバッジ撤去）
+- 配置を左下/右下 → メモ列・ToDo列それぞれの**中央**に
+- `_TodoItemTile` のしおりアイコン (オレンジ) → チェックボックス (緑、isDone でチェック有無を切替) に変更し ToDoリストとの視認差を明確化
 
-### ルーレット開時のフォーカス排他
-- ルーレットが開いた状態で入力欄に文字を打てると状態が壊れる原因になっていた
-- 入力フォーカスとルーレット表示は排他にする
-- `memo_input_area`: タイトル/本文にフォーカスが入った瞬間に `_onFocusChange` で `_closeRoulette()`
-- `home_screen`: 検索欄フォーカス時の listener で `_inputAreaKey.currentState?.closeRoulette()`
-
-### グローバル CLAUDE.md に「★ 回帰バグ防止ルール」追記
-- 「こっちを立てたらあっちが死んだ」型の回帰バグ（920c0bd の早期 return が新規作成を阻害したパターン）を防ぐためのルール
-- ガード追加・変更前: ① 通すべき正常ケースの列挙 / ② コールバック呼び出し元の grep / ③ 既存ガードは `git blame` で意図確認
-
-### ROADMAP 追記
-- メモカードのテキスト行数最適化: グリッド3×4(mini)/3×2(SE)で本文をもう1行多く表示できそう
-
-## 次のアクション（次セッション #34）
+## 次のアクション（次セッション #35）
 
 ### 残タスク
-- **アプリ全体の iOS 風要素の追加洗い出し**（CupertinoActionSheet は #33 で潰した。残: フィルタプルダウン / 背景色ピッカー の `DialogStyles` 統一など）
-- **BgColorPickerDialog の DialogStyles 統一**（メモ・ToDoリスト背景色ダイアログ。直書きで `DialogStyles` 未使用）
-- **ダイアログ巡回の続き**: C 選択肢メニュー / E ピッカー / F バナー
-- 実機 / iPad での Phase 15 Step 9 + Phase 16 動作確認
-- Phase 14: アクセシビリティ文字サイズ対応（リリース前タスク）
+- **既知バグ**: ToDo項目入力中に「項目追加」ボタンを押すと、入力中の項目名が一瞬「空のアイテム」に変わってから確定される不具合（編集中アイテムの commit タイミングと新規追加の競合）
+- **実機 / iPad での Phase 15 Step 9 + Phase 16 動作確認**（残）
+  - SE/mini シミュ/15 Pro Max 実機/iPad 実機 4 台並列起動済み（FIFO + rsync 経由）
+- 子タグドロワー「都度収納/常時表示」設定（ROADMAP アイデアメモ）
+- アプリ内文字サイズ「ノーマル/大」2段階トグル（ROADMAP アイデアメモ）
 
 ### 短期備忘
-- メモカードのテキスト行数最適化（ROADMAP アイデアメモ）
+- 直書きの `Color(0xFF007AFF)` がアプリ全体（機能バーやアクセント等）にまだ残っている — ダイアログ巡回外なので別タスク
 
 ## 技術メモ
 
-### 回帰防止ルール（グローバル CLAUDE.md より）
-ガード（early return / 条件分岐）を追加・変更する前に：
-1. 通すべき正常ケースを箇条書きで列挙し、新条件下でそれぞれ通過することを確認
-2. そのコールバック / 関数の呼び出し元を grep で全部洗う（async コールバックは複数経路から呼ばれがち）
-3. 既存ガードを削除・緩和する前に `git blame` で過去の意図確認
+### iOS 実機ワイヤレス debug ビルドは遅い
+- 15 Pro Max 実機で全体的にカクカク → 主に debug build 由来。release build (`flutter run --release`) で本来の速度
+- 実機検証は debug 動作 OK ならとりあえず合格、UX は release で別途確認
 
-### hot reload と addListener
-`addListener` は initState で1回しか呼ばれない。**hot reload では新しいリスナー登録が反映されない**。検証時は **hot restart** が必要（`echo R > /tmp/flutter_pipe`）。
+### カレンダー経由項目ハイライトのタイミング
+- TodoListScreen 初回 build → `_didInitialExpand` が postFrame で `_expandAll` を setState
+- これによりレイアウトが変わるので、ハイライトの scroll 計算は `_expandAll` の setState を待たないと古い座標で計算してしまう
+- 対策: postFrame の中でさらに 150ms 遅延 → 自動展開後に flash を走らせる
 
-### 二系統 FIFO（SE + mini 並列起動）
-```bash
-# SE 3rd
-nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe' > /dev/null 2>&1 &
-# mini
-nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe_13' > /dev/null 2>&1 &
-# 別 /tmp/memolette-run-13mini に rsync して並列 flutter run
-```
-
-### flutter logs でデバッグ
-```bash
-flutter logs -d 47003836-6426-4AB1-90FC-C5E73DA251C1 > /tmp/se_logs.txt 2>&1 &
-```
-debugPrint がリアルタイムで /tmp/se_logs.txt に書かれる。`grep "[Tag" /tmp/se_logs.txt` でフィルタ。
+### Listener.onPointerDown vs onPointerUp の使い分け
+- フォーカス解除（`unfocus`）は **onPointerDown**（タップ前にキーボードを閉じてレイアウトを安定させる）
+- 何かを「閉じる」処理は **onPointerUp**（子の InkWell.onTap が先に走り、その後で閉じる）
+- `onPointerDown` で閉じると、子要素が unmount されて InkWell.onTap 発火タイミングで子が tree に居らず、タップが空振りする
 
 ### シミュ / 実機 ID
 - iPhone 17 Pro シミュ: `ACE500F3-AA23-44EC-AB93-C4EA636FC3BC`
 - iPad Pro 12.9-inch (6th gen): `1F181174-7768-44DB-9BDA-E9E9976695F0`
 - iPhone 15 Pro Max（実機 wireless）: `00008130-0006252E2E40001C`
+- iPad（のっくりのiPad、wireless）: `00008103-000470C63E04C01E`
 - iPhone SE 3rd iOS26: `47003836-6426-4AB1-90FC-C5E73DA251C1`
 - iPhone 13 mini iOS26: `B5B2C694-8EAB-4C14-AA4D-8BCE464CE49D`
+
+### 4台並列実行の FIFO セットアップ
+```bash
+# SE 3rd
+nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe' > /dev/null 2>&1 &
+# mini
+nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe_13' > /dev/null 2>&1 &
+# 15 Pro Max
+nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe_15pm' > /dev/null 2>&1 &
+# iPad
+nohup sh -c 'while sleep 86400; do :; done > /tmp/flutter_pipe_ipad' > /dev/null 2>&1 &
+# 各々別 /tmp/memolette-run-XXX に rsync して並列 flutter run
+# ログは /tmp/{se,mini,15pm,ipad}_logs.txt
+```
 
 ## 関連メモ（自動メモリ）
 
