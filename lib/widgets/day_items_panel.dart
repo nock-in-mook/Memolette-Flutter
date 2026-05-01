@@ -253,18 +253,24 @@ class _FloatAddFab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: accent.withValues(alpha: 0.55),
       shape: const CircleBorder(),
       elevation: 3,
       shadowColor: Colors.black.withValues(alpha: 0.25),
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onTap,
-        child: SizedBox(
-          width: 32,
-          height: 32,
-          child: Center(
-            child: Icon(Icons.add, size: 18, color: accent),
+        child: const SizedBox(
+          width: 33,
+          height: 33,
+          // Container を縦横に重ねて「＋」を描画。Text や Icon だとフォントの
+          // ベースラインで微妙に下にずれるので Stack で確実に中央に。
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(width: 15, height: 3, child: ColoredBox(color: Colors.white)),
+              SizedBox(width: 3, height: 15, child: ColoredBox(color: Colors.white)),
+            ],
           ),
         ),
       ),
@@ -286,7 +292,7 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
+      padding: const EdgeInsets.fromLTRB(4, 3, 4, 6),
       child: Row(
         children: [
           Icon(icon, size: 16, color: color),
