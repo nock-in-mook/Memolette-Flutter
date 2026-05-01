@@ -208,9 +208,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
 
   @override
   void dispose() {
-    // タイトル空 + アイテム0件のリストはここで自動削除（保存価値なし）。
-    // fire-and-forget。super.dispose の前に呼ぶ。
-    ref.read(databaseProvider).purgeEmptyTodoLists();
     _titleFocusNode.removeListener(_handleTitleFocusChange);
     _titleController.dispose();
     _titleFocusNode.dispose();
@@ -971,9 +968,20 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       // iPad 横画面の右カラム埋め込み: Scaffold/SafeArea は親側で担保
       return ColoredBox(color: Colors.white, child: content);
     }
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(child: content),
+    // pop の前に「タイトル空 + アイテム0件」のリストを await で削除する。
+    // dispose の fire-and-forget では一覧画面の rebuild に間に合わず
+    // 戻った瞬間に無題リストが残って見える問題があった。
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await ref.read(databaseProvider).purgeEmptyTodoLists();
+        if (mounted) Navigator.of(context).pop();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(child: content),
+      ),
     );
   }
 
@@ -1121,6 +1129,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
             ),
           ),
           // 戻るボタン（埋め込みモードでは非表示: 左カラム側に閉じる導線あり）
+          // メモ画面の戻る矢印（home_screen._buildExpandedTopBar）と統一
           if (!widget.embedded)
             Positioned(
               left: 12,
@@ -1128,26 +1137,14 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
               child: GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
                 behavior: HitTestBehavior.opaque,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 4,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                  child: const Text(
-                    '戻る',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      fontFamily: 'Hiragino Sans',
-                      color: Colors.black87,
+                child: const SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: Center(
+                    child: Icon(
+                      CupertinoIcons.back,
+                      size: 22,
+                      color: Color(0xFF007AFF),
                     ),
                   ),
                 ),
