@@ -19,6 +19,7 @@ import '../utils/toast.dart';
 import '../widgets/bg_color_picker_dialog.dart';
 import '../widgets/calendar_view.dart';
 import '../widgets/confirm_delete_dialog.dart';
+import '../widgets/dialog_styles.dart';
 import '../widgets/frosted_alert_dialog.dart';
 import '../widgets/memo_card.dart';
 import '../widgets/memo_input_area.dart';
@@ -1885,7 +1886,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// 直接配置する（タブより前面に出すため）。
   Widget _buildSelectModeBarContent(double horizontalPadding) {
     final isDelete = _selectMode == _SelectMode.delete;
-    final accent = isDelete ? Colors.red : const Color(0xFF007AFF);
+    final accent =
+        isDelete ? DialogStyles.destructive : DialogStyles.defaultAction;
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
       child: Container(
@@ -1909,22 +1911,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               isDelete
                   ? '削除するメモを選択してください'
                   : 'トップに移動するメモを選択してください',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'Hiragino Sans',
-                color: accent,
-              ),
+              style:
+                  DialogStyles.title.copyWith(fontSize: 16, color: accent),
             ),
             const SizedBox(height: 4),
             Text(
               '$_selectedCount件 選択中',
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                fontFamily: 'Hiragino Sans',
-                color: Color(0xFF555555),
-              ),
+              style: DialogStyles.actionLabel
+                  .copyWith(color: const Color(0xFF555555)),
             ),
           ],
         ),
@@ -4226,7 +4220,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF007AFF),
+                            color: DialogStyles.defaultAction,
                             fontFamily: 'Hiragino Sans',
                           ),
                         ),
@@ -4440,7 +4434,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF007AFF),
+                            color: DialogStyles.defaultAction,
                             fontFamily: 'Hiragino Sans',
                           ),
                         ),

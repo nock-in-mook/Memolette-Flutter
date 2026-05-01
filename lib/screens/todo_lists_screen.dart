@@ -14,6 +14,7 @@ import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
 import '../widgets/bg_color_picker_dialog.dart';
 import '../widgets/confirm_delete_dialog.dart';
+import '../widgets/dialog_styles.dart';
 import '../widgets/trapezoid_tab_shape.dart';
 import '../widgets/wide_todo_pane.dart';
 import 'todo_list_screen.dart';
@@ -121,7 +122,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.red, width: 2),
+        border: Border.all(color: DialogStyles.destructive, width: 2),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.18),
@@ -130,12 +131,11 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
           ),
         ],
       ),
-      child: const Text(
+      child: Text(
         '削除するToDoを選択してください',
-        style: TextStyle(
+        style: DialogStyles.message.copyWith(
           fontSize: 14,
           fontWeight: FontWeight.w400,
-          fontFamily: 'Hiragino Sans',
           color: Colors.black87,
         ),
       ),
@@ -1053,7 +1053,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
 
   /// 結合モード時の案内バナー（ツールバーと TodoTab の間に表示）
   Widget _buildMergeBanner() {
-    const accent = Color(0xFF007AFF);
+    const accent = DialogStyles.defaultAction;
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1066,41 +1066,30 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
         crossAxisAlignment: CrossAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.merge_type, size: 18, color: accent),
-              SizedBox(width: 6),
+              const Icon(Icons.merge_type, size: 18, color: accent),
+              const SizedBox(width: 6),
               Text(
                 'リストの結合',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'Hiragino Sans',
-                  color: accent,
-                ),
+                style: DialogStyles.title
+                    .copyWith(fontSize: 16, color: accent),
               ),
             ],
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             '結合したいリストを選んでください。',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              fontFamily: 'Hiragino Sans',
-              color: Colors.black87,
-            ),
+            style: DialogStyles.message
+                .copyWith(fontSize: 14, color: Colors.black87),
           ),
           const SizedBox(height: 2),
           Text(
             '（選択順に結合、最大$_mergeMaxつまで）',
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 13,
-              fontFamily: 'Hiragino Sans',
-              color: Colors.black54,
-            ),
+            style: DialogStyles.message.copyWith(color: Colors.black54),
           ),
         ],
       ),
@@ -1357,7 +1346,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF007AFF),
+                            color: DialogStyles.defaultAction,
                             fontFamily: 'Hiragino Sans',
                           ),
                         ),

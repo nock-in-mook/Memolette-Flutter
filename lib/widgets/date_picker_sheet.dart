@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'dialog_styles.dart';
+
 /// 日付ピッカーシートの結果。
 /// - cleared = true: 「カレンダーから消去」ボタンが押された（eventDate を null にする指示）
 /// - date != null: 選択された日付
@@ -184,26 +186,20 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
                   ),
                 ),
               ),
-              const Expanded(
+              Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
+                    const Text(
                       '日付を指定',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.black87,
-                        fontFamily: 'Hiragino Sans',
-                      ),
+                      style: DialogStyles.title,
                     ),
-                    SizedBox(height: 1),
+                    const SizedBox(height: 1),
                     Text(
                       '（カレンダーに表示されます）',
-                      style: TextStyle(
+                      style: DialogStyles.message.copyWith(
                         fontSize: 10,
-                        color: Colors.black54,
-                        fontFamily: 'Hiragino Sans',
+                        color: DialogStyles.textGreyLight,
                       ),
                     ),
                   ],
@@ -308,13 +304,9 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  child: const Text(
+                  child: Text(
                     'キャンセル',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      fontFamily: 'Hiragino Sans',
-                    ),
+                    style: DialogStyles.actionLabel,
                   ),
                 ),
               ),
@@ -336,13 +328,10 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  child: const Text(
+                  child: Text(
                     '決定',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      fontFamily: 'Hiragino Sans',
-                    ),
+                    style: DialogStyles.actionLabel
+                        .copyWith(fontWeight: FontWeight.w800),
                   ),
                 ),
               ),
@@ -370,13 +359,10 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  child: const Text(
+                  child: Text(
                     'カレンダーから消去',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: 'Hiragino Sans',
-                    ),
+                    style: DialogStyles.actionLabel
+                        .copyWith(fontSize: 12, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
