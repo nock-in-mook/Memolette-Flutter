@@ -66,10 +66,14 @@ class TodoListScreen extends ConsumerStatefulWidget {
   /// 埋め込みモード: iPad 横画面の右カラムに埋め込まれる時は true。
   /// Scaffold/SafeArea を外し、戻るボタンを非表示にする（閉じる動線は左側にあるため）。
   final bool embedded;
+  /// 起動直後にフラッシュ点滅で強調する項目 ID（カレンダーから飛んできた時に使用）。
+  /// 表示後、自動でスクロールしてフェードアニメーションをかける。
+  final String? highlightItemId;
   const TodoListScreen({
     super.key,
     required this.listId,
     this.embedded = false,
+    this.highlightItemId,
   });
 
   @override
@@ -113,6 +117,12 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   final TextEditingController _titleController = TextEditingController();
   final FocusNode _titleFocusNode = FocusNode();
 
+  // ハイライト点滅機構（カレンダーから飛んできた項目を一時強調）
+  String? _flashingItemId;
+  double _flashLevel = 0;
+  final GlobalKey _flashTargetKey = GlobalKey();
+  bool _flashTriggered = false;
+
   @override
   void initState() {
     super.initState();
@@ -120,6 +130,74 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     // 場合でも保存して編集を抜けるようにする。onTapOutside だけだと
     // 完了ボタン経由は拾えない。
     _titleFocusNode.addListener(_handleTitleFocusChange);
+    if (widget.highlightItemId != null) {
+      _flashingItemId = widget.highlightItemId;
+    }
+  }
+
+  /// ハイライト対象の項目を画面内にスクロール + 2回オレンジ枠で点滅させる。
+  /// 初回ビルド後 (StreamBuilder が項目を返した直後) に postFrame で1度だけ呼ぶ。
+  Future<void> _runHighlightFlash(List<TodoItem> allItems) async {
+    if (_flashTriggered) return;
+    _flashTriggered = true;
+    final targetId = _flashingItemId;
+    if (targetId == null) return;
+    // 対象項目の祖先を全て展開（折り畳まれてると key が tree に入らない）
+    final byId = {for (final i in allItems) i.id: i};
+    final ancestors = <String>[];
+    String? cursor = byId[targetId]?.parentId;
+    while (cursor != null) {
+      ancestors.add(cursor);
+      cursor = byId[cursor]?.parentId;
+    }
+    final needsExpand =
+        ancestors.any((id) => !_expandedItems.contains(id));
+    if (needsExpand) {
+      setState(() {
+        _expandedItems.addAll(ancestors);
+      });
+      // rebuild が走って Container が tree に入るまで 1 frame 待つ
+      await WidgetsBinding.instance.endOfFrame;
+      // さらに少し待って ReorderableListView 内のレイアウトが落ち着くのを待つ
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+    if (!mounted) return;
+    // 画面内にスクロール（alignmentPolicy.explicit で項目が見える位置でも強制反映）
+    final ctx = _flashTargetKey.currentContext;
+    if (ctx != null) {
+      await Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOut,
+        alignment: 0.4,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+      );
+    }
+    if (!mounted) return;
+    // フラッシュ 2 回
+    const steps = 8;
+    const stepMs = 24;
+    for (int rep = 0; rep < 2; rep++) {
+      for (int s = 1; s <= steps; s++) {
+        if (!mounted) return;
+        setState(() => _flashLevel = s / steps);
+        await Future.delayed(const Duration(milliseconds: stepMs));
+      }
+      for (int s = steps - 1; s >= 0; s--) {
+        if (!mounted) return;
+        setState(() => _flashLevel = s / steps);
+        await Future.delayed(const Duration(milliseconds: stepMs));
+      }
+      if (rep == 0) {
+        await Future.delayed(const Duration(milliseconds: 80));
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _flashingItemId = null;
+        _flashLevel = 0;
+      });
+    }
   }
 
   void _handleTitleFocusChange() {
@@ -949,22 +1027,26 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           );
         }
         // 通常モード: ヒントテキスト + 削除メニューボタン
+        // 項目数が 6 件超のときはヒントを非表示にして縦方向の余白を稼ぐ
+        final showHint = allItems.length <= 6;
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // ヒントテキスト
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.hand_draw, size: 12,
-                  color: Colors.black.withValues(alpha: 0.45)),
-                const SizedBox(width: 5),
-                Text('タップで編集 ・ 長押しで並び替え ・ 左スワイプで削除',
-                  style: TextStyle(fontSize: 13, fontFamily: 'Hiragino Sans',
-                    color: Colors.black.withValues(alpha: 0.45))),
-              ],
-            ),
-            const SizedBox(height: 8),
+            if (showHint) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(CupertinoIcons.hand_draw, size: 12,
+                    color: Colors.black.withValues(alpha: 0.45)),
+                  const SizedBox(width: 5),
+                  Text('タップで編集 ・ 長押しで並び替え ・ 左スワイプで削除',
+                    style: TextStyle(fontSize: 13, fontFamily: 'Hiragino Sans',
+                      color: Colors.black.withValues(alpha: 0.45))),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
             // 選択削除ボタン
             GestureDetector(
               onTap: () => _showDeleteMenu(allItems),
@@ -2228,6 +2310,16 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       builder: (context, snap) {
         final allItems = snap.data ?? const <TodoItem>[];
         final flatRows = _buildFlatRows(allItems);
+        // カレンダー経由で開かれた場合、最初の build 完了後にスクロール + フラッシュ。
+        // ただし _didInitialExpand の自動展開（postFrame で setState）よりも
+        // 後に走らないとレイアウトが変わって計算がズレる。十分な遅延を入れる。
+        if (_flashingItemId != null && !_flashTriggered && allItems.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            // _didInitialExpand → _expandAll の setState が処理されるのを待つ
+            await Future.delayed(const Duration(milliseconds: 150));
+            if (mounted) _runHighlightFlash(allItems);
+          });
+        }
         return MediaQuery.removePadding(
           context: context,
           removeTop: true,
@@ -2386,6 +2478,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
               ),
             ),
         Container(
+          key: _flashingItemId == item.id ? _flashTargetKey : null,
           margin: const EdgeInsets.symmetric(horizontal: 16),
           padding: EdgeInsets.only(left: depth * _indentStep + 4, right: 4, top: 4, bottom: 4),
           decoration: BoxDecoration(
@@ -2396,6 +2489,15 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
               ),
             ),
           ),
+          foregroundDecoration: _flashingItemId == item.id && _flashLevel > 0
+              ? BoxDecoration(
+                  border: Border.all(
+                    color: Colors.orange.withValues(alpha: _flashLevel * 0.7),
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(4),
+                )
+              : null,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

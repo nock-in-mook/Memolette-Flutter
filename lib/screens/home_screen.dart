@@ -3135,7 +3135,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// ToDoリストを開く
   /// - iPad 横（isWide）: 右カラムに TodoListScreen(embedded) を表示（画面遷移なし）
   /// - 狭幅: 従来通り Navigator.push で別画面に遷移
-  void _openTodoList(TodoList list) {
+  ///
+  /// [highlightItemId] を渡すと、開いた直後にその項目を画面内にスクロール + フラッシュ
+  /// 強調する（カレンダー経由で項目タップしたケースで使用）。
+  void _openTodoList(TodoList list, {String? highlightItemId}) {
     // 選択モード中はカードタップを選択トグルに振り替え（編集に入らない）
     if (_isSelectMode) {
       _toggleTodoSelection(list);
@@ -3150,12 +3153,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       setState(() {
         _editingMemoId = null;
         _wideTodoListId = list.id;
+        // 埋め込みモード時のハイライトは Phase 後対応（現状は通常 push 時のみ）
       });
       return;
     }
     Navigator.of(context).push(
       PageRouteBuilder(
-        pageBuilder: (_, _, _) => TodoListScreen(listId: list.id),
+        pageBuilder: (_, _, _) => TodoListScreen(
+          listId: list.id,
+          highlightItemId: highlightItemId,
+        ),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       ),
@@ -3163,7 +3170,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   /// カレンダーの DayItemsPanel から ToDoアイテム個別タップ時のハンドラ。
-  /// アイテムの親 TodoList を開く（個別アイテム編集はリスト内で行う想定）。
+  /// アイテムの親 TodoList を開く + その項目をハイライト。
   void _openTodoItemFromCalendar(TodoItem item) async {
     if (_isSelectMode || _isReorderMode) return;
     final db = ref.read(databaseProvider);
@@ -3171,7 +3178,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ..where((t) => t.id.equals(item.listId)))
         .getSingleOrNull();
     if (!mounted || list == null) return;
-    _openTodoList(list);
+    _openTodoList(list, highlightItemId: item.id);
   }
 
   /// _MemoGridView から渡される実際の利用可能高さを通常/最大化別に保存。
