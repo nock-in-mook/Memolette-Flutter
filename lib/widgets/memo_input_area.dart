@@ -1020,8 +1020,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
           ),
           // ルーレット台形タブは非表示（タグ欄タップで開く）
           // プレビューボタンはツールバー側に移動（MDトグル直後）
-          // 日付テキストオーバーレイは home_screen 側で _buildInputAreaSection に
-          // 重ねる方式（白カードの外、機能バー上の余白を使う）
+          // 日付テキストオーバーレイは home_screen 側の `_buildInputAreaSection`
+          // で AnimatedContainer の外側 Stack に重ねる（こちらの Stack だと
+          // 親 AnimatedContainer の clipBehavior=hardEdge に切られてしまう）。
         ],
       ),
     );

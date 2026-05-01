@@ -1198,15 +1198,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         // dispose→rebuild で Riverpod の ref が使えなくなる問題を回避するため Stack で重ねる方式。
         // Home Indicator 下に余白を確保。
         // TODO表示時は左カラム相当の上余白（viewPadding.top）を確保する。
+        // メモ編集中は左上に「閉じる」ボタン（ToDoリスト一覧の左上閉じると統一）。
         Expanded(
           child: Padding(
             padding: EdgeInsets.only(
+              // ボタン分の上余白を確保（メモ編集中はボタンが重なるので必須）。
               top: _wideTodoListId != null
                   ? MediaQuery.of(context).viewPadding.top
-                  : 0,
+                  : 36,
               bottom: MediaQuery.of(context).viewPadding.bottom + 8,
             ),
             child: Stack(
+              clipBehavior: Clip.none,
               children: [
                 _buildInputAreaSection(constraints, parentTags),
                 if (_wideTodoListId != null)
@@ -1215,6 +1218,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       listId: _wideTodoListId!,
                       onClose: () =>
                           setState(() => _wideTodoListId = null),
+                    ),
+                  ),
+                // メモ編集中のみ表示する「閉じる」ボタン
+                if (_wideTodoListId == null && _editingMemoId != null)
+                  Positioned(
+                    left: 14,
+                    top: -28,
+                    child: GestureDetector(
+                      onTap: () =>
+                          _inputAreaKey.currentState?.closeMemo(),
+                      behavior: HitTestBehavior.opaque,
+                      child: const SizedBox(
+                        width: 56,
+                        height: 28,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '閉じる',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Color(0xFF007AFF),
+                              fontFamily: 'Hiragino Sans',
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
               ],
@@ -1251,24 +1280,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Widget _buildInputAreaSection(
       BoxConstraints constraints, List<Tag> parentTags) {
     final isWide = Responsive.isWide(context);
-    return IgnorePointer(
-      ignoring: _isSelectMode || _isReorderMode,
-      child: AnimatedContainer(
-        duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
-        curve: Curves.easeInOut,
-        height: isWide
-            ? null // 横画面では親 Expanded が高さを決める
-            : _isMemoListExpanded
-                ? 0
-                : _isInputExpanded
-                    ? (constraints.maxHeight - 44) * 0.92
-                    : Responsive.isTablet(context)
-                        ? (constraints.maxHeight * 0.5 - 120)
-                            .clamp(316.0, double.infinity)
-                        : 316,
-        clipBehavior: Clip.hardEdge,
-        decoration: const BoxDecoration(),
-        child: MemoInputArea(
+    // 白カード下端の外側に eventDate を出す条件:
+    // - iPad 横画面（機能バー位置の表示は出ない）
+    // - メモ最大化中（機能バー消える）
+    final showFooterDate = (isWide || _isInputExpanded) &&
+        _currentMemoEventDate != null &&
+        !_isSelectMode;
+    final memoCard = AnimatedContainer(
+      duration: Duration(milliseconds: _suppressAnimation ? 0 : 180),
+      curve: Curves.easeInOut,
+      height: isWide
+          ? null // 横画面では親 Expanded が高さを決める
+          : _isMemoListExpanded
+              ? 0
+              : _isInputExpanded
+                  ? (constraints.maxHeight - 44) * 0.92
+                  : Responsive.isTablet(context)
+                      ? (constraints.maxHeight * 0.5 - 120)
+                          .clamp(316.0, double.infinity)
+                      : 316,
+      clipBehavior: Clip.hardEdge,
+      decoration: const BoxDecoration(),
+      child: MemoInputArea(
           key: _inputAreaKey,
           editingMemoId: _editingMemoId,
           onMemoCreated: (id) async {
@@ -1353,8 +1386,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               }
             });
           },
-        ),
       ),
+    );
+    // 白カードの下端外側右に出す eventDate（iPad 横 or メモ最大化中のみ）。
+    final eventDateFooter = Container(
+      height: 22,
+      padding: const EdgeInsets.only(right: 14, top: 4),
+      alignment: Alignment.centerRight,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          FocusManager.instance.primaryFocus?.unfocus();
+          _inputAreaKey.currentState?.openCalendarDatePicker();
+        },
+        child: _currentMemoEventDate == null
+            ? const SizedBox.shrink()
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.event_outlined,
+                    size: 11,
+                    color: Colors.orange.shade700,
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    '${_currentMemoEventDate!.year}/${_currentMemoEventDate!.month.toString().padLeft(2, '0')}/${_currentMemoEventDate!.day.toString().padLeft(2, '0')}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.orange.shade700,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Hiragino Sans',
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+    return IgnorePointer(
+      ignoring: _isSelectMode || _isReorderMode,
+      child: showFooterDate
+          ? Column(
+              mainAxisSize:
+                  isWide ? MainAxisSize.max : MainAxisSize.min,
+              children: [
+                isWide ? Expanded(child: memoCard) : memoCard,
+                eventDateFooter,
+              ],
+            )
+          : memoCard,
     );
   }
 
@@ -1374,11 +1454,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // eventDate を非表示にする条件は機能バーより緩い：
     // 編集コンパクト中（_isEditingCompact）はメモを開いてる文脈なので残す。
     // フォルダ最大化・入力エリア最大化・検索フォーカス時のみ非表示。
-    final eventDateHidden = !isWide &&
-        (_isInputExpanded ||
-            _isMemoListExpanded ||
-            _isInFolderSearch ||
-            (_isSearchFocused && !_isSearchActive));
+    // iPad 横画面（isWide）では右カラム（メモ入力エリア）の右下に別途出すので
+    // 機能バー位置からは消す。
+    final eventDateHidden = isWide ||
+        (!isWide &&
+            (_isInputExpanded ||
+                _isMemoListExpanded ||
+                _isInFolderSearch ||
+                (_isSearchFocused && !_isSearchActive)));
     return Stack(
       clipBehavior: Clip.none,
       children: [
