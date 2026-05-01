@@ -15,7 +15,6 @@ import '../utils/toast.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/dialog_styles.dart';
 import '../widgets/frosted_alert_dialog.dart';
-import '../widgets/memo_input_area.dart' show EraserGlyph;
 import '../widgets/new_tag_sheet.dart';
 import '../widgets/tag_dial_view.dart';
 import '../widgets/trapezoid_tab_shape.dart';
