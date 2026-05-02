@@ -12,7 +12,12 @@
           "package_name": "com.memolette.memolette"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "837461181268-tjoar68sqplrhprfhu44kqnjdngrb4sv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAz5g_tdV_CNVNYFC5KM5X-1m2qMtVHuLo"
@@ -20,7 +25,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "837461181268-tjoar68sqplrhprfhu44kqnjdngrb4sv.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "837461181268-c9hrn63m73rsvmpmd9e2r1rpihd6d9q3.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.memolette.memolette"
+              }
+            }
+          ]
         }
       }
     }

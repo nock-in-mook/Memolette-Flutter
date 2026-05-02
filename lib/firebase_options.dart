@@ -69,6 +69,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '837461181268',
     projectId: 'memolette-3a68b',
     storageBucket: 'memolette-3a68b.firebasestorage.app',
+    iosClientId: '837461181268-c9hrn63m73rsvmpmd9e2r1rpihd6d9q3.apps.googleusercontent.com',
     iosBundleId: 'com.memolette.memolette',
   );
+
 }

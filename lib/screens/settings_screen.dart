@@ -10,6 +10,7 @@ import 'font_lab_screen.dart';
 import 'font_weight_lab_screen.dart';
 import 'icon_lab_screen.dart';
 import 'all_tab_filter_lab_screen.dart';
+import 'account_screen.dart';
 import 'data_protection_screen.dart';
 import 'maximize_icon_lab_screen.dart';
 import 'multi_action_icon_lab_screen.dart';
@@ -33,6 +34,16 @@ class SettingsScreen extends ConsumerWidget {
       ),
       body: ListView(
         children: [
+          const _SectionHeader('アカウント'),
+          ListTile(
+            leading: const Icon(Icons.account_circle_outlined),
+            title: const Text('アカウント'),
+            subtitle: const Text('ログイン状態 / 同期 (Pro)'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AccountScreen()),
+            ),
+          ),
           const _SectionHeader('データ'),
           ListTile(
             leading: const Icon(Icons.security_outlined),
