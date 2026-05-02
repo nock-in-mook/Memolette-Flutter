@@ -291,9 +291,14 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
               // SE 3rd 等の縦が短い機種では上余白を 30pt まで詰めて
               // 下部のオーバーフロー（BOTTOM OVERFLOWED 警告）を回避。
               final isShortPhone = screenH < 700;
-              final topSpacer = _rouletteOpen
+              final baseTopSpacer = _rouletteOpen
                   ? 10.0
                   : (isShortPhone ? 30.0 : 70.0);
+              // キーボード表示時は topSpacer を縮めてカードを上に押し上げる
+              // (操作パネルはキーボードに隠れる前提)
+              final keyboardH = MediaQuery.of(context).viewInsets.bottom;
+              final topSpacer =
+                  (baseTopSpacer - keyboardH).clamp(0.0, baseTopSpacer);
               final rouletteCardH = maxH - 238;
               final cardH = _rouletteOpen
                   ? rouletteCardH.clamp(100.0, collapsedCardH)
