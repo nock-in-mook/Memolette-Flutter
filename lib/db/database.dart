@@ -463,6 +463,21 @@ class AppDatabase extends _$AppDatabase {
     } catch (_) {}
   }
 
+  /// 指定メモの画像を全件削除（実ファイルも削除）
+  /// 消しゴムボタンの本文クリアと一緒に呼ぶ
+  Future<void> deleteAllMemoImages(String memoId) async {
+    final rows = await (select(memoImages)
+          ..where((t) => t.memoId.equals(memoId)))
+        .get();
+    if (rows.isEmpty) return;
+    await (delete(memoImages)..where((t) => t.memoId.equals(memoId))).go();
+    for (final row in rows) {
+      try {
+        await ImageStorage.deleteFile(row.filePath);
+      } catch (_) {}
+    }
+  }
+
   // ========================================
   // タグ CRUD
   // ========================================

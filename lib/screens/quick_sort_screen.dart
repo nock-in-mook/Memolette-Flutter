@@ -3,19 +3,24 @@ import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/keyboard_done_bar.dart';
 import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../utils/toast.dart';
+import '../widgets/block_editor.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/dialog_styles.dart';
 import '../widgets/frosted_alert_dialog.dart';
 import '../widgets/new_tag_sheet.dart';
+import '../widgets/quick_sort_toolbar.dart';
 import '../widgets/tag_dial_view.dart';
 import '../widgets/trapezoid_tab_shape.dart';
 
@@ -2234,11 +2239,26 @@ class _QuickSortCard extends ConsumerStatefulWidget {
 
 class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
   late TextEditingController _titleController;
+  // BlockEditor のミラー: hasContent 判定 / 旧来 _saveContent 用
   late TextEditingController _contentController;
   final FocusNode _titleFocus = FocusNode();
-  final FocusNode _contentFocus = FocusNode();
+  final GlobalKey<BlockEditorState> _blockEditorKey =
+      GlobalKey<BlockEditorState>();
   List<Tag> _memoTags = [];
   bool _isEditingTitle = false;
+  // BlockEditor のフォーカス状態を State に持つ（タイトルとの排他・setState 用）
+  bool _isContentFocused = false;
+
+  // Undo/Redo: 本文だけ管理（爆速モードはタイトル/タグを最小限しか触らない）
+  static const int _maxUndoSnapshots = 50;
+  final List<String> _undoStack = [];
+  final List<String> _redoStack = [];
+  bool _suppressUndo = false;
+  bool get _canUndo => _undoStack.length > 1;
+  bool get _canRedo => _redoStack.isNotEmpty;
+
+  // キーボード上ツールバー Overlay
+  OverlayEntry? _toolbarOverlay;
 
   @override
   void initState() {
@@ -2246,7 +2266,7 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
     _titleController = TextEditingController(text: widget.memo.title);
     _contentController = TextEditingController(text: widget.memo.content);
     _titleFocus.addListener(_onTitleFocusChanged);
-    _contentFocus.addListener(_onContentFocusChanged);
+    _resetUndoHistory();
     _bindController(widget.controller);
     _loadTags();
   }
@@ -2254,21 +2274,26 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
   void _bindController(_CardController? c) {
     if (c == null) return;
     c.focusTitle = () => _titleFocus.requestFocus();
-    c.focusContent = () => _contentFocus.requestFocus();
+    c.focusContent = () => _blockEditorKey.currentState?.focusLast();
     c.openTagPicker = () => _showTagPicker(context);
     c.reloadTags = _loadTags;
     c.unfocus = () {
       _titleFocus.unfocus();
-      _contentFocus.unfocus();
+      // BlockEditor 内の TextBlock からもフォーカス外す
+      FocusManager.instance.primaryFocus?.unfocus();
     };
     c.clearContent = _clearBodyWithConfirm;
-    c.isContentFocused = () => _contentFocus.hasFocus;
+    c.isContentFocused = () =>
+        _blockEditorKey.currentState?.hasAnyFocus ?? false;
     c.hasContent = () => _contentController.text.isNotEmpty;
   }
 
   void _onTitleFocusChanged() {
     if (_titleFocus.hasFocus) {
-      _contentFocus.unfocus();
+      // タイトルにフォーカス → BlockEditor 側のフォーカス解除
+      if (_blockEditorKey.currentState?.hasAnyFocus ?? false) {
+        FocusManager.instance.primaryFocus?.unfocus();
+      }
     } else {
       // フォーカスが外れたら保存
       _saveTitle();
@@ -2277,9 +2302,14 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
   }
 
   void _onContentFocusChanged() {
-    if (_contentFocus.hasFocus) {
+    final focused = _blockEditorKey.currentState?.hasAnyFocus ?? false;
+    if (focused && _titleFocus.hasFocus) {
       _titleFocus.unfocus();
     }
+    if (mounted && _isContentFocused != focused) {
+      setState(() => _isContentFocused = focused);
+    }
+    _updateToolbarOverlay();
   }
 
   @override
@@ -2292,9 +2322,177 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
       _titleController.text = widget.memo.title;
       _contentController.text = widget.memo.content;
       _titleFocus.unfocus();
-      _contentFocus.unfocus();
+      // BlockEditor は initialContent 変更で内部的に replaceContent を呼ぶ
+      FocusManager.instance.primaryFocus?.unfocus();
       _isEditingTitle = false;
+      _isContentFocused = false;
+      _resetUndoHistory();
+      _updateToolbarOverlay();
       _loadTags();
+    }
+  }
+
+  // ========================================
+  // Undo/Redo（本文のみ）
+  // ========================================
+
+  void _pushUndoIfChanged() {
+    if (_suppressUndo) return;
+    final cur = _contentController.text;
+    if (_undoStack.isNotEmpty && _undoStack.last == cur) return;
+    _undoStack.add(cur);
+    if (_undoStack.length > _maxUndoSnapshots) _undoStack.removeAt(0);
+    _redoStack.clear();
+  }
+
+  void _resetUndoHistory() {
+    _undoStack
+      ..clear()
+      ..add(_contentController.text);
+    _redoStack.clear();
+  }
+
+  Future<void> _undo() async {
+    if (!_canUndo) return;
+    final current = _undoStack.removeLast();
+    _redoStack.add(current);
+    final past = _undoStack.last;
+    await _applyContentSnapshot(past);
+  }
+
+  Future<void> _redo() async {
+    if (!_canRedo) return;
+    final next = _redoStack.removeLast();
+    _undoStack.add(next);
+    await _applyContentSnapshot(next);
+  }
+
+  Future<void> _applyContentSnapshot(String content) async {
+    _suppressUndo = true;
+    try {
+      _contentController.text = content;
+      _blockEditorKey.currentState?.replaceContent(content);
+      final db = ref.read(databaseProvider);
+      await db.updateMemo(id: widget.memo.id, content: content);
+      widget.onEdited();
+      if (mounted) setState(() {});
+    } finally {
+      _suppressUndo = false;
+    }
+  }
+
+  // ========================================
+  // ツールバー Overlay（キーボード上に浮かせる）
+  // ========================================
+
+  void _safeDefer(VoidCallback fn) {
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.transientCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) fn();
+      });
+    } else {
+      fn();
+    }
+  }
+
+  void _updateToolbarOverlay() => _safeDefer(_updateToolbarOverlayImpl);
+
+  void _updateToolbarOverlayImpl() {
+    if (!mounted) return;
+    final shouldShow = _isContentFocused;
+    // KeyboardDoneBar の完了ボタンが Overlay の上に乗るよう accessoryHeight を更新
+    KeyboardDoneBar.accessoryHeight.value =
+        shouldShow ? QuickSortToolbar.toolbarHeight : 0;
+    if (shouldShow && _toolbarOverlay == null) {
+      _toolbarOverlay = OverlayEntry(builder: (ctx) {
+        final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+        if (bottom <= 0) return const SizedBox.shrink();
+        return Positioned(
+          left: 0,
+          right: 0,
+          bottom: bottom,
+          child: Material(
+            elevation: 0,
+            color: Colors.transparent,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(
+                  top: BorderSide(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    width: 0.5,
+                  ),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: QuickSortToolbar(
+                hasContent: _contentController.text.isNotEmpty,
+                canUndo: _canUndo,
+                canRedo: _canRedo,
+                onClearBody: _clearBodyWithConfirm,
+                onAttachImage: _attachImage,
+                onUndo: _undo,
+                onRedo: _redo,
+              ),
+            ),
+          ),
+        );
+      });
+      Overlay.of(context).insert(_toolbarOverlay!);
+    } else if (!shouldShow && _toolbarOverlay != null) {
+      _toolbarOverlay!.remove();
+      _toolbarOverlay = null;
+    } else if (shouldShow && _toolbarOverlay != null) {
+      _toolbarOverlay!.markNeedsBuild();
+    }
+  }
+
+  // ========================================
+  // 画像追加（カメラ/ライブラリ → BlockEditor に挿入）
+  // ========================================
+
+  Future<void> _attachImage() async {
+    if (!mounted) return;
+    ImageSource? source;
+    await showFrostedAlert(
+      context: context,
+      title: '画像を追加',
+      message: '取り込み元を選んでください',
+      actions: [
+        FrostedAlertAction(
+          label: 'カメラ',
+          onPressed: () => source = ImageSource.camera,
+        ),
+        FrostedAlertAction(
+          label: 'ライブラリ',
+          isDefault: true,
+          onPressed: () => source = ImageSource.gallery,
+        ),
+      ],
+    );
+    if (source == null || !mounted) return;
+    if (source == ImageSource.gallery) {
+      final picker = ImagePicker();
+      List<XFile> picks;
+      try {
+        picks = await picker.pickMultiImage(limit: 5);
+      } catch (_) {
+        if (mounted) showToast(context, '画像の取り込みに失敗しました');
+        return;
+      }
+      if (picks.isEmpty || !mounted) return;
+      await _blockEditorKey.currentState?.insertImagesFromXFiles(picks);
+    } else {
+      await _blockEditorKey.currentState?.insertImageFromPicker(source!);
     }
   }
 
@@ -2312,16 +2510,21 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
 
 
   /// 本文クリア（確認ダイアログ付き・メモ入力画面と同じ挙動）
+  /// 画像も DB から削除（BlockEditor は DB の画像を自動末尾追加するため）
   Future<void> _clearBodyWithConfirm() async {
     if (_contentController.text.isEmpty) return;
     final ok = await showConfirmDeleteDialog(
       context: context,
       title: '本文をクリア',
-      message: '本文をクリアします。タイトルとタグはそのまま残ります。',
+      message: '本文と画像をクリアします。タイトルとタグはそのまま残ります。',
       confirmLabel: 'クリア',
     );
     if (!ok || !mounted) return;
+    // DB の画像を削除（実ファイルもまとめて消す）
+    await ref.read(databaseProvider).deleteAllMemoImages(widget.memo.id);
     _contentController.clear();
+    // BlockEditor 側のブロックも空に再構築
+    _blockEditorKey.currentState?.replaceContent('');
     _saveContent();
     setState(() {});
   }
@@ -2334,8 +2537,10 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
 
   @override
   void dispose() {
+    _toolbarOverlay?.remove();
+    _toolbarOverlay = null;
+    KeyboardDoneBar.accessoryHeight.value = 0;
     _titleFocus.dispose();
-    _contentFocus.dispose();
     _titleController.dispose();
     _contentController.dispose();
     super.dispose();
@@ -2569,50 +2774,31 @@ class _QuickSortCardState extends ConsumerState<_QuickSortCard> {
                               builder: (context, constraints) {
                             return GestureDetector(
                               behavior: HitTestBehavior.opaque,
-                              onTap: () => _contentFocus.requestFocus(),
+                              onTap: () =>
+                                  _blockEditorKey.currentState?.focusLast(),
                               child: SingleChildScrollView(
                                 padding: EdgeInsets.fromLTRB(
-                                    12, 8, 12, scrollBottom.toDouble()),
+                                    3, 8, 3, scrollBottom.toDouble()),
                                 child: ConstrainedBox(
                                   constraints: BoxConstraints(
                                     minHeight: (constraints.maxHeight - 100)
                                         .clamp(0.0, double.infinity),
                                   ),
-                                  child: TextField(
-                                    controller: _contentController,
-                                    focusNode: _contentFocus,
-                                    onTap: TextMenuDismisser.wrap(null),
-                                    contextMenuBuilder:
-                                        TextMenuDismisser.builder,
-                                    maxLines: null,
-                                    textAlignVertical: TextAlignVertical.top,
-                                    scrollPadding: EdgeInsets.only(
-                                        bottom:
-                                            cursorBottomBuffer.toDouble()),
-                                    style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                        height: 1.5,
-                                        color: Colors.black87),
-                                    decoration: const InputDecoration(
-                                      border: InputBorder.none,
-                                      hintText: 'メモを入力...',
-                                      hintStyle: TextStyle(
-                                        color: Colors.grey,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                        height: 1.5,
-                                      ),
-                                      isDense: true,
-                                      // 外側 SingleChildScrollView が h:12 padding を持ち、
-                                      // 外側 GestureDetector が onTap で focus するため
-                                      // タッチ判定は既に拡張されている → contentPadding は 0
-                                      contentPadding: EdgeInsets.zero,
-                                    ),
-                                    onChanged: (_) {
+                                  child: BlockEditor(
+                                    key: _blockEditorKey,
+                                    memoIdResolver: () => widget.memo.id,
+                                    initialContent: widget.memo.content,
+                                    isMarkdown: widget.memo.isMarkdown,
+                                    readOnly: false,
+                                    scrollPaddingBottom:
+                                        cursorBottomBuffer.toDouble(),
+                                    onContentChanged: (newContent) {
+                                      _contentController.text = newContent;
                                       _saveContent();
-                                      setState(() {});
+                                      _pushUndoIfChanged();
+                                      if (mounted) setState(() {});
                                     },
+                                    onFocusChanged: _onContentFocusChanged,
                                   ),
                                 ),
                               ),

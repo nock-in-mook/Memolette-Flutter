@@ -243,6 +243,20 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
       return;
     }
     if (picked == null) return;
+    await _insertSingleXFile(picked);
+  }
+
+  /// 既に取得済みの XFile 群をカーソル位置に順次挿入
+  /// （ライブラリの複数選択結果用）
+  Future<void> insertImagesFromXFiles(List<XFile> files) async {
+    for (final f in files) {
+      await _insertSingleXFile(f);
+      // postFrame の focus 移動が反映されるよう1フレーム待つ
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+    }
+  }
+
+  Future<void> _insertSingleXFile(XFile picked) async {
     final memoId = widget.memoIdResolver();
     if (memoId.isEmpty) {
       if (mounted) showToast(context, 'メモの作成に失敗しました');

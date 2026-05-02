@@ -391,7 +391,11 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   /// 完了ボタン（KeyboardDoneBar）がカスタムツールバー群の上に出るよう、
   /// 現在表示中のオーバーレイ合計高さを通知
   void _syncAccessoryHeight() {
-    // Our toolbar overlay (46px) + MD toolbar (44px) のうち、表示されてる分だけ足す
+    // 自分のTextFieldがフォーカスされていないときは accessoryHeight を触らない。
+    // 他画面（爆速モードなど）が独自に accessoryHeight を制御している可能性があり、
+    // FocusManager.instance.addListener 経由でグローバルフォーカス変更が走るたびに
+    // 0 上書きすると他画面の Overlay と完了ボタンが重なってしまう。
+    if (!_isInputFocused) return;
     final ourToolbar = (widget.isExpanded && _isInputFocused) ? 46.0 : 0.0;
     final mdToolbar = (_isMarkdown && _isInputFocused) ? 44.0 : 0.0;
     KeyboardDoneBar.accessoryHeight.value = ourToolbar + mdToolbar;
@@ -713,6 +717,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
 
   /// 画像ソースを選ぶすりガラスダイアログ → BlockEditor に挿入を委譲
   /// (Phase 10++ ブロックエディタ実験: 画像はカーソル位置にインライン挿入される)
+  /// ライブラリ選択時は 5枚まで複数選択可
   Future<void> _attachImage() async {
     // キーボードは閉じない方針: 閉じると最後にフォーカスされたブロック情報が
     // 消えるかもしれないので、そのまま picker を起動する。picker側で一時的に閉じる。
@@ -738,7 +743,20 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     // メモがまだ無ければ先に作成（memoIdResolver が非空を返すように）
     final memoId = await _ensureMemoId();
     if (memoId == null || !mounted) return;
-    await _blockEditorKey.currentState?.insertImageFromPicker(source!);
+    if (source == ImageSource.gallery) {
+      final picker = ImagePicker();
+      List<XFile> picks;
+      try {
+        picks = await picker.pickMultiImage(limit: 5);
+      } catch (_) {
+        if (mounted) showToast(context, '画像の取り込みに失敗しました');
+        return;
+      }
+      if (picks.isEmpty || !mounted) return;
+      await _blockEditorKey.currentState?.insertImagesFromXFiles(picks);
+    } else {
+      await _blockEditorKey.currentState?.insertImageFromPicker(source!);
+    }
   }
 
   /// フォーカス取得時に空メモを先行作成
@@ -874,6 +892,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   }
 
   /// 本文だけを消す (消しゴムボタン): タイトル/タグはそのまま
+  /// 画像も DB から削除する（BlockEditor は DB の画像を自動末尾追加するため）
   /// 公開: home_screen のフロート消しゴムから呼べるようにする
   Future<void> clearBody() async {
     if (_contentController.text.isEmpty) return;
@@ -887,11 +906,18 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       final ok = await showConfirmDeleteDialog(
         context: context,
         title: '本文をクリア',
-        message: '本文をクリアします。タイトルとタグはそのまま残ります。',
+        message: '本文と画像をクリアします。タイトルとタグはそのまま残ります。',
         confirmLabel: 'クリア',
       );
       if (!ok || !mounted) return;
+      // DB の画像を削除（実ファイルもまとめて消す）
+      final memoId = widget.editingMemoId ?? _selfCreatedMemoId;
+      if (memoId != null) {
+        await ref.read(databaseProvider).deleteAllMemoImages(memoId);
+      }
       _contentController.clear();
+      // BlockEditor 側のブロックも空に再構築（画像ブロックを除去）
+      _blockEditorKey.currentState?.replaceContent('');
       _onChanged();
       setState(() {});
     } finally {
