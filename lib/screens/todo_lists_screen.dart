@@ -348,6 +348,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
               _buildTodoTab(),
               Expanded(
                 child: Stack(
+                  fit: StackFit.expand,
                   children: [
                     Container(
                       color: _todoTabColor,
