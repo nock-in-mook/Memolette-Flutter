@@ -1111,6 +1111,31 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
   Future<void> _showMergeConfirmDialog() async {
     if (_mergeOrder.length < 2) return;
     final db = ref.read(databaseProvider);
+
+    // 結合元の最大階層チェック (5階層 = depth 4 まで OK、6階層以上は結合すると
+    // 7階層になるので阻止)
+    for (final id in _mergeOrder) {
+      final items = await (db.select(db.todoItems)
+            ..where((t) => t.listId.equals(id)))
+          .get();
+      final byId = {for (final i in items) i.id: i};
+      var maxDepth = 0;
+      for (final item in items) {
+        var d = 0;
+        var pid = item.parentId;
+        while (pid != null) {
+          d++;
+          pid = byId[pid]?.parentId;
+        }
+        if (d > maxDepth) maxDepth = d;
+      }
+      if (maxDepth >= 5) {
+        if (!mounted) return;
+        showToast(context, '結合できるのは5階層までのリストです');
+        return;
+      }
+    }
+
     // 選択順のリストタイトルを取得
     final titles = <String>[];
     for (final id in _mergeOrder) {

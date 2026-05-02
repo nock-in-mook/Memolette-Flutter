@@ -137,6 +137,12 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => _seedLongTitleTagMemos(context, ref),
           ),
           ListTile(
+            leading: const Icon(Icons.account_tree_outlined),
+            title: const Text('5階層 ToDo + 結合相手ダミー'),
+            subtitle: const Text('結合検証用: 結合すると6階層目が出る'),
+            onTap: () => _seedDummy5LevelTodo(context, ref),
+          ),
+          ListTile(
             leading: const Icon(Icons.delete_sweep_outlined,
                 color: Colors.red),
             title: const Text('全データ削除',
@@ -610,6 +616,30 @@ class SettingsScreen extends ConsumerWidget {
     if (context.mounted) {
       showToast(context, '長タイトル＋長タグ名ダミーを追加しました');
     }
+  }
+
+  Future<void> _seedDummy5LevelTodo(BuildContext context, WidgetRef ref) async {
+    final db = ref.read(databaseProvider);
+
+    // A: 5階層構造のリスト (depth 0〜4 = 5階層)
+    final listA = await db.createTodoList(title: 'A: 5階層');
+    final lv1 = await db.createTodoItem(listId: listA.id, title: 'Lv1');
+    final lv2 = await db.createTodoItem(
+        listId: listA.id, title: 'Lv2', parentId: lv1.id);
+    final lv3 = await db.createTodoItem(
+        listId: listA.id, title: 'Lv3', parentId: lv2.id);
+    final lv4 = await db.createTodoItem(
+        listId: listA.id, title: 'Lv4', parentId: lv3.id);
+    await db.createTodoItem(
+        listId: listA.id, title: 'Lv5', parentId: lv4.id);
+
+    // B: 結合相手 (シンプルな1階層リスト)
+    final listB = await db.createTodoList(title: 'B: 結合相手');
+    await db.createTodoItem(listId: listB.id, title: 'B-1');
+    await db.createTodoItem(listId: listB.id, title: 'B-2');
+
+    if (!context.mounted) return;
+    showToast(context, 'A(5階層) と B を作成しました');
   }
 
   Future<void> _wipeAllData(BuildContext context, WidgetRef ref) async {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,7 +21,11 @@ const _uuid = Uuid();
 
 const Color _todoTabColor = Color(0xFF8CD18C);
 const Color _sysGreen = Color(0xFF34C759);
-const int _maxDepth = 4; // depth 0〜4 = 最大5階層
+// 色配列の最大インデックス。depth 0〜5 用に 6色。
+// 通常リストは 5階層 (depth 0〜4) まで、結合済みリストのみ 6階層 (depth 5) を使う。
+const int _maxDepth = 5;
+const int _normalMaxDepth = 4; // 通常リスト: 最大5階層
+const int _mergedMaxDepth = 5; // 結合済みリスト: 最大6階層
 const double _indentStep = 28.0; // 1階層あたりのインデント幅
 
 // 階層ごとの背景色（薄め 8%、本家は opacity(0.10)*0.8）
@@ -29,6 +35,7 @@ const List<Color> _depthBgColors = [
   Color(0x14FF9500), // depth 2: オレンジ
   Color(0x14007AFF), // depth 3: 青
   Color(0x14A2845E), // depth 4: 茶
+  Color(0x14FF2D55), // depth 5: ピンク (結合済みリスト6階層目)
 ];
 
 // 階層ごとのアクセント色（濃いめ 70%、罫線・＋ボタン用）
@@ -38,6 +45,7 @@ const List<Color> _depthAccentColors = [
   Color(0xB3FF9500), // depth 2: オレンジ
   Color(0xB3007AFF), // depth 3: 青
   Color(0xB3A2845E), // depth 4: 茶
+  Color(0xB3FF2D55), // depth 5: ピンク (結合済みリスト6階層目)
 ];
 
 // フラット化された行の種別
@@ -98,6 +106,15 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
   final ValueNotifier<int> _swipeCloseNotifier = ValueNotifier<int>(0);
   bool _isAnySwipeOpen = false;
 
+  // 結合済みリストかどうか（true なら 6階層目を編集・追加可能）。
+  // _watchList() の listen で更新される。
+  bool _isMergedList = false;
+  StreamSubscription<TodoList?>? _listSub;
+
+  // リストの種別に応じた最大階層 (色配列の上限ではなく、子追加可否の判定用)
+  int get _effectiveMaxDepth =>
+      _isMergedList ? _mergedMaxDepth : _normalMaxDepth;
+
   // ルーレット
   bool _rouletteOpen = false;
   bool _showTagHistory = false;
@@ -133,6 +150,13 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     if (widget.highlightItemId != null) {
       _flashingItemId = widget.highlightItemId;
     }
+    // リストの isMerged フラグを監視して _effectiveMaxDepth を切り替える
+    _listSub = _watchList().listen((list) {
+      if (!mounted || list == null) return;
+      if (_isMergedList != list.isMerged) {
+        setState(() => _isMergedList = list.isMerged);
+      }
+    });
   }
 
   /// ハイライト対象の項目を画面内にスクロール + 2回オレンジ枠で点滅させる。
@@ -212,6 +236,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     _titleController.dispose();
     _titleFocusNode.dispose();
     _swipeCloseNotifier.dispose();
+    _listSub?.cancel();
     super.dispose();
   }
 
@@ -385,7 +410,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         if (_expandedItems.contains(item.id)) {
           appendRows(item.id, depth + 1);
           // 子の末尾に追加ボタン（最大階層でなければ）
-          if (depth + 1 <= _maxDepth) {
+          if (depth + 1 <= _effectiveMaxDepth) {
             rows.add(_FlatRow.addButton(addButtonParentId: item.id, depth: depth + 1));
           }
         }
@@ -2445,7 +2470,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     final isEditing = _editingItemId == item.id;
     final hasChild = _hasChildren(item.id, allItems);
     final isExpanded = _expandedItems.contains(item.id);
-    final canExpand = depth < _maxDepth;
+    final canExpand = depth < _effectiveMaxDepth;
     // 色帯の左端: depth 0 は全幅、depth 1+ は親チェックボックス中心線から
     // = margin(16) + pad(4) + parentIndent + innerPad(2) + iconHalf(20)
     final double bandLeft = depth == 0
