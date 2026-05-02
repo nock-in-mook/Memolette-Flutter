@@ -1237,7 +1237,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       List<Tag> parentTags,
       AsyncValue<List<Tag>> parentTagsAsync,
       Color currentColor) {
-    return Row(
+    final viewPadTop = MediaQuery.of(context).viewPadding.top;
+    return Stack(
+      fit: StackFit.expand,
+      clipBehavior: Clip.none,
+      children: [
+        Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // 左カラム: メモ一覧側
@@ -1319,6 +1324,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
           ),
         ),
+      ],
+        ),
+        // 選択モードバナー（タブより前面に出すためルート Stack の Positioned で配置）。
+        // viewPadTop の少し下に置いてステータスバーと衝突しない。
+        // 左カラム（メモ一覧側）= 画面幅の半分にだけ被せる。
+        if (_isSelectMode)
+          Positioned(
+            top: viewPadTop + 6,
+            left: 0,
+            right: constraints.maxWidth / 2,
+            child: IgnorePointer(
+              child: _buildSelectModeBarContent(
+                  (constraints.maxWidth / 2) * 0.15),
+            ),
+          ),
       ],
     );
   }
@@ -1569,8 +1589,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
               // フォルダ最大化中（縦画面のみ）はルート Stack 側で
               // Positioned バナーを出してタブより前面に被せる。
+              // Wide (iPad 横) も z-order の都合でルート Stack 側で配置するので
+              // ここでは出さない。
               if (_isSelectMode &&
-                  !(_isMemoListExpanded && !Responsive.isWide(context)))
+                  !Responsive.isWide(context) &&
+                  !_isMemoListExpanded)
                 Positioned(
                   left: 0,
                   right: 0,
@@ -2049,33 +2072,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// 「特殊モードに入った」ことを一瞬で伝える。
   Widget _buildSelectModeBar() {
     final isWide = Responsive.isWide(context);
+    final isTablet = Responsive.isTablet(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         // 横画面 (スプリットビュー) は幅 70% 中央寄せ。
-        // 位置は「画面上端 〜 タブ上端」の中央に選択バーの中心が来るよう計算する。
-        //   機能バー上端 Y ≒ viewPadding.top + 検索バー高さ(概算36)
-        //   選択バー中心を funcBarTop / 2 に置きたいので、
-        //   Transform Y = funcBarTop/2 - funcBarTop - selectBarHalf
-        //              = -funcBarTop/2 - selectBarHalf
-        // 縦画面 (iPhone / iPad 縦) は従来どおり幅フル + 機能バー上に食い込む配置。
-        final horizontalPadding =
-            isWide ? constraints.maxWidth * 0.15 : 16.0;
+        // 縦画面 iPad は中央寄せ + maxWidth ≈ 600 制限（画面いっぱいで間延びする見栄え対策）。
+        // 縦画面 iPhone は従来どおり幅フル + 機能バー上に食い込む配置。
+        final double horizontalPadding;
+        if (isWide) {
+          horizontalPadding = constraints.maxWidth * 0.15;
+        } else if (isTablet) {
+          // iPad 縦: 中央寄せで maxWidth 600 程度
+          const maxBarWidth = 600.0;
+          final extra = (constraints.maxWidth - maxBarWidth).clamp(0.0, double.infinity);
+          horizontalPadding = math.max(16.0, extra / 2);
+        } else {
+          horizontalPadding = 16.0;
+        }
         final double yOffset;
         if (isWide) {
           // 画面座標系で:
           //   画面上端 Y = 0
           //   機能バー上端 Y = viewPadding.top + 検索バー高さ (funcBarTop)
           //   タブ上端 Y = funcBarTop + 機能バー高さ (tabTop)
-          // 選択バーの中心を 画面上端 〜 タブ上端 の中央 (tabTop / 2) に置きたい。
+          // 選択バーの中心を viewPadTop + (tabTop - viewPadTop)/2
+          // = (viewPadTop + tabTop) / 2 に置きたい（時刻表示にかぶらないよう
+          // safe area の下から始めて、タブ上端の少し上で終わる）。
           // 選択バーは機能バー上端 (Transform の原点) から移動させるので:
-          //   yOffset = tabTop/2 - funcBarTop - 選択バー高さ/2
+          //   yOffset = (viewPadTop + tabTop)/2 - funcBarTop - 選択バー高さ/2
           final viewPadTop = MediaQuery.of(context).viewPadding.top;
           const searchBarH = 36.0;
           const functionBarH = 40.0;
           const selectBarHalf = 32.0;
           final funcBarTop = viewPadTop + searchBarH;
           final tabTop = funcBarTop + functionBarH;
-          yOffset = tabTop / 2 - funcBarTop - selectBarHalf;
+          yOffset = (viewPadTop + tabTop) / 2 - funcBarTop - selectBarHalf;
         } else {
           yOffset = -65.0;
         }
