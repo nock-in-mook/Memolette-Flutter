@@ -2,17 +2,30 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:drift/drift.dart' show Value;
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'db/database.dart';
+import 'firebase_options.dart';
 import 'screens/home_screen.dart';
 import 'utils/image_storage.dart';
 import 'utils/keyboard_done_bar.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Firebase 初期化（同期機能の前提。失敗してもアプリは続行する）
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e) {
+    if (kDebugMode) {
+      debugPrint('[Firebase] init failed: $e');
+    }
+  }
   // iPhone は縦固定 / iPad は全向き許可
   // （Info.plist だけだと UIRequiresFullScreen=true と組み合わさったときに
   //   iPhone 側の方向制限が効かないケースがあるため Flutter 側でも制御する）

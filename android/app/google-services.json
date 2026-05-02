@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "837461181268",
+    "project_id": "memolette-3a68b",
+    "storage_bucket": "memolette-3a68b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:837461181268:android:7be5fad2919bfa918dfec1",
+        "android_client_info": {
+          "package_name": "com.memolette.memolette"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAz5g_tdV_CNVNYFC5KM5X-1m2qMtVHuLo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
