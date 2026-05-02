@@ -1044,3 +1044,55 @@
 - ROADMAP 備忘の残り（複数リスト結合・遷移アニメ短縮・名前なしフィルタ等多数）
 - 実機検証の積み残し（DayItemsPanel スワイプ削除・ToDo シェブロン等）
 - iPad 関連の改修確認（USB 接続 or シミュレータで）
+
+---
+## #36 (2026-05-02)
+
+### サマリ
+ROADMAP 備忘から 3 件を片付け + 1 件中断保留。シミュ確認のみ、実機検証は未。
+
+### 主要変更（5コミット）
+
+#### 1. ToDo 項目の日付バッジを行右上オーバーレイに
+- 「タイトル下の独立行」を廃止し、Stack で行右上 (`right: 6, top: -2`) に Positioned 配置
+- 行高さは維持(44pt)。タイトル位置・ボタン位置に影響なし
+- カレンダーアイコン削除、フォント10pt + grey.shade500 で控えめに、シェブロン右端と揃え
+- 試行錯誤: 最初 Column 子で詰めたが「メモボタンより右に出したい」「ボタンに被ってもいい(オーバーレイで)」という要望から `Stack(clipBehavior: Clip.none)` で Row 全体を包む形に
+
+#### 2. 5階層 ToDo 結合 → 6階層目の挙動対応
+- depth 5 用の背景色・アクセント色（ピンク `#FF2D55`）追加
+- `_normalMaxDepth = 4` / `_mergedMaxDepth = 5` で階層制限を分離。`_isMergedList` を State で保持し `_listSub = _watchList().listen(...)` で更新
+- 結合済みリストのみ depth 5 まで子追加可。通常リストは従来通り
+- 結合元が 6階層持っていたら結合をトーストで阻止「結合できるのは5階層までのリストです」
+- 開発用ダミー: 5階層 ToDo + 結合相手の seed ボタンを設定画面に追加
+
+#### 3. 爆速モードのキーボード押し上げ
+- `resizeToAvoidBottomInset: false` のまま `topSpacer` をキーボード高さ分縮める
+- カードがヘッダー直下まで上にスライド、操作パネルはキーボード裏に隠れる前提
+- 一度 `resizeToAvoidBottomInset: true` を試したが操作パネルまで上がってきて却下
+
+#### 4. 試したが却下
+- 爆速モードに MD ツールバー追加 → ユーザー判断で不要、ロールバック
+- ツールバー全体共通化 (A 案) → 引数 20 個超えて重いので、要件絞り込みで「消しゴム・画像追加・Undo/Redo」のみに
+
+#### 5. ROADMAP整理
+- 完了済み備忘 5 件削除
+- 「爆速モードのキーボードツールバー」を「BlockEditor 化と合わせた具体内容」に書き直し
+- メモカードの画像サムネイル右端固定の備忘追加
+
+### 学び・技術メモ
+- `clipBehavior: Clip.none` の Stack なら Positioned のはみ出しを許容できる（行高さを変えずに要素オーバーレイ可）
+- StreamSubscription 用に `dart:async` を import。listen 結果で `setState` する場合は mounted チェック必須
+- 爆速モードの Scaffold は `resizeToAvoidBottomInset: false` 維持。中身を独自に押し上げる方が Stack レイアウトとの相性が良い
+- `_buildToolbar` の構造は memo_input_area 内で 250 行超、State 依存 20 個以上。完全共通化は重い。
+- 爆速モードの BlockEditor 化は次回。block_editor.dart の API は既に把握 (currentContent, hasAnyFocus, focusedController, insertImageFromPicker)
+
+### 進めなかった/中断
+- **爆速モードのカード本文 BlockEditor 化** — 画像入りメモが爆速モードでは U+FFFC が空白として残るだけと判明。BlockEditor に置換すれば画像表示・追加・編集が一気に解決するが、規模大なので次回へ持ち越し
+- 実機検証（前回から継続中、wireless 接続不安定）
+
+### 次セッション (#37) 候補
+- **最優先**: 爆速モードの BlockEditor 化 + ツールバー（消しゴム・画像追加・Undo/Redo・完了）
+- メモカードの画像サムネイル右端固定
+- ROADMAP 備忘の残り（iPad 縦↔横回転、スプリット時メモ画面の上余白＋閉じる、選択モードの iPad 対応）
+- 実機検証（USB 接続できるなら）
