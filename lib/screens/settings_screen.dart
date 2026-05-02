@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,6 +11,7 @@ import 'font_weight_lab_screen.dart';
 import 'icon_lab_screen.dart';
 import 'all_tab_filter_lab_screen.dart';
 import 'maximize_icon_lab_screen.dart';
+import 'multi_action_icon_lab_screen.dart';
 import 'preview_icon_lab_screen.dart';
 import 'settings_icon_lab_screen.dart';
 import 'undo_redo_icon_lab_screen.dart';
@@ -85,6 +87,16 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(
                   builder: (_) => const PreviewIconLabScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(CupertinoIcons.ellipsis_circle),
+            title: const Text('多機能アイコンラボ'),
+            subtitle: const Text('機能バーの多機能ボタン候補アイコンを比較'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                  builder: (_) => const MultiActionIconLabScreen()),
             ),
           ),
           ListTile(

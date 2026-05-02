@@ -2436,8 +2436,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _showMultiActionSheet,
-              child: Icon(CupertinoIcons.ellipsis_circle,
-                  size: 20, color: Colors.grey[600]),
+              child: Icon(Icons.more_horiz,
+                  size: 22, color: Colors.grey[600]),
             ),
             SizedBox(width: sp(12)),
             // 背景色変更
