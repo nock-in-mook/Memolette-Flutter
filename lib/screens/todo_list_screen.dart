@@ -942,8 +942,17 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     // あったため、Listener で onPointerDown を観察するだけにする。
     // これなら子の onTap 伝播を阻害せず、_closeSwipeIfOpen だけ駆動できる。
     final content = Listener(
-      onPointerDown: (_) {
+      onPointerDown: (event) {
         _closeSwipeIfOpen();
+        // 余白タップで編集モードを抜ける。
+        // hit test 結果に依らず onPointerDown は届くので ListView 内の余白も拾える。
+        // TextField 直接タップなら直後にフォーカスを取り直すので副作用なし。
+        // ただし、項目編集中の TextField 内タップで連続 unfocus / refocus が走ると
+        // 軽く点滅する場合があるため、フォーカスがあるときだけ unfocus を呼ぶ。
+        final primary = FocusManager.instance.primaryFocus;
+        if (primary != null && primary.hasFocus) {
+          primary.unfocus();
+        }
       },
       behavior: HitTestBehavior.translucent,
       child: Stack(
@@ -962,17 +971,6 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    // 余白タップで編集モードを抜ける用の透明レイヤ（最下層）
-                    // 項目やフッター・ルーレットの hit test が先に通るので、
-                    // 子ウィジェットのない真の余白だけここで拾う。
-                    Positioned.fill(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onTap: () {
-                          FocusManager.instance.primaryFocus?.unfocus();
-                        },
-                      ),
-                    ),
                     _buildItemList(),
                     // フッター（下端フロート）
                     Positioned(
