@@ -479,13 +479,15 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       }
       // フォーカスが外れたとき、空メモなら削除
       // 最大化中でも削除対象（空メモの残留を防ぐ）
-      if (!_isInputFocused && widget.editingMemoId != null) {
+      // editingMemoId(親管理) でも _selfCreatedMemoId(自作) でも対象にする
+      final activeMemoId = widget.editingMemoId ?? _selfCreatedMemoId;
+      if (!_isInputFocused && activeMemoId != null) {
         final t = _titleController.text;
         final c = _contentController.text;
         // 色が付いているメモは空扱いしない（色だけ入れたメモも保持）
         if (t.isEmpty && c.isEmpty && _bgColorIndex == 0) {
           final db = ref.read(databaseProvider);
-          db.deleteMemo(widget.editingMemoId!);
+          db.deleteMemo(activeMemoId);
           _clearInput(keepMarkdown: _isMarkdown);
           // 入力エリア最大化中の自動 onClosed は、ユーザーが意図せず
           // フォーカスを外したとき（最大化画面でフォルダ余白をタップ等）
@@ -641,6 +643,9 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     if (_contentScrollController.hasClients) {
       _contentScrollController.jumpTo(0);
     }
+    // 自作メモIDも同時にクリア（次の入力で確実に新メモを先行作成させる）
+    _selfCreatedMemoId = null;
+    _directLoadApplied = false;
     setState(() {
       _hasMemo = false;
       _isViewMode = false;
@@ -666,11 +671,18 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   void _onChanged() {
     _pushUndoIfChanged();
     widget.onContentChanged?.call();
-    if (widget.editingMemoId == null) {
-      // 通常はフォーカス時に先行作成済みだが、フォールバックとして
+    // 親 (HomeScreen) 管理の editingMemoId が未セットでも、
+    // _selfCreatedMemoId があればそちらに更新する
+    // （onMemoCreated 通知後に親が editingMemoId をセットするまでの
+    //   1〜2フレームの間も入力をロストしないように）
+    final memoId = widget.editingMemoId ?? _selfCreatedMemoId;
+    if (memoId == null) {
+      // メモ未作成: 通常はフォーカス時に先行作成済みだが、フォールバックとして
       // 次フレームで作成（rebuildとの干渉を避けるため遅延）
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || widget.editingMemoId != null) return;
+        if (!mounted) return;
+        final cur = widget.editingMemoId ?? _selfCreatedMemoId;
+        if (cur != null) return;
         if (_titleController.text.isNotEmpty ||
             _contentController.text.isNotEmpty) {
           _preCreateEmptyMemo();
@@ -684,9 +696,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     // 即削除せず次フレームで再確認する
     if (_titleController.text.isEmpty && _contentController.text.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || widget.editingMemoId == null) return;
+        if (!mounted) return;
+        final cur = widget.editingMemoId ?? _selfCreatedMemoId;
+        if (cur == null) return;
         if (_titleController.text.isEmpty && _contentController.text.isEmpty) {
-          db.deleteMemo(widget.editingMemoId!);
+          db.deleteMemo(cur);
+          if (cur == _selfCreatedMemoId) _selfCreatedMemoId = null;
           _clearInput(keepMarkdown: _isMarkdown);
           widget.onClosed();
         }
@@ -694,7 +709,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       return;
     }
     db.updateMemo(
-      id: widget.editingMemoId!,
+      id: memoId,
       title: _titleController.text,
       content: _contentController.text,
     );
