@@ -22,7 +22,6 @@ import '../widgets/frosted_alert_dialog.dart';
 import '../widgets/new_tag_sheet.dart';
 import '../widgets/quick_sort_toolbar.dart';
 import '../widgets/tag_dial_view.dart';
-import '../widgets/trapezoid_tab_shape.dart';
 
 // ========================================
 // 爆速モード（QuickSort）
