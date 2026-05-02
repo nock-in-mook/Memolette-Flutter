@@ -111,7 +111,16 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   /// 外部から Redo 可能か判定
   bool get canRedo => _canRedo;
   /// 本文欄にフォーカスを強制要求（最大化タップでフォーカスが外れたときの復元用）
-  void refocusContent() => _contentFocusNode.requestFocus();
+  /// BlockEditor の TextBlock に直接 focus を取らせる（_contentFocusNode は
+  /// BlockEditor 化後ダミー扱いで、システムキーボードを開けない）
+  void refocusContent() {
+    final s = _blockEditorKey.currentState;
+    if (s != null) {
+      s.focusFirst();
+    } else {
+      _contentFocusNode.requestFocus();
+    }
+  }
   /// タイトル欄にフォーカスを強制要求
   void refocusTitle() => _titleFocusNode.requestFocus();
   /// 外部からメモを閉じる（入力欄クリア、MDモードは保持）

@@ -205,7 +205,7 @@ enum _SelectMode { none, delete, moveToTop }
 enum _SpecialKind { all, untagged, frequent, calendar }
 
 class _HomeScreenState extends ConsumerState<HomeScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   // タブの順序（特殊タブも親タグもキーで統一管理）
   // null の場合はビルド時に初期化
   List<String>? _tabOrder;
@@ -562,9 +562,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     });
   }
 
+  // iPad 回転時に編集モードを維持するため、orientation を監視して
+  // 切替後にフォーカスを復元する。
+  // 回転中の数フレームは widget tree の reparent で TextField の hasFocus が
+  // 一瞬 false になり onFocusChanged が偽の false を通知してくる。
+  // didChangeMetrics は MediaQuery 更新の最初のタイミングで呼ばれ、
+  // ここで size 変化を検知して _suppressFalseFocus を立てる。
+  // onFocusChanged 時には既にフラグが立っており、偽 false を吸収できる。
+  Orientation? _lastOrientation;
+  Size? _lastViewSize;
+  bool _suppressFalseFocus = false;
+  bool _lastInputContentFocused = false;
+  bool _lastInputTitleFocused = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _drawerCtrl = AnimationController.unbounded(vsync: this, value: 0);
     _searchFocusNode.addListener(() {
       setState(() => _isSearchFocused = _searchFocusNode.hasFocus);
@@ -591,7 +605,58 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 縦↔横回転時、Wide ↔ Narrow レイアウトの切替で widget tree が
+    // reparent されてキーボードが一瞬下がる。直近のフォーカス状態
+    // (_lastInputContentFocused / _lastInputTitleFocused) を使って
+    // postFrame で再度フォーカスを取らせる。
+    final orientation = MediaQuery.of(context).orientation;
+    if (_lastOrientation != null && _lastOrientation != orientation) {
+      final wantContent = _lastInputContentFocused;
+      final wantTitle = _lastInputTitleFocused;
+      if (wantContent || wantTitle) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final s = _inputAreaKey.currentState;
+          if (s == null) return;
+          if (wantContent && !s.isContentFocused) {
+            s.refocusContent();
+          } else if (wantTitle && !s.isTitleFocused) {
+            s.refocusTitle();
+          }
+        });
+      }
+    }
+    _lastOrientation = orientation;
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    // size 変化（回転含む）を MediaQuery 更新前に検知。
+    // 偽 false 通知を 2 フレーム間吸収する。
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    final newSize = view.physicalSize;
+    final prev = _lastViewSize;
+    if (prev != null) {
+      final wasLandscape = prev.width > prev.height;
+      final newLandscape = newSize.width > newSize.height;
+      if (wasLandscape != newLandscape) {
+        _suppressFalseFocus = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _suppressFalseFocus = false;
+          });
+        });
+      }
+    }
+    _lastViewSize = newSize;
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     HardwareKeyboard.instance.removeHandler(_handleGlobalKey);
     _drawerCtrl.dispose();
     _tabBarScrollController.dispose();
@@ -1375,7 +1440,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     _isInputExpanded = !_isInputExpanded;
                   }),
           onTagHistoryChanged: () => setState(() {}),
-          onFocusChanged: () => setState(() {}),
+          onFocusChanged: () {
+            final s = _inputAreaKey.currentState;
+            if (s != null) {
+              if (s.isContentFocused) _lastInputContentFocused = true;
+              if (s.isTitleFocused) _lastInputTitleFocused = true;
+              // 回転中は false 上書きをスキップ。
+              // _suppressFalseFocus は didChangeMetrics で MediaQuery 更新前に
+              // 立つので、onFocusChanged より先に有効になる。
+              if (!s.isContentFocused &&
+                  !s.isTitleFocused &&
+                  !_suppressFalseFocus) {
+                _lastInputContentFocused = false;
+                _lastInputTitleFocused = false;
+              }
+            }
+            setState(() {});
+          },
           onDialogOpenChanged: (open) =>
               setState(() => _isDialogOverEditing = open),
           onContentChanged: () => setState(() {}),
