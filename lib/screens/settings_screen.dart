@@ -10,6 +10,7 @@ import 'font_lab_screen.dart';
 import 'font_weight_lab_screen.dart';
 import 'icon_lab_screen.dart';
 import 'all_tab_filter_lab_screen.dart';
+import 'data_protection_screen.dart';
 import 'maximize_icon_lab_screen.dart';
 import 'multi_action_icon_lab_screen.dart';
 import 'preview_icon_lab_screen.dart';
@@ -32,6 +33,17 @@ class SettingsScreen extends ConsumerWidget {
       ),
       body: ListView(
         children: [
+          const _SectionHeader('データ'),
+          ListTile(
+            leading: const Icon(Icons.security_outlined),
+            title: const Text('データ保護'),
+            subtitle: const Text('バックアップ・エクスポート・復元'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                  builder: (_) => const DataProtectionScreen()),
+            ),
+          ),
           const _SectionHeader('開発'),
           ListTile(
             leading: const Icon(Icons.science_outlined),

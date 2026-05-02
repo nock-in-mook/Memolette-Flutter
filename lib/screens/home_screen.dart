@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../utils/backup_manager.dart';
 import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
@@ -594,13 +595,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // ⌘系ショートカットはフォーカス非依存のグローバルハンドラで処理
     HardwareKeyboard.instance.addHandler(_handleGlobalKey);
     // 起動時セーフティネット: タイトル・本文とも空のメモを一掃 +
-    // 起動時にフォーカスが入っていたら外す（入力状態で始まらない）
+    // 起動時にフォーカスが入っていたら外す（入力状態で始まらない）+
+    // 1日1回の自動バックアップ（同期実装前のデータ保護）
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(databaseProvider).purgeEmptyMemos();
       // タイトル空 + アイテム0件の ToDo リストも一掃（保存価値なし）
       ref.read(databaseProvider).purgeEmptyTodoLists();
       FocusManager.instance.primaryFocus?.unfocus();
+      // 自動バックアップ（24h ごと、最新7個保持）
+      // fire-and-forget。失敗しても本筋に影響させない
+      BackupManager.createSnapshotIfNeeded().catchError((_) => null);
     });
   }
 
