@@ -2505,7 +2505,10 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // 選択モード: チェックマーク
@@ -2546,7 +2549,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
             ),
           ),
           const SizedBox(width: 12),
-          // タイトル or 入力欄
+          // タイトル or 入力欄（元の単純構造、タイトル中央配置）
           Expanded(
             child: isEditing
                 ? _EditingItemField(
@@ -2706,8 +2709,15 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           // ドラッグハンドル（将来カスタム化予定）
         ],
       ),
-      // 日付バッジ（付与済み時のみ、タイトル位置に揃える）
-      if (item.eventDate != null) _buildItemDateBadge(item),
+                  // 日付バッジ：行の右上にオーバーレイ表示
+                  if (item.eventDate != null)
+                    Positioned(
+                      right: 6,
+                      top: -2,
+                      child: _buildItemDateBadge(item),
+                    ),
+                ],
+              ),
       // メモ展開エリア
       if (_memoEditingItemId == item.id || _memoViewItemId == item.id)
         _buildMemoArea(item, depth),
@@ -2722,34 +2732,19 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     );
   }
 
-  /// アイテム行のタイトル下に表示する日付バッジ。
-  /// 付与済み時のみ呼ばれる。チェックボックス幅分インデントしてタイトル位置に揃える。
+  /// アイテム行の右上にオーバーレイ表示する日付バッジ。付与済み時のみ呼ばれる。
   Widget _buildItemDateBadge(TodoItem item) {
     final eventDate = item.eventDate!;
-    return Padding(
-      padding: const EdgeInsets.only(left: 56, top: 0, bottom: 4, right: 4),
-      child: GestureDetector(
-        onTap: () => _showItemDatePicker(item),
-        behavior: HitTestBehavior.opaque,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.event_outlined,
-              size: 11,
-              color: Colors.grey.shade600,
-            ),
-            const SizedBox(width: 2),
-            Text(
-              '${eventDate.year}/${eventDate.month.toString().padLeft(2, '0')}/${eventDate.day.toString().padLeft(2, '0')}',
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.grey.shade600,
-                fontWeight: FontWeight.w600,
-                fontFamily: 'Hiragino Sans',
-              ),
-            ),
-          ],
+    return GestureDetector(
+      onTap: () => _showItemDatePicker(item),
+      behavior: HitTestBehavior.opaque,
+      child: Text(
+        '${eventDate.year}/${eventDate.month.toString().padLeft(2, '0')}/${eventDate.day.toString().padLeft(2, '0')}',
+        style: TextStyle(
+          fontSize: 10,
+          color: Colors.grey.shade500,
+          fontWeight: FontWeight.w600,
+          fontFamily: 'Hiragino Sans',
         ),
       ),
     );
