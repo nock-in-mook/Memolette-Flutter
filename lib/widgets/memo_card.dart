@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -101,6 +100,15 @@ class MemoCard extends ConsumerWidget {
         GridSizeOption.grid1flex => 44,
         GridSizeOption.titleOnly => 0,
       };
+
+  /// タイトル + 区切り線の下端 Y 座標（本文領域の上端 ≈ サムネの top 位置）
+  /// 本文の長短に依らずサムネを「右端固定」にするため、外側 Stack で絶対配置
+  double get _bodyTopY =>
+      _cardPadding +
+      _titleFont * 1.3 +
+      _dividerMargin.top +
+      0.5 +
+      _dividerMargin.bottom;
 
   // 全角換算8文字に丸め（本家 truncatedTagName 準拠）
   String _truncated(String name) {
@@ -426,7 +434,16 @@ class MemoCard extends ConsumerWidget {
         ],
       ),
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
+          // 画像サムネは「タイトル + 区切り線」直下の右端に絶対配置
+          // 本文の長短に依らず常に同じ位置（右端固定）
+          if (hasImages && _thumbSize > 0)
+            Positioned(
+              top: _bodyTopY,
+              right: _cardPadding,
+              child: _buildCornerThumb(images),
+            ),
           Padding(
             padding: EdgeInsets.all(_cardPadding),
             child: Column(
@@ -472,54 +489,28 @@ class MemoCard extends ConsumerWidget {
                           color: Colors.black87,
                           height: 1.4,
                         );
-                        final bodyText = Text.rich(
-                          TextSpan(
-                            style: bodyStyle,
-                            children: _buildBodySpans(displayBody, _bodyFont),
+                        // 画像があるときは bodyText を右に padding で逃がす
+                        // （サムネは外側 Stack で右端に絶対配置）
+                        return Padding(
+                          padding: hasImages && _thumbSize > 0
+                              ? EdgeInsets.only(right: _thumbSize + 4)
+                              : EdgeInsets.zero,
+                          child: Text.rich(
+                            TextSpan(
+                              style: bodyStyle,
+                              children: _buildBodySpans(displayBody, _bodyFont),
+                            ),
+                            maxLines: maxLines,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: maxLines,
-                          overflow: TextOverflow.ellipsis,
                         );
-                        // 画像があるときは本文右端に小サムネ + カウントバッジ。
-                        // Row だと bodyText の行数が少ないとき crossAxisAlignment が
-                        // サムネ高さを潰してアスペクト比が崩れる（横長になる）ため、
-                        // Stack + Positioned に切替: 本文右側に padding で逃がし、
-                        // サムネは右上に絶対配置して正方形を維持する。
-                        // サムネサイズは利用可能高さで頭打ちにして、3x6 など縦に
-                        // 余裕がないグリッドでカードからはみ出さないようにする。
-                        if (hasImages && _thumbSize > 0) {
-                          final actualThumb = constraints.maxHeight.isFinite
-                              ? math.min(_thumbSize, constraints.maxHeight)
-                              : _thumbSize;
-                          return Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              Padding(
-                                padding:
-                                    EdgeInsets.only(right: actualThumb + 4),
-                                child: bodyText,
-                              ),
-                              Positioned(
-                                top: 0,
-                                right: 0,
-                                child: _buildCornerThumb(images,
-                                    size: actualThumb),
-                              ),
-                            ],
-                          );
-                        }
-                        return bodyText;
                       },
                     ),
                   ),
-                ],
-                // 本文が空でも画像がある場合は右端サムネだけを出す
-                if (displayBody.isEmpty && hasImages && _thumbSize > 0) ...[
-                  const SizedBox(height: 2),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: _buildCornerThumb(images),
-                  ),
+                ] else if (hasImages && _thumbSize > 0) ...[
+                  // 本文が空でも画像があるときはサムネ分の高さを確保
+                  // （サムネ自体は外側 Stack で固定位置に配置）
+                  SizedBox(height: _thumbSize),
                 ],
               ],
             ),
