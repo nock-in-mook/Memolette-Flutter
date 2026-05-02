@@ -285,8 +285,20 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
           ),
 
           // カード+日付+下空白をExpandedで包み、上にSpacer、下は固定の弧+パネル
+          // カード以外の余白でも左右フリックでページ送りできるよう
+          // Expanded 全体に GestureDetector を被せる（translucent で子のタップは通す）
           Expanded(
-            child: LayoutBuilder(builder: (context, constraints) {
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragEnd: (details) {
+                final v = details.primaryVelocity ?? 0;
+                if (v < -200 && canNext) {
+                  _nextCard();
+                } else if (v > 200 && canPrev) {
+                  _prevCard();
+                }
+              },
+              child: LayoutBuilder(builder: (context, constraints) {
               final maxH = constraints.maxHeight;
               final screenH = MediaQuery.of(context).size.height;
               final collapsedCardH = screenH * 0.29;
@@ -450,6 +462,7 @@ class _QuickSortScreenState extends ConsumerState<QuickSortScreen> {
                   ],
               );
             }),
+            ),
           ),
 
           // 弧型コントローラー（弧線 + 3編集ボタン、最大化中も常時表示・固定位置）
