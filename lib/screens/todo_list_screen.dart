@@ -962,6 +962,17 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
+                    // 余白タップで編集モードを抜ける用の透明レイヤ（最下層）
+                    // 項目やフッター・ルーレットの hit test が先に通るので、
+                    // 子ウィジェットのない真の余白だけここで拾う。
+                    Positioned.fill(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: () {
+                          FocusManager.instance.primaryFocus?.unfocus();
+                        },
+                      ),
+                    ),
                     _buildItemList(),
                     // フッター（下端フロート）
                     Positioned(
