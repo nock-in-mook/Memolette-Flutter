@@ -194,6 +194,41 @@ class AccountScreen extends ConsumerWidget {
             }
           },
         ),
+        ListTile(
+          leading: const Icon(Icons.sync),
+          title: const Text('今すぐ同期（双方向）'),
+          subtitle: const Text(
+              'Step 5d: ダウンロード → アップロードを連続実行'),
+          onTap: () async {
+            try {
+              final db = ref.read(databaseProvider);
+              final result = await SyncService.syncOnce(db);
+              if (!context.mounted) return;
+              if (result == null) {
+                await showFrostedAlert(
+                  context: context,
+                  title: '同期スキップ',
+                  message: '既に同期中、または未ログインです',
+                );
+              } else {
+                await showFrostedAlert(
+                  context: context,
+                  title: '同期完了',
+                  message: 'DL 新規: ${result['inserted']} / 更新: ${result['updated']}\n'
+                      'スキップ: ${result['skipped']} / 不正: ${result['invalid']}\n'
+                      'UL: ${result['uploaded']} 件',
+                );
+              }
+            } catch (e) {
+              if (!context.mounted) return;
+              await showFrostedAlert(
+                context: context,
+                title: '同期失敗',
+                message: e.toString(),
+              );
+            }
+          },
+        ),
         const Divider(height: 24),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

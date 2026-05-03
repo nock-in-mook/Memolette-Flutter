@@ -282,6 +282,7 @@ class AppDatabase extends _$AppDatabase {
 
   /// メモを削除（memo_tags / memo_images もカスケード削除、画像ファイルも削除）
   Future<void> deleteMemo(String id) async {
+    print('[DB-DELETE] deleteMemo called id=$id\n${StackTrace.current}');
     // 先にファイルパスを取得（トランザクション外でファイル削除するため）
     final imgs = await (select(memoImages)
           ..where((t) => t.memoId.equals(id)))
@@ -298,15 +299,31 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  /// タイトル・本文が空のメモをまとめて削除（起動時セーフティネット）
-  /// eventDate のみ持つメモも入力されなければ消える（仕様）
+  /// タイトル・本文が空のメモをまとめて削除（起動時セーフティネット）。
+  /// 削除対象: タイトル空 + 本文空 + 色なし + eventDate なし + タグ無し のメモのみ。
+  /// 「タイトルは消したけどタグだけ残してる」ような意図的なメモは保持する。
   /// 返り値: 削除件数
   Future<int> purgeEmptyMemos() async {
-    final emptyIds = await (select(memos)
-          ..where((t) => t.title.equals('') & t.content.equals('')))
+    final candidates = await (select(memos)
+          ..where((t) =>
+              t.title.equals('') &
+              t.content.equals('') &
+              t.bgColorIndex.equals(0) &
+              t.eventDate.isNull()))
         .map((m) => m.id)
         .get();
+    if (candidates.isEmpty) return 0;
+    // タグを持つ candidates は除外
+    final tagged = await (selectOnly(memoTags, distinct: true)
+          ..addColumns([memoTags.memoId])
+          ..where(memoTags.memoId.isIn(candidates)))
+        .map((row) => row.read(memoTags.memoId))
+        .get();
+    final taggedSet = tagged.whereType<String>().toSet();
+    final emptyIds =
+        candidates.where((id) => !taggedSet.contains(id)).toList();
     if (emptyIds.isEmpty) return 0;
+    print('[DB-DELETE] purgeEmptyMemos found ${emptyIds.length}件 ids=$emptyIds\n${StackTrace.current}');
     await deleteMemos(emptyIds);
     return emptyIds.length;
   }
@@ -339,6 +356,7 @@ class AppDatabase extends _$AppDatabase {
   /// 複数メモをまとめて削除（memo_tags / memo_images もカスケード削除、画像ファイルも削除）
   Future<void> deleteMemos(List<String> ids) async {
     if (ids.isEmpty) return;
+    print('[DB-DELETE] deleteMemos called ids=${ids.length}件 first=${ids.first}\n${StackTrace.current}');
     final imgs = await (select(memoImages)
           ..where((t) => t.memoId.isIn(ids)))
         .get();
@@ -698,6 +716,7 @@ class AppDatabase extends _$AppDatabase {
 
   /// メモからタグを外す
   Future<void> removeTagFromMemo(String memoId, String tagId) {
+    print('[DB-DELETE] removeTagFromMemo memoId=$memoId tagId=$tagId\n${StackTrace.current}');
     return (delete(memoTags)
           ..where((t) => t.memoId.equals(memoId) & t.tagId.equals(tagId)))
         .go();

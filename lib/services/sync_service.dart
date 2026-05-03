@@ -184,10 +184,19 @@ class SyncService {
       }
     }
     if (companions.isNotEmpty) {
-      // batch insertOrReplace（drift の transaction 内で）
+      // 既存メモは replace（UPDATE）、 新規メモのみ insert にする。
+      // insertOrReplace を使うと SQLite の REPLACE 動作で
+      // 「既存行を DELETE してから INSERT」になり、memo_tags など
+      // 外部キーで参照する子レコードが孤児化（=タグが全部外れる）する。
+      // これがデータ消失の直接原因なので、必ず分岐する。
       await db.batch((batch) {
         for (final c in companions) {
-          batch.insert(db.memos, c, mode: drift.InsertMode.insertOrReplace);
+          final id = c.id.value;
+          if (localById.containsKey(id)) {
+            batch.replace(db.memos, c);
+          } else {
+            batch.insert(db.memos, c);
+          }
         }
       });
     }
@@ -202,5 +211,28 @@ class SyncService {
       'skipped': skipped,
       'invalid': invalid,
     };
+  }
+
+  /// 同時実行ガード。 syncOnce が 2 重に走らないようにする。
+  static bool _syncing = false;
+
+  /// Step 5d: 双方向同期。 「ダウンロード → アップロード」 の順で1往復。
+  /// 既に走っている場合は no-op。
+  /// 戻り値: 成功時に { 'downloaded': N, 'uploaded': M, ... } / 未ログインなら null
+  /// 例外: 失敗時に re-throw（呼び出し側で握りつぶす場合あり）
+  static Future<Map<String, int>?> syncOnce(AppDatabase db) async {
+    if (_syncing) return null;
+    if (FirebaseAuth.instance.currentUser == null) return null;
+    _syncing = true;
+    try {
+      final dl = await downloadAllMemos(db);
+      final upCount = await uploadAllMemos(db);
+      return {
+        ...dl,
+        'uploaded': upCount,
+      };
+    } finally {
+      _syncing = false;
+    }
   }
 }

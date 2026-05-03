@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../services/sync_service.dart';
 import '../utils/backup_manager.dart';
 import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
@@ -606,7 +607,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // 自動バックアップ（24h ごと、最新7個保持）
       // fire-and-forget。失敗しても本筋に影響させない
       BackupManager.createSnapshotIfNeeded().catchError((_) => null);
+      // 起動時の自動同期（ログイン済みなら）。失敗しても本筋に影響させない
+      _autoSync();
     });
+  }
+
+  void _autoSync() {
+    final db = ref.read(databaseProvider);
+    SyncService.syncOnce(db).catchError((_) => null);
   }
 
   @override
@@ -634,6 +642,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       }
     }
     _lastOrientation = orientation;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // フォアグラウンド復帰時に同期（軽量・失敗しても無視）
+    if (state == AppLifecycleState.resumed) {
+      _autoSync();
+    }
   }
 
   @override

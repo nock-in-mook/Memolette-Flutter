@@ -493,8 +493,13 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       if (!_isInputFocused && activeMemoId != null) {
         final t = _titleController.text;
         final c = _contentController.text;
-        // 色が付いているメモは空扱いしない（色だけ入れたメモも保持）
-        if (t.isEmpty && c.isEmpty && _bgColorIndex == 0) {
+        // 色が付いているメモ・タグが付いているメモ・eventDate が付いているメモは
+        // 空扱いしない（ユーザーが意図的に最低限の情報だけ残しているケース）
+        if (t.isEmpty &&
+            c.isEmpty &&
+            _bgColorIndex == 0 &&
+            _attachedTags.isEmpty &&
+            _eventDate == null) {
           final db = ref.read(databaseProvider);
           db.deleteMemo(activeMemoId);
           _clearInput(keepMarkdown: _isMarkdown);
@@ -588,14 +593,21 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _directLoadApplied = true;
     _applyMemoData(memo);
     // タグは非同期で読み込み。
-    // .then() の発火時に既に別メモへ遷移していたら（widget.editingMemoId が
-    // memo.id と違う）古いタグで上書きしないようガード。
+    // .then() の発火時のガード:
+    //   - widget.editingMemoId が memo.id と一致 → 反映
+    //   - widget.editingMemoId が null（親がまだ更新してない）→ 反映
+    //   - widget.editingMemoId が memo.id 以外の id → 別メモへ遷移済みなのでスキップ
+    // 旧ガード (`== memo.id` のみ) だと、DB キャッシュヒットで getTagsForMemo が
+    // 即返る場合に widget.editingMemoId がまだ更新されておらず、タグが反映
+    // されないバグがあった（縮小ビューでタグバッジが空のまま、最大化経由なら
+    // _loadMemo が走るので OK だった）。
     final db = ref.read(databaseProvider);
     db.getTagsForMemo(memo.id).then((tags) {
-      if (mounted && widget.editingMemoId == memo.id) {
-        _attachedTags = tags;
-        setState(() {});
-      }
+      if (!mounted) return;
+      final cur = widget.editingMemoId;
+      if (cur != null && cur != memo.id) return;
+      _attachedTags = tags;
+      setState(() {});
     });
   }
 
@@ -709,6 +721,16 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
         final cur = widget.editingMemoId ?? _selfCreatedMemoId;
         if (cur == null) return;
         if (_titleController.text.isEmpty && _contentController.text.isEmpty) {
+          // タグ・eventDate・bgColor が付いているメモは「ユーザーが意図的に
+          // 残しているメモ」として削除しない（_onFocusChange の空メモ削除と
+          // 同じ判断基準）。BlockEditor の reload 中に一瞬 content="" を
+          // 通知してくるケースがあり、ここでガードしないとタグ付きメモが
+          // 連鎖削除される。
+          if (_attachedTags.isNotEmpty ||
+              _eventDate != null ||
+              _bgColorIndex != 0) {
+            return;
+          }
           db.deleteMemo(cur);
           if (cur == _selfCreatedMemoId) _selfCreatedMemoId = null;
           _clearInput(keepMarkdown: _isMarkdown);
