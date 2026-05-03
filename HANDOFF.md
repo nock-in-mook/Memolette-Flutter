@@ -2,125 +2,146 @@
 
 ## 現在の状況
 
-- **セッション#36 完了**（2026-05-02、5コミット）
+- **セッション#37 完了**（2026-05-02 〜 05-03、超長め・27コミット）
 - ブランチ: **`main`**
-- ROADMAP 備忘から ToDo 結合機能と爆速モードのキーボード周りを進めた
-- シミュ確認のみ。実機検証は前セッションから引き続き積み残し
+- Phase 9 同期実装に着手。Step 1〜3 と Step 5a〜5d まで実装。タグ・ToDo・画像同期 / 競合解決 / サブスクは未対応
+- iPad 13 mini SE シミュで動作確認
 
-## #36 のサマリ（時系列）
+## #37 サマリ（テーマ別）
 
-### ToDo項目の日付バッジを行右上オーバーレイ表示
-- 「タイトル下の独立行」を廃止し、Stack で行右上に Positioned 配置
-- 行高さは維持(44pt)。タイトル位置・ボタン位置に影響なし
-- カレンダーアイコン削除、フォント10pt + grey.shade500 で控えめに
-- シェブロン右端と揃え (right: 6, top: -2)
+### 爆速モードのカード本文 BlockEditor 化
+- TextField を BlockEditor に置換、画像インライン表示・追加対応
+- 爆速モード用ツールバー widget 新規（消しゴム / 画像 / Undo / Redo）+ Overlay 表示
+- 「完了」ボタンは KeyboardDoneBar 任せ（accessoryHeight 設定）
+- memo_input_area の `_syncAccessoryHeight` で「自分のフォーカスがない時は触らない」ガード追加（爆速 Overlay と完了ボタンが重なる問題）
+- 画像追加: ライブラリは 5 枚まで複数選択可（pickMultiImage）
+- 消しゴムで画像も削除（DB の deleteAllMemoImages 追加）
 
-### 5階層 ToDo 結合 → 6階層目の挙動対応
-- depth 5 用の背景色・アクセント色（ピンク `#FF2D55`）を追加
-- 結合済みリストのみ depth 5 まで子追加可（`_isMergedList` 判定）
-- 通常リストは従来通り depth 4 (5階層) まで
-- 結合元が 6階層持っていたら結合をトーストで阻止
-  - エラーメッセージ「結合できるのは5階層までのリストです」
-- 開発用ダミー: 5階層 ToDo + 結合相手の seed ボタン追加
+### メモカードの画像サムネを右端固定
+- 本文の長短に依らず常に「タイトル+区切り線直下、右端」に配置
+- 外側 Stack で Positioned 絶対配置（top = `_bodyTopY`）
 
-### 爆速モードのキーボード押し上げ
-- `resizeToAvoidBottomInset: false` のまま、`topSpacer` をキーボード高さ分縮める
-- カードがヘッダー直下まで上にスライド、操作パネルはキーボード裏に隠れる前提
-- (副作用なし、シンプル実装)
+### 爆速モードカード以外の余白フリック / ToDo 余白タップで unfocus
+- 爆速モード: Expanded 全体を GestureDetector(translucent) で wrap
+- ToDo: 既存 Listener.onPointerDown に primary.unfocus() を統合（Positioned.fill 方式は ListView の hit test に阻まれて動かなかった）
 
-### 試した上で却下
-- 爆速モードに MD ツールバーを追加 → ユーザー判断で不要、ロールバック
-- ツールバー全体共通化案 → スコープを「消しゴム・画像追加・Undo/Redo」に限定する方針に
+### iPad 回転時に編集モードを維持
+- `_HomeScreenState` に `WidgetsBindingObserver` mixin 追加
+- `didChangeMetrics` で size 変化を MediaQuery 更新前に検知 → `_suppressFalseFocus` を 2 フレーム立てる
+- `onFocusChanged` で suppress 中は true→false 上書きを無視
+- `didChangeDependencies` で orientation 変化を検知して refocusContent / refocusTitle
+- `refocusContent` を `_blockEditorKey.currentState?.focusFirst()` に書き換え（_contentFocusNode はダミー化済み）
 
-### ROADMAP整理
-- 完了済み備忘削除 (爆速遷移アニメ短縮、NewTagSheetオリジナル風改修、5階層ToDo結合6階層目挙動確認、日付シート内カードの背景色反映、ToDoリスト内項目の日付表示縦に広げない方法)
-- 「爆速モードのキーボードツールバー」を「BlockEditor化と合わせた具体内容」に書き直し
-- メモカードの画像サムネイル右端固定の備忘追加
+### iPad 選択モードバナー位置調整
+- 縦画面 iPad: 中央寄せ + maxWidth 600
+- 横画面 iPad: ルート Stack に Positioned 配置で前面化、left:0 / right: maxWidth/2 で左カラム内に制限、top = viewPadTop + 6
 
-## 次のアクション（次セッション #37）
+### ToDo iPad 横画面の左カラム緑背景
+- Stack に StackFit.expand 追加で画面下端まで塗る
 
-### 爆速モードのカード本文 BlockEditor 化（最優先）
-- 現状: `_QuickSortCard` の本文は `TextField`、画像入りメモを開くと U+FFFC が空白として残るだけ
-- 目標: BlockEditor に置換して画像インライン表示・画像追加に対応
-- 同時に ツールバー（消しゴム・画像追加・Undo/Redo・完了）をキーボード上に Overlay 表示
+### 多機能ボタン → Icons.more_horiz
+- 27 候補を「多機能アイコンラボ」で比較、Material 標準の more_horiz を採用
+- size 20 → 22（円が無くなった分の比重補正）
 
-#### 実装方針メモ
-- `_QuickSortCardState` の `_contentController` を BlockEditor のミラーとして残す
-- BlockEditor.onContentChanged で `_contentController.text = newContent` + `_saveContent()`
-- `_contentFocus` は廃止 → `_blockEditorKey.currentState?.hasAnyFocus` 等で判定
-- Undo/Redo は外側で text snapshot ベース (TextEditingValue を保存)。memo_input_area の `_undoStack` 実装 (line 196〜288) が参考
-- 画像追加は `_blockEditorKey.currentState?.insertImageFromPicker(source!)` 経由（memo_input_area の `_attachImage` line 716 参考）
-- ツールバー widget は `lib/widgets/memo_edit_toolbar.dart` 新規作成。引数で callback / state を受け取るシンプル設計
-- TextField scrollPadding は 44pt(ツールバー高さ) を加算
-- 必要なら memo_input_area 側のツールバーもこの widget に置換（A 案完全共通化）
+### データ保護機能（Phase 9 Step 1）
+- `lib/utils/backup_manager.dart` 新規
+  - createSnapshot / createSnapshotIfNeeded（24h 経過時のみ）
+  - listSnapshots / pruneOldSnapshots（最新7個まで保持）
+  - restoreSnapshot（復元前に現在状態も自動 snapshot）
+  - exportToDocumentsRoot（iOS Files App から救出可能）
+- `lib/screens/data_protection_screen.dart` 新規（一覧 / 手動バックアップ / エクスポート / 復元 / 削除）
+- 設定 > データ保護 エントリ追加
+- HomeScreen.initState で `BackupManager.createSnapshotIfNeeded()` を fire-and-forget
 
-#### `BlockEditor` 公開 API（block_editor.dart 確認済み）
-- `currentContent` getter
-- `hasAnyFocus` getter (緩い判定)
-- `hasActivePrimaryFocus` getter (厳密判定)
-- `focusedController` getter (フォーカス中 TextBlock の controller)
-- `insertImageFromPicker(ImageSource)`
-- `focusFirst()`, `focusLast()`, `focusAtSourceOffset(int)`
-- `wrapFocusedSelection(String wrapper)`
-- `currentSourceOffset` getter
+### Firebase 連携（Phase 9 Step 2-3）
+- Firebase プロジェクト `memolette-3a68b` 作成
+- flutterfire configure で iOS / Android / Web 3プラットフォーム登録
+- Authentication: Google + Apple 有効化（メール/パスワードは見送り）
+- iOS Info.plist に GoogleSignIn 用の URL Scheme（REVERSED_CLIENT_ID）追加
+- Firestore Database 作成（asia-northeast1、テストモード）
+- pubspec: firebase_core / firebase_auth / cloud_firestore / google_sign_in (v6) /
+  sign_in_with_apple / firebase_ui_auth / firebase_ui_oauth_google / firebase_ui_oauth_apple
+- main.dart で Firebase.initializeApp（失敗時もアプリ続行）
+- `lib/services/auth_service.dart` 新規（authStateProvider, GoogleProvider/AppleProvider）
+- `lib/screens/account_screen.dart` 新規（未ログイン: LoginView / ログイン済み: ユーザー情報+ログアウト）
 
-#### `BlockEditor` コンストラクタ
-```dart
-BlockEditor(
-  key: _blockEditorKey,
-  memoIdResolver: () => widget.memo.id,
-  initialContent: widget.memo.content,
-  onContentChanged: (s) { _contentController.text = s; _saveContent(); },
-  isMarkdown: widget.memo.isMarkdown,
-  readOnly: false,
-  scrollPaddingBottom: cursorBottomBuffer.toDouble(),
-)
-```
+### Firestore 同期（Phase 9 Step 5a-5d）
+- `lib/services/sync_service.dart` 新規
+  - 5a: `pingFirestore` — users/{uid} に lastPingAt 書き込み読み戻し
+  - 5b: `uploadAllMemos` — ローカル全メモを users/{uid}/memos に batch write（merge=true）
+  - 5c: `downloadAllMemos` — Firestore→ローカル、updatedAt 比較で新しい方を採用、既存は `batch.replace`(UPDATE) / 新規は `batch.insert`
+    - **重要**: `insertOrReplace` は SQLite REPLACE で「DELETE→INSERT」になり、memo_tags が孤児化（タグ全削除）するため必ず分岐する
+  - 5d: `syncOnce` — ダウンロード→アップロード を順次。同時実行ガード `_syncing`
+- HomeScreen の initState postFrame と `didChangeAppLifecycleState(resumed)` で `_autoSync` を fire-and-forget
+- AccountScreen に動作確認用4ボタン（接続テスト / アップロード / ダウンロード / 今すぐ同期）
+
+### データ消失バグ対策（多重ガード）
+1. `downloadAllMemos`: insertOrReplace → 既存 replace(UPDATE)（タグ孤児化防止）
+2. `_onChanged` の空メモ削除: タグ・eventDate・bgColor ガード追加（BlockEditor reload 中の一瞬空でタグ付き削除されないように）
+3. `_onFocusChange` の空メモ削除: 同様ガード追加 + activeMemoId が `widget.editingMemoId ?? _selfCreatedMemoId` を見るように
+4. `loadMemoDirectly`: タグ反映ガード緩和（editingMemoId が null=親未更新でも反映、縮小ビューでタグバッジが表示されない問題）
+5. `purgeEmptyMemos`: タグ・色・eventDate 持ちは候補から除外
+6. `_clearInput`: `_selfCreatedMemoId = null` クリア追加（次の入力で確実に新メモ作成）
+7. `_onChanged`: `widget.editingMemoId ?? _selfCreatedMemoId` で memoId 判定し、自作メモにも updateMemo を走らせる（onMemoCreated 通知後の数フレーム間の入力ロスト防止）
+8. DB 削除系関数（deleteMemo / deleteMemos / purgeEmptyMemos / removeTagFromMemo）に StackTrace 付き print を仕込み（再現時にフローを追える）
+
+### dummy seed 増殖バグ修正
+- `seedDummyBulkMemos` が「同名タグがあっても、タイトル付きメモが count 未満なら補充」していた → メモが何かの理由で減ると毎起動で 70 件まるごと再投入されてダミー増殖
+- 修正: 同名タグがあれば一切 seed しない
+- main.dart の起動 seed をダミー70・長文・画像のみに絞る（仕事/日記等の親タグ・子タグ・タグ履歴は外す）
+
+### 全データ削除（Firestore 連携対応）
+- 既存ボタンが `db.wipeAll` のみだったので、Firestore users/{uid}/memos の batch 削除も含めるよう拡張
+- 削除後はアプリ完全終了→再起動で seed が再実行されて綺麗な初期状態に
+
+## 次のアクション（次セッション #38）
+
+### Phase 9 残タスク
+- [ ] **Step 5e: 競合解決 UI**（最終更新優先 + 競合履歴の閲覧）
+- [ ] **タグ・ToDo・画像の同期**（メモ本体だけしか同期していないため、別デバイスで「タグなし」状態になってしまう）
+- [ ] **削除の同期**（ローカル削除しても Firestore には残るため、再ダウンロードで復活する）
+- [ ] **Step 4: サブスク**（RevenueCat / in_app_purchase）
+
+### 同期で発生中の既知の現象
+- 「ダミー70-069」 のタイトルを編集 → スイッチャーOFF → 再起動 で1度メモが消える事象を観測（タグも外れて「すべて」フォルダにも出ない、ただし Firestore には残ってて再同期で復活）
+- 多重ガード追加で再現しなくなったが、タイミング依存の競合状態が他にも潜んでいる可能性あり
+- 削除系関数のログ仕込みは残してあるので、再現時はフローを追跡可能
 
 ### 残タスク（ROADMAP「備忘」より）
-- ToDo の複数リスト結合機能（実装済みかも要確認）
-- 爆速整理モードと ToDo の iPad 対応
-- メモ入力エリア枠外右下の eventDate 表示を機種ごとに確認
-- 選択モード関連の iPad 対応チェック
-- アプリ全体の iOS 風 UI 要素を Memolette オリジナル風に置き換え
-- iPad 縦↔横回転時の編集状態維持
-- iPad スプリット時の右側メモ編集画面: 上余白 + 左上閉じるボタン
-- メモカードの画像サムネイルを右端固定に
+- データ保護画面のダイアログ文言検討（バックアップ作成成功時 / Documents エクスポート成功時 / 復元前の確認 / 復元後の再起動案内）
+- Firestore セキュリティルールを「テストモード」から本番ルールに書き換える（30日以内、Phase 9 同期実装と並行）
+- データ保護画面の「復元」改修: 一覧から直タップではなく、「復元」ボタンを置いて押した先でバックアップ一覧→選択→確認ダイアログ、のワンクッション構成に
 
 ### 実機検証の積み残し
 - 13 mini シミュは起動したまま（pipe: `/tmp/flutter_pipe_13`）
+- iPad Pro 12.9 シミュも起動可（pipe: `/tmp/flutter_pipe_ipad`）。この session 中は kill 済み
+- iPhone SE 3 シミュ（pipe: `/tmp/flutter_pipe_se`）。同期検証用に起動した
 - 15 Pro Max / iPad は wireless 接続が前回不安定で実機未確認
-- #36 の修正全部シミュのみ確認
 
 ## 技術メモ
 
-### 階層制限の実装パターン (todo_list_screen.dart)
-- `const int _maxDepth = 5;` は色配列インデックスの上限
-- `_normalMaxDepth = 4` / `_mergedMaxDepth = 5` で階層制限を分離
-- State で `bool _isMergedList = false; StreamSubscription<TodoList?>? _listSub;` を保持
-- `initState` で `_listSub = _watchList().listen((list) { ... })` で更新
-- `int get _effectiveMaxDepth => _isMergedList ? _mergedMaxDepth : _normalMaxDepth;`
-- `dispose` で `_listSub?.cancel();`
+### Firebase プロジェクト情報
+- プロジェクト ID: `memolette-3a68b`
+- iOS Bundle: `com.memolette.memolette`
+- Auth プロバイダ: Google + Apple（テストモード SecurityRules、30日間オープン）
+- Firestore リージョン: asia-northeast1（東京）
 
-### Stack オーバーレイで行高さ維持
-- `clipBehavior: Clip.none` の Stack なら、Positioned のはみ出しを許容
-- 例: ToDo 項目の日付バッジ右上配置 (`bottom: 0` から `top: -2` 等)
+### iOS Sign-In セットアップ手順
+1. flutterfire configure で `lib/firebase_options.dart` 自動生成
+2. iOS の場合は xcodeproj gem 必要 → `gem install --user-install xcodeproj`
+3. ios/Runner/Info.plist に CFBundleURLTypes で REVERSED_CLIENT_ID を追加
+4. pod install で Firebase pods (40件くらい)
 
-### 結合元の最大階層計算（todo_lists_screen.dart）
-```dart
-final items = await (db.select(db.todoItems)
-      ..where((t) => t.listId.equals(id)))
-    .get();
-final byId = {for (final i in items) i.id: i};
-var maxDepth = 0;
-for (final item in items) {
-  var d = 0;
-  var pid = item.parentId;
-  while (pid != null) { d++; pid = byId[pid]?.parentId; }
-  if (d > maxDepth) maxDepth = d;
-}
-if (maxDepth >= 5) { showToast(...); return; }
-```
+### SQLite REPLACE の罠
+- `Batch.insert(table, companion, mode: InsertMode.insertOrReplace)` は内部的に
+  REPLACE で「既存行 DELETE → INSERT」になる。ここで子テーブル（memo_tags 等）の
+  外部キーが ON DELETE CASCADE でないと孤児化（タグが全部外れる）する
+- 既存は `batch.replace(table, companion)` (UPDATE)、新規は `batch.insert` に
+  分岐する。`localById.containsKey(id)` で判定
+
+### 起動時 dummy seed のガード設計
+- 既存タグの存在チェックだけで判断。「件数比較で補充」 はバグの温床（メモが減ると再投入される）
+- main.dart で seed を絞る方針（タグ・履歴は手動投入に）
 
 ### シミュ / 実機 ID
 - iPhone SE 3rd iOS26: `47003836-6426-4AB1-90FC-C5E73DA251C1`

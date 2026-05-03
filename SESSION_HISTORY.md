@@ -1048,6 +1048,45 @@
 ---
 ## #36 (2026-05-02)
 
+---
+## #37 (2026-05-02 〜 05-03、超長め・27コミット)
+
+### UI・UX 改善
+- 爆速モードのカード本文 BlockEditor 化（画像インライン表示・追加対応、ツールバーは消しゴム/画像/Undo/Redo + KeyboardDoneBar の完了）
+- メモカードのサムネを右端固定（外側 Stack で Positioned）
+- 爆速モード余白フリック / ToDo 余白タップで unfocus
+- iPad 回転時に編集モード維持（WidgetsBindingObserver + suppressFalseFocus）
+- iPad 選択モードバナー位置調整（縦は中央寄せ+maxWidth、横はタブ前面+左カラム制限）
+- ToDo iPad 横画面の左カラム緑背景を画面下端まで
+- 多機能ボタン → Icons.more_horiz（多機能アイコンラボから選定）
+- 消しゴムで本文 + 画像 + DB レコードまるごとクリア
+- 画像追加でライブラリ複数選択（5枚まで）
+
+### Phase 9 同期着手
+- Step 1 データ保護: BackupManager 新規（自動スナップショット 24h + エクスポート + 復元 UI）
+- Step 2 Firebase 接続: プロジェクト memolette-3a68b 作成、 flutterfire configure で iOS/Android/Web 登録、 firebase_core/auth/firestore + firebase_ui_auth + Google/Apple OAuth 追加
+- Step 3 Auth UI: Google + Apple ログイン UI（firebase_ui_auth.LoginView）、 アカウント画面でログイン/ログアウト
+- Step 5a-5d Firestore 同期: ping → メモのアップロード（batch write）→ ダウンロード（updatedAt 比較で新しい方を採用、既存は replace=UPDATE で memo_tags 孤児化防止）→ 双方向 syncOnce + 起動時/復帰時の自動トリガー
+
+### 重大バグ対策
+- タグ孤児化バグ: insertOrReplace の REPLACE が「DELETE→INSERT」で memo_tags を孤児化していた（タグ全削除）。 既存メモは `batch.replace`(UPDATE) に分岐
+- 空メモ削除の暴発: `_onChanged` / `_onFocusChange` / `purgeEmptyMemos` の3層ガード。 タグ・eventDate・bgColor 持ちは絶対削除しない
+- loadMemoDirectly のタグ反映: editingMemoId が null（親未更新）でも反映、 縮小ビューでタグバッジが空のまま問題を解消
+- dummy seed 増殖バグ: `seedDummyBulkMemos` が件数比較で「足りない分を補充」 していた → メモが減ると毎起動で 70 件再投入。 同名タグがあれば一切 seed しないように修正
+- 起動時 seed をダミー70・長文・画像のみに絞る（仕事/日記等の親タグ・子タグ・タグ履歴は外す）
+
+### その他
+- 全データ削除ボタン強化（ローカル wipeAll + Firestore users/{uid}/memos batch 削除）
+- DB 削除系関数（deleteMemo / deleteMemos / purgeEmptyMemos / removeTagFromMemo）に StackTrace 付き print を仕込み、再現時にフローを追跡可能
+- ROADMAP に Phase 17 Web版（PWA / ブラウザ対応）を追加
+- 多機能アイコンラボ（27 候補比較）追加
+
+### 残タスク
+- Phase 9 Step 5e（競合解決 UI）、 タグ・ToDo・画像の同期、 削除の同期、 Step 4 サブスク（RevenueCat）
+- データ保護画面のダイアログ文言、 Firestore セキュリティルール本番化（30日以内）、 「復元」 ワンクッション化
+
+
+
 ### サマリ
 ROADMAP 備忘から 3 件を片付け + 1 件中断保留。シミュ確認のみ、実機検証は未。
 
