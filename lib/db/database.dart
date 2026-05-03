@@ -559,14 +559,16 @@ class AppDatabase extends _$AppDatabase {
     bool isSystem = false,
   }) async {
     // 重複チェック（同じ親スコープ内に同名タグがあれば既存を返す）
+    // 同期で別端末から同名タグが流入し複数あるケースもあるので get で取得し、
+    // 最初の1件を採用する（getSingleOrNull だと複数あると例外になる）
     final query = select(tags)..where((t) => t.name.equals(name));
     if (parentTagId == null) {
       query.where((t) => t.parentTagId.isNull());
     } else {
       query.where((t) => t.parentTagId.equals(parentTagId));
     }
-    final existing = await query.getSingleOrNull();
-    if (existing != null) return existing;
+    final existingList = await query.get();
+    if (existingList.isNotEmpty) return existingList.first;
 
     final id = _uuid.v4();
     // 末尾にsortOrderを設定
@@ -1436,10 +1438,11 @@ class AppDatabase extends _$AppDatabase {
         .get();
     if (existing.isNotEmpty) return;
 
-    // タグが無ければ作る
-    var longTag = await (select(tags)
+    // タグが無ければ作る（同期で同名複数の可能性があるので get で1件目採用）
+    final longTagList = await (select(tags)
           ..where((t) => t.name.equals('長文テスト')))
-        .getSingleOrNull();
+        .get();
+    var longTag = longTagList.isEmpty ? null : longTagList.first;
     longTag ??= await createTag(name: '長文テスト', colorIndex: 60);
 
     // 基本パラグラフ（~200文字）
@@ -1485,10 +1488,12 @@ class AppDatabase extends _$AppDatabase {
     // 既に同名タグがあれば一切 seed しない（過去の不具合：count 比較で
     // 「足りない分を再投入」していたが、メモが何かの理由で減ると毎起動で
     // 70 件まるごと再投入されてダミーが増殖する重大バグの原因だった）。
-    final existingTag = await (select(tags)
+    // 同期で別端末から同名タグが流入して複数存在することがあるので
+    // getSingleOrNull ではなく get で「ひとつでもあれば」判定する。
+    final existingTags = await (select(tags)
           ..where((t) => t.name.equals(tagName)))
-        .getSingleOrNull();
-    if (existingTag != null) return;
+        .get();
+    if (existingTags.isNotEmpty) return;
 
     final tag = await createTag(name: tagName, colorIndex: 42);
     for (int i = 1; i <= count; i++) {
