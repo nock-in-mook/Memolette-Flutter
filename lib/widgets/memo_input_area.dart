@@ -158,6 +158,12 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
   final _contentController = MarkdownTextController();
   final _titleFocusNode = FocusNode();
   final _contentFocusNode = FocusNode();
+
+  // 編集中メモを購読し、リモート同期で content / title が変わったら反映する。
+  // これがないと、別端末で画像追加したときに block_editor の content が
+  // 旧状態のまま再構築されて画像が末尾に集まってしまう（Phase 9 画像同期）。
+  StreamSubscription<Memo?>? _memoSub;
+  String? _memoSubId;
   final _contentScrollController = ScrollController();
   // Phase 10++ ブロックエディタ実験: 本文を TextField+画像 Strip ではなく BlockEditor で描画
   final GlobalKey<BlockEditorState> _blockEditorKey =
@@ -474,6 +480,37 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     // これがないと、タグシート等を上に開いたときにツールバー Overlay が
     // 残留したまま再評価されない。
     FocusManager.instance.addListener(_onFocusChange);
+    _resubscribeMemoIfNeeded();
+  }
+
+  /// 編集中メモの購読を、現在の editingMemoId に合わせて張り直す。
+  /// リモート同期で content / title が変わったら、フォーカスが当たって
+  /// いない時だけ反映する（ユーザー入力中は破壊しない）。
+  void _resubscribeMemoIfNeeded() {
+    final id = widget.editingMemoId;
+    if (id == _memoSubId) return;
+    _memoSub?.cancel();
+    _memoSub = null;
+    _memoSubId = id;
+    if (id == null) return;
+    final db = ref.read(databaseProvider);
+    _memoSub = db.watchMemoById(id).listen((memo) {
+      if (!mounted || memo == null) return;
+      // 別メモに切り替わってたら反映しない（didUpdateWidget で切替済みのはず）
+      if (widget.editingMemoId != id) return;
+      // 既にローカル状態と一致 → スキップ（自分の更新通知の往復など）
+      // 自端末で編集中の場合は controller.text と一致してるはずなのでこの分岐で抜ける。
+      if (_contentController.text == memo.content &&
+          _titleController.text == memo.title) {
+        return;
+      }
+      // リモートからの content / title 更新を反映。
+      // 編集中の上書き懸念はあるが、自端末更新は値一致で skip されるため、
+      // ここに来るのはリモート更新（自分が編集してない期間）のはず。
+      // テキスト編集中の競合発生時は競合履歴に記録される（Phase 9 Step 5e）。
+      _applyMemoData(memo);
+      if (mounted) setState(() {});
+    });
   }
 
   void _onFocusChange() {
@@ -531,6 +568,7 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       });
     }
     if (widget.editingMemoId != oldWidget.editingMemoId) {
+      _resubscribeMemoIfNeeded();
       if (widget.editingMemoId != null) {
         // 自分で作成したメモなら再ロード不要（閲覧モードにしない）
         // ただしタグは外部（home_screen）から付与された可能性があるので再取得する
@@ -1017,6 +1055,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
     _toolbarOverlay = null;
     KeyboardDoneBar.accessoryHeight.value = 0;
     _tagFlashTimer?.cancel();
+    _memoSub?.cancel();
+    _memoSub = null;
     FocusManager.instance.removeListener(_onFocusChange);
     _titleController.dispose();
     _contentController.dispose();

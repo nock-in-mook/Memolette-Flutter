@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -67,6 +68,15 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
   // 最後にフォーカスされた TextBlock の ID（画像挿入位置の決定用）
   String? _lastFocusedTextBlockId;
   bool _initialized = false;
+
+  // 編集中メモの画像セットを購読し、同期受信で画像が増減したら再構築する。
+  // ローカル追加・削除は自前で _blocks に反映済みなので差分なし → 再構築スキップ。
+  StreamSubscription<List<MemoImage>>? _imagesSub;
+  String? _imagesSubMemoId;
+  // 自分で addMemoImage / deleteMemoImage を呼んでいる最中は watchMemoImages の
+  // 発火を無視する（DB 反映が _blocks 反映より先に listener 起動するため、
+  // 「knownIds に未反映の画像あり」と誤検知して末尾に重複追加されてしまう）。
+  bool _suppressImagesWatch = false;
 
   // ========================================
   // 公開 API
@@ -267,12 +277,22 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
       return;
     }
     final db = ref.read(databaseProvider);
-    final img = await db.addMemoImage(
-      memoId: memoId,
-      filePath: relPath,
-    );
-    if (!mounted) return;
-    _insertImageAtCursor(img);
+    // addMemoImage の DB insert 直後に watchMemoImages が発火してしまい、
+    // _insertImageAtCursor が走る前に「未反映」と誤検知されるのを防ぐ。
+    _suppressImagesWatch = true;
+    try {
+      final img = await db.addMemoImage(
+        memoId: memoId,
+        filePath: relPath,
+      );
+      if (!mounted) return;
+      _insertImageAtCursor(img);
+    } finally {
+      // _blocks に反映済みになる次フレームで解除（その間に来る発火は捨てる）
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _suppressImagesWatch = false;
+      });
+    }
   }
 
   /// 本文文字列の外部更新（親から置き換えたい場合）
@@ -382,6 +402,9 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
   void initState() {
     super.initState();
     _initAsync();
+    // 画像 watch は _initAsync 完了後に開始する（_initAsync 内で呼ぶ）。
+    // 早すぎると初回 listener 発火時 _blocks が空で「DB 画像あり vs ローカル空」
+    // と誤検知して initialContent のテキストが消えてしまう。
   }
 
   @override
@@ -395,6 +418,50 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
     if (oldWidget.isMarkdown != widget.isMarkdown) {
       _applyMarkdownToControllers();
     }
+    // メモ切替後など、購読対象 memoId が変わった可能性があるので再評価
+    _resubscribeToImagesIfNeeded();
+  }
+
+  /// 編集中メモの画像セットの購読を、現在の memoId に合わせて張り直す。
+  /// 同期受信で画像が DB に追加されたら、現状の content を保ったまま
+  /// _loadBlocksFromContent で ImageBlock を作り直す。
+  void _resubscribeToImagesIfNeeded() {
+    final memoId = widget.memoIdResolver();
+    if (memoId == _imagesSubMemoId) return;
+    _imagesSub?.cancel();
+    _imagesSub = null;
+    _imagesSubMemoId = memoId;
+    if (memoId.isEmpty) return;
+    final db = ref.read(databaseProvider);
+    _imagesSub = db.watchMemoImages(memoId).listen((imgs) async {
+      if (!mounted) return;
+      // 自分の操作中（addMemoImage / deleteMemoImage 直後で _blocks 反映前）は無視
+      if (_suppressImagesWatch) return;
+      // 初期化中（_loadBlocksFromContent 完了前）は無視。
+      // ここで反応すると _blocks が空のまま再構築され initialContent のテキストが消える。
+      if (!_initialized) return;
+      final dbIds = imgs.map((i) => i.id).toSet();
+      final knownIds = _blocks
+          .whereType<_ImageBlock>()
+          .map((b) => b.image.id)
+          .toSet();
+      // ローカル状態と DB が一致 → 既反映 → 何もしない
+      if (dbIds.length == knownIds.length && dbIds.containsAll(knownIds)) {
+        return;
+      }
+      // 差分あり: 同期で画像が増減 / DL 後追い → DB の最新 memo.content で再構築。
+      // _serialize() を使うと block_editor の現状（古いマーカー列）になり、新規画像が
+      // 末尾に集まってしまう。memo doc は同期受信で既に更新されているので、
+      // DB から最新 content を取り直すのが正解。
+      final memo = await db.getMemoById(memoId);
+      if (!mounted) return;
+      final content = memo?.content ?? _serialize();
+      _disposeBlocks();
+      _blocks.clear();
+      _initialized = false;
+      if (mounted) setState(() {});
+      _loadBlocksFromContent(content);
+    });
   }
 
   /// 全 TextBlock の MarkdownTextController の enabled を現在の isMarkdown に同期
@@ -406,11 +473,18 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
 
   @override
   void dispose() {
+    _imagesSub?.cancel();
+    _imagesSub = null;
     _disposeBlocks();
     super.dispose();
   }
 
-  Future<void> _initAsync() => _loadBlocksFromContent(widget.initialContent);
+  Future<void> _initAsync() async {
+    await _loadBlocksFromContent(widget.initialContent);
+    if (!mounted) return;
+    // 初期 _blocks が確定してから画像 watch を購読し、初回イベントの誤検知を防ぐ
+    _resubscribeToImagesIfNeeded();
+  }
 
   /// 指定 content から DB 画像を取得してブロック配列を再構築
   Future<void> _loadBlocksFromContent(String content) async {
@@ -547,8 +621,17 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
     final clamped = offset.clamp(0, text.length);
     // ブロック分割 + 画像 Padding で自然に1行分の空きが生まれるため
     // ここで \n を追加すると視覚的に改行が2つに見える → 追加しない
-    final before = text.substring(0, clamped);
-    final after = text.substring(clamped);
+    var before = text.substring(0, clamped);
+    var after = text.substring(clamped);
+    // 画像ブロック自体がパディングで1行分の空きを持つため、
+    // 直前の改行 / 直後の改行をそれぞれ 1 つずつ吸収する。
+    // これで「空行の頭で挿入すると視覚的に空行 + 画像 + 空行になる」現象を防ぐ。
+    if (before.endsWith('\n')) {
+      before = before.substring(0, before.length - 1);
+    }
+    if (after.startsWith('\n')) {
+      after = after.substring(1);
+    }
     // 置換: [..., TextBlock(before), ImageBlock(img), TextBlock(after), ...]
     target.controller.removeListener(_onTextChanged);
     target.focusNode.removeListener(_onFocus);
@@ -579,9 +662,18 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
     );
     if (!ok) return;
     final db = ref.read(databaseProvider);
-    await db.deleteMemoImage(block.image.id);
-    if (!mounted) return;
-    _removeImageBlock(block);
+    // deleteMemoImage の DB 削除直後に watchMemoImages が発火し、
+    // 「ローカルの ImageBlock がまだ残っている」と誤検知して再構築されないよう抑制
+    _suppressImagesWatch = true;
+    try {
+      await db.deleteMemoImage(block.image.id);
+      if (!mounted) return;
+      _removeImageBlock(block);
+    } finally {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _suppressImagesWatch = false;
+      });
+    }
   }
 
   /// ImageBlock を削除し、前後の TextBlock を1つにマージ
@@ -595,8 +687,12 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
         ? _blocks[idx + 1] as _TextBlock
         : null;
     _blocks.removeAt(idx);
+    // 削除後にフォーカスを戻すターゲット（編集モードを継続する）
+    _TextBlock? focusTarget;
+    int focusCursor = 0;
     if (before != null && after != null) {
-      // マージ: before + after
+      // マージ: before + after。カーソルは「画像があった位置」= before.text.length
+      final cursorPos = before.controller.text.length;
       final merged = _TextBlock(
         text: before.controller.text + after.controller.text,
         id: _uuid.v4(),
@@ -613,11 +709,31 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
       // idx-1 (before) を merged で置換、idx (元 after の位置) を削除
       _blocks[idx - 1] = merged;
       _blocks.removeAt(idx);
+      focusTarget = merged;
+      focusCursor = cursorPos;
+    } else if (before != null) {
+      focusTarget = before;
+      focusCursor = before.controller.text.length;
+    } else if (after != null) {
+      focusTarget = after;
+      focusCursor = 0;
     }
     _attachListeners();
     _applyMarkdownToControllers();
     widget.onContentChanged(_serialize());
     if (mounted) setState(() {});
+    // 削除確認ダイアログ閉じでキーボード/フォーカスが外れた状態から、
+    // 画像があった位置にカーソルを戻して編集モードを継続する。
+    if (focusTarget != null) {
+      final target = focusTarget;
+      final cursor = focusCursor;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        target.focusNode.requestFocus();
+        target.controller.selection =
+            TextSelection.collapsed(offset: cursor);
+      });
+    }
   }
 
   // ========================================
@@ -724,24 +840,31 @@ class BlockEditorState extends ConsumerState<BlockEditor> {
                             ),
                     ),
                   ),
-                  Positioned(
-                    top: -6,
-                    right: -6,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => _confirmDeleteImage(block),
-                      child: Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.black.withValues(alpha: 0.7),
+                  // ×ボタンは編集モード時のみ表示。
+                  // 周囲に透明 padding を入れてタップ判定を広げるが、上方向は
+                  // 画像直上のテキスト末尾と干渉しないよう控えめにする。
+                  if (!widget.readOnly)
+                    Positioned(
+                      top: -10,
+                      right: -14,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => _confirmDeleteImage(block),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+                          child: Container(
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.black.withValues(alpha: 0.7),
+                            ),
+                            child: const Icon(Icons.close,
+                                size: 14, color: Colors.white),
+                          ),
                         ),
-                        child: const Icon(Icons.close,
-                            size: 14, color: Colors.white),
                       ),
                     ),
-                  ),
                 ],
               ),
             );
