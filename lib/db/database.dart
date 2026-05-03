@@ -1335,19 +1335,15 @@ class AppDatabase extends _$AppDatabase {
     String tagName = 'ダミー70',
     int count = 70,
   }) async {
-    // 既に同名タグ＋ダミーメモがあればスキップ
+    // 既に同名タグがあれば一切 seed しない（過去の不具合：count 比較で
+    // 「足りない分を再投入」していたが、メモが何かの理由で減ると毎起動で
+    // 70 件まるごと再投入されてダミーが増殖する重大バグの原因だった）。
     final existingTag = await (select(tags)
           ..where((t) => t.name.equals(tagName)))
         .getSingleOrNull();
-    if (existingTag != null) {
-      final existingMemos = await (select(memos)
-            ..where((m) => m.title.like('$tagName-%')))
-          .get();
-      if (existingMemos.length >= count) return;
-    }
+    if (existingTag != null) return;
 
-    final tag = existingTag ?? await createTag(name: tagName, colorIndex: 42);
-
+    final tag = await createTag(name: tagName, colorIndex: 42);
     for (int i = 1; i <= count; i++) {
       final memo = await createMemo(
         title: '$tagName-${i.toString().padLeft(3, '0')}',
