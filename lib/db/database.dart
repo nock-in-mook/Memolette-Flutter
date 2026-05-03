@@ -69,8 +69,15 @@ class AppDatabase extends _$AppDatabase {
             await m.createTable(conflictHistories);
           }
           if (from < 8) {
-            // Phase 9 タグ同期: Tags.updatedAt 追加
-            await m.addColumn(tags, tags.updatedAt);
+            // Phase 9 タグ同期: Tags.updatedAt 追加。
+            // SQLite の ALTER TABLE は「NOT NULL + 非const デフォルト」を許さないため、
+            // drift の m.addColumn(currentDateAndTime デフォルト) を使うと
+            // "Cannot add a column with non-constant default" で失敗する。
+            // 一旦 DEFAULT 0 で NOT NULL 追加 → 既存行を現在時刻 (Unix epoch 秒) で UPDATE。
+            await customStatement(
+                'ALTER TABLE tags ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0');
+            await customStatement(
+                "UPDATE tags SET updated_at = CAST(strftime('%s', 'now') AS INTEGER)");
           }
         },
       );
