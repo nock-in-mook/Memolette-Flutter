@@ -1,12 +1,14 @@
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:drift/drift.dart' as drift;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 
 import '../db/database.dart';
+import '../utils/image_storage.dart';
 
 /// Firestore との同期を担うサービス層。
 /// Phase 9 Step 5 で段階的に拡張する：
@@ -58,7 +60,12 @@ class SyncService {
   /// Memo を Firestore へ書く Map に変換
   /// DateTime は Firestore Timestamp 経由でサーバ側に保存する
   /// [tagIds] を渡すと memo doc に tagIds 配列を含めて同期する（Phase 9 タグ同期 T2）
-  static Map<String, dynamic> _memoToMap(Memo m, {List<String>? tagIds}) {
+  /// [images] を渡すと memo doc に images 配列を含めて同期する（Phase 9 画像同期）
+  static Map<String, dynamic> _memoToMap(
+    Memo m, {
+    List<String>? tagIds,
+    List<MemoImage>? images,
+  }) {
     return {
       'id': m.id,
       'title': m.title,
@@ -75,9 +82,135 @@ class SyncService {
         'lastViewedAt': Timestamp.fromDate(m.lastViewedAt!),
       if (m.eventDate != null) 'eventDate': Timestamp.fromDate(m.eventDate!),
       if (tagIds != null) 'tagIds': tagIds,
+      if (images != null) 'images': images.map(_imageToMap).toList(),
       // 同期用メタ
       'syncedAt': FieldValue.serverTimestamp(),
     };
+  }
+
+  /// 画像メタを Firestore Map にする（remoteUrl が設定済み前提）
+  static Map<String, dynamic> _imageToMap(MemoImage img) {
+    return {
+      'id': img.id,
+      'sortOrder': img.sortOrder,
+      if (img.remoteUrl != null) 'url': img.remoteUrl,
+    };
+  }
+
+  /// memo doc の images 配列を解釈する。url が無いものは「他端末がまだ
+  /// アップロード中」とみなして除外する（DL できないため）。
+  static List<_RemoteImageMeta> _extractImages(Map<String, dynamic> data) {
+    final raw = data['images'];
+    if (raw is! List) return const [];
+    final out = <_RemoteImageMeta>[];
+    for (final entry in raw) {
+      if (entry is! Map) continue;
+      final id = entry['id'];
+      final url = entry['url'];
+      if (id is! String || url is! String) continue;
+      out.add(_RemoteImageMeta(
+        id: id,
+        url: url,
+        sortOrder: (entry['sortOrder'] as num?)?.toInt() ?? 0,
+      ));
+    }
+    return out;
+  }
+
+  /// Storage パス: users/{uid}/memo_images/{imageId}.jpg
+  static Reference? _imageStorageRef(String imageId) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return null;
+    return FirebaseStorage.instance
+        .ref()
+        .child('users/$uid/memo_images/$imageId.jpg');
+  }
+
+  /// 1枚の画像を Storage にアップロードして URL を取得 → DB に保存。
+  /// 既に remoteUrl が設定済みなら no-op。
+  static Future<void> _uploadOneImage(AppDatabase db, MemoImage img) async {
+    if (img.remoteUrl != null) return;
+    final ref = _imageStorageRef(img.id);
+    if (ref == null) return;
+    final absPath = await ImageStorage.absolutePath(img.filePath);
+    final file = File(absPath);
+    if (!await file.exists()) return;
+    await ref.putFile(file);
+    final url = await ref.getDownloadURL();
+    await db.setMemoImageRemoteUrl(img.id, url);
+  }
+
+  /// 指定メモの未アップ画像を全て Storage に上げて、最新の MemoImage リストを返す。
+  /// 失敗した画像は remoteUrl が null のままになるので、メモ doc にも url が
+  /// 含まれず、他端末はその画像を skip する（次回再試行）。
+  static Future<List<MemoImage>> _ensureMemoImagesUploaded(
+      AppDatabase db, String memoId) async {
+    var images = await db.getMemoImages(memoId);
+    final pending = images.where((i) => i.remoteUrl == null).toList();
+    if (pending.isEmpty) return images;
+    for (final img in pending) {
+      try {
+        await _uploadOneImage(db, img);
+      } catch (_) {
+        // 失敗時は次回 scheduleUpload で再試行
+      }
+    }
+    return await db.getMemoImages(memoId);
+  }
+
+  /// memo doc から受信した画像メタに基づいて、ローカル画像セットを同期する。
+  /// - リモートにあるがローカルに無い id → Storage から DL → 保存 + DB upsert
+  /// - ローカルにあるがリモートに無い id → ローカル削除（実ファイルも）
+  /// - 両方にある → sortOrder / url が変わってれば upsert
+  static Future<void> _syncImagesFromRemote(
+    AppDatabase db,
+    String memoId,
+    List<_RemoteImageMeta> remote,
+  ) async {
+    final local = await db.getMemoImages(memoId);
+    final localById = {for (final i in local) i.id: i};
+    final remoteIds = {for (final r in remote) r.id};
+
+    // ローカルのみ: 削除
+    for (final loc in local) {
+      if (!remoteIds.contains(loc.id)) {
+        await db.removeMemoImageLocalOnly(loc.id);
+      }
+    }
+    // リモート → ローカル反映
+    for (final rem in remote) {
+      final existing = localById[rem.id];
+      if (existing != null) {
+        // メタ更新が必要なら upsert（filePath は既存を維持）
+        if (existing.sortOrder != rem.sortOrder ||
+            existing.remoteUrl != rem.url) {
+          await db.upsertMemoImageFromRemote(
+            id: rem.id,
+            memoId: memoId,
+            filePath: existing.filePath,
+            sortOrder: rem.sortOrder,
+            remoteUrl: rem.url,
+          );
+        }
+        continue;
+      }
+      // 未取得: Storage から DL → ローカル保存 → DB upsert
+      try {
+        final ref = FirebaseStorage.instance.refFromURL(rem.url);
+        final bytes = await ref.getData(20 * 1024 * 1024); // 20MB 上限
+        if (bytes == null) continue;
+        final relPath = await ImageStorage.saveBytes(bytes);
+        await db.upsertMemoImageFromRemote(
+          id: rem.id,
+          memoId: memoId,
+          filePath: relPath,
+          sortOrder: rem.sortOrder,
+          remoteUrl: rem.url,
+        );
+      } catch (_) {
+        // DL 失敗時は次回受信で再試行
+      }
+    }
   }
 
   /// Firestore Map から tagIds 配列を取り出す（無ければ null）。
@@ -91,6 +224,7 @@ class SyncService {
 
   /// Step 5b: ローカル DB の全メモを Firestore へアップロード（one-way）
   /// users/{uid}/memos/{memoId} に batch write する。
+  /// 画像本体は先に Storage へアップロードし、URL を memo doc の images 配列に含める。
   /// 戻り値: アップロード件数
   /// 例外: 未ログイン / ネットワーク失敗 / Firestore 書込み失敗
   static Future<int> uploadAllMemos(AppDatabase db) async {
@@ -107,6 +241,21 @@ class SyncService {
     for (final mt in allMemoTags) {
       tagsByMemoId.putIfAbsent(mt.memoId, () => []).add(mt.tagId);
     }
+    // 未アップ画像を全て Storage に上げる（Phase 9 画像同期）
+    final allImages = await db.select(db.memoImages).get();
+    final pendingImages = allImages.where((i) => i.remoteUrl == null).toList();
+    for (final img in pendingImages) {
+      try {
+        await _uploadOneImage(db, img);
+      } catch (_) {
+        // 失敗時は次回再試行（remoteUrl == null のまま残る → memo doc にも含まれない）
+      }
+    }
+    // アップ後の状態を再取得して memoId 毎に分類
+    final imagesByMemoId = <String, List<MemoImage>>{};
+    for (final img in await db.select(db.memoImages).get()) {
+      imagesByMemoId.putIfAbsent(img.memoId, () => []).add(img);
+    }
     // batch write: 1 batch あたり最大 500 件まで
     const chunkSize = 400;
     var written = 0;
@@ -116,7 +265,12 @@ class SyncService {
       for (final m in memos.sublist(start, end)) {
         final ref = userRef.collection('memos').doc(m.id);
         final tagIds = tagsByMemoId[m.id] ?? const <String>[];
-        batch.set(ref, _memoToMap(m, tagIds: tagIds), SetOptions(merge: true));
+        final imgs = imagesByMemoId[m.id] ?? const <MemoImage>[];
+        batch.set(
+          ref,
+          _memoToMap(m, tagIds: tagIds, images: imgs),
+          SetOptions(merge: true),
+        );
         // リアルタイム購読の自端末発火フィルタ用
         _registerSelfUpload(m.id, m.updatedAt);
       }
@@ -201,6 +355,8 @@ class SyncService {
     final companions = <MemosCompanion>[];
     // memoId → tagIds: batch 完了後に setTagIdsForMemo で反映する
     final tagIdsByMemoId = <String, List<String>>{};
+    // memoId → 画像メタ: batch 完了後に _syncImagesFromRemote で反映する
+    final imagesByMemoId = <String, List<_RemoteImageMeta>>{};
     final conflictRecords = <_ConflictRecord>[];
     final now = DateTime.now();
     for (final doc in snapshot.docs) {
@@ -213,11 +369,13 @@ class SyncService {
       final id = companion.id.value;
       final remoteUpdated = companion.updatedAt.value;
       final remoteTagIds = _extractTagIds(data);
+      final remoteImages = _extractImages(data);
       final local = localById[id];
       if (local == null) {
         inserted++;
         companions.add(companion);
         if (remoteTagIds != null) tagIdsByMemoId[id] = remoteTagIds;
+        imagesByMemoId[id] = remoteImages;
       } else if (remoteUpdated.isAfter(local.updatedAt)) {
         // 競合判定: ローカルが直近 conflictWindow 以内に編集されていて、
         // かつ title / content の中身が異なる場合のみ「失われる側」として記録。
@@ -242,6 +400,7 @@ class SyncService {
         updated++;
         companions.add(companion);
         if (remoteTagIds != null) tagIdsByMemoId[id] = remoteTagIds;
+        imagesByMemoId[id] = remoteImages;
       } else if (local.updatedAt.isAfter(remoteUpdated)) {
         // ローカルが新しい：このダウンロードでは何もしないが、続く uploadAllMemos
         // でリモートが上書きされる。リモートが直近 conflictWindow 以内 + 内容違い
@@ -289,6 +448,14 @@ class SyncService {
     // タグ関連反映（受信した tagIds 配列でローカルの memoTags を全置換）
     for (final entry in tagIdsByMemoId.entries) {
       await db.setTagIdsForMemo(entry.key, entry.value);
+    }
+    // 画像関連反映（Phase 9 画像同期）
+    // - リモートのみ: Storage から DL → ローカル保存 + DB upsert
+    // - ローカルのみ: ローカル削除（実ファイルも）
+    // 起動時の syncOnce で大量にあれば DL 待ちで時間がかかるが、
+    // バックグラウンドで進行させるのが望ましい。今はシンプルに await で進める。
+    for (final entry in imagesByMemoId.entries) {
+      await _syncImagesFromRemote(db, entry.key, entry.value);
     }
     if (conflictRecords.isNotEmpty) {
       // 競合履歴を batch insert
@@ -787,19 +954,23 @@ class SyncService {
 
   /// 1メモだけ Firestore に書き込む（編集 debounce 後に呼ばれる）
   /// Firestore の docId はメモ id と同じ（merge=true で部分更新）
-  /// memo doc には現在のタグ ID リストも tagIds 配列として含める。
+  /// memo doc には現在のタグ ID / 画像メタも含める。
+  /// 画像本体は先に Firebase Storage へアップロードし、URL を取得してから
+  /// memo doc に images 配列として埋め込む（Phase 9 画像同期）。
   static Future<void> uploadOneMemo(AppDatabase db, String memoId) async {
     final ref = _userDocRef();
     if (ref == null) return;
     final memo = await db.getMemoById(memoId);
     if (memo == null) return;
     final tagIds = await db.getTagIdsForMemo(memoId);
+    // 画像を Storage に上げてから memo doc を書く
+    final images = await _ensureMemoImagesUploaded(db, memoId);
     // リアルタイム購読が「自端末発火」を無視するためのフィンガープリント登録
     _registerSelfUpload(memoId, memo.updatedAt);
-    await ref
-        .collection('memos')
-        .doc(memoId)
-        .set(_memoToMap(memo, tagIds: tagIds), SetOptions(merge: true));
+    await ref.collection('memos').doc(memoId).set(
+          _memoToMap(memo, tagIds: tagIds, images: images),
+          SetOptions(merge: true),
+        );
   }
 
   /// 編集 debounce 用：最後の入力から [uploadDebounceDelay] 経過後にまとめて
@@ -949,6 +1120,7 @@ class SyncService {
       final localById = {for (final m in localMemos) m.id: m};
       final companions = <MemosCompanion>[];
       final tagIdsByMemoId = <String, List<String>>{};
+      final imagesByMemoId = <String, List<_RemoteImageMeta>>{};
       final conflictRecords = <_ConflictRecord>[];
       final now = DateTime.now();
       var appliedFromRemote = 0;
@@ -961,6 +1133,7 @@ class SyncService {
         final id = companion.id.value;
         final remoteUpdated = companion.updatedAt.value;
         final remoteTagIds = _extractTagIds(data);
+        final remoteImages = _extractImages(data);
         // 自端末がアップロードしたばかりの内容なら無視
         if (_selfUploadFingerprints
             .contains(_fingerprint(id, remoteUpdated))) {
@@ -970,6 +1143,7 @@ class SyncService {
         if (local == null) {
           companions.add(companion);
           if (remoteTagIds != null) tagIdsByMemoId[id] = remoteTagIds;
+          imagesByMemoId[id] = remoteImages;
           appliedFromRemote++;
         } else if (remoteUpdated.isAfter(local.updatedAt)) {
           final remoteTitle = companion.title.value;
@@ -989,6 +1163,7 @@ class SyncService {
           }
           companions.add(companion);
           if (remoteTagIds != null) tagIdsByMemoId[id] = remoteTagIds;
+          imagesByMemoId[id] = remoteImages;
           appliedFromRemote++;
         }
         // ローカルが新しい場合は何もしない（次の自分側アップロードで上書き）
@@ -1008,6 +1183,10 @@ class SyncService {
       // タグ関連反映
       for (final entry in tagIdsByMemoId.entries) {
         await db.setTagIdsForMemo(entry.key, entry.value);
+      }
+      // 画像関連反映（DL は時間がかかるが、実用上の頻度はそれほど高くない）
+      for (final entry in imagesByMemoId.entries) {
+        await _syncImagesFromRemote(db, entry.key, entry.value);
       }
       if (conflictRecords.isNotEmpty) {
         await db.batch((batch) {
@@ -1087,5 +1266,18 @@ class _ConflictRecord {
     required this.lostContent,
     required this.lostUpdatedAt,
     required this.winnerUpdatedAt,
+  });
+}
+
+/// memo doc の images 配列から取り出した画像メタ
+class _RemoteImageMeta {
+  final String id;
+  final String url;
+  final int sortOrder;
+
+  const _RemoteImageMeta({
+    required this.id,
+    required this.url,
+    required this.sortOrder,
   });
 }

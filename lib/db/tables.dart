@@ -134,6 +134,7 @@ class TodoListTags extends Table {
 // ========================================
 // メモ画像テーブル（1メモに複数画像、順序管理）
 // filePath は Documents ディレクトリからの相対パス (例: memo_images/abc.jpg)
+// remoteUrl は Firebase Storage のダウンロード URL（同期で取得済みなら格納）
 // ========================================
 class MemoImages extends Table {
   TextColumn get id => text()();
@@ -141,6 +142,8 @@ class MemoImages extends Table {
   TextColumn get filePath => text()();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  // Phase 9 画像同期: Storage への URL（未アップなら null）
+  TextColumn get remoteUrl => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

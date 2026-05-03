@@ -3506,6 +3506,17 @@ class $MemoImagesTable extends MemoImages
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
+  static const VerificationMeta _remoteUrlMeta = const VerificationMeta(
+    'remoteUrl',
+  );
+  @override
+  late final GeneratedColumn<String> remoteUrl = GeneratedColumn<String>(
+    'remote_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -3513,6 +3524,7 @@ class $MemoImagesTable extends MemoImages
     filePath,
     sortOrder,
     createdAt,
+    remoteUrl,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3559,6 +3571,12 @@ class $MemoImagesTable extends MemoImages
         createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
       );
     }
+    if (data.containsKey('remote_url')) {
+      context.handle(
+        _remoteUrlMeta,
+        remoteUrl.isAcceptableOrUnknown(data['remote_url']!, _remoteUrlMeta),
+      );
+    }
     return context;
   }
 
@@ -3588,6 +3606,10 @@ class $MemoImagesTable extends MemoImages
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
       )!,
+      remoteUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}remote_url'],
+      ),
     );
   }
 
@@ -3603,12 +3625,14 @@ class MemoImage extends DataClass implements Insertable<MemoImage> {
   final String filePath;
   final int sortOrder;
   final DateTime createdAt;
+  final String? remoteUrl;
   const MemoImage({
     required this.id,
     required this.memoId,
     required this.filePath,
     required this.sortOrder,
     required this.createdAt,
+    this.remoteUrl,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3618,6 +3642,9 @@ class MemoImage extends DataClass implements Insertable<MemoImage> {
     map['file_path'] = Variable<String>(filePath);
     map['sort_order'] = Variable<int>(sortOrder);
     map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || remoteUrl != null) {
+      map['remote_url'] = Variable<String>(remoteUrl);
+    }
     return map;
   }
 
@@ -3628,6 +3655,9 @@ class MemoImage extends DataClass implements Insertable<MemoImage> {
       filePath: Value(filePath),
       sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
+      remoteUrl: remoteUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(remoteUrl),
     );
   }
 
@@ -3642,6 +3672,7 @@ class MemoImage extends DataClass implements Insertable<MemoImage> {
       filePath: serializer.fromJson<String>(json['filePath']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      remoteUrl: serializer.fromJson<String?>(json['remoteUrl']),
     );
   }
   @override
@@ -3653,6 +3684,7 @@ class MemoImage extends DataClass implements Insertable<MemoImage> {
       'filePath': serializer.toJson<String>(filePath),
       'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<DateTime>(createdAt),
+      'remoteUrl': serializer.toJson<String?>(remoteUrl),
     };
   }
 
@@ -3662,12 +3694,14 @@ class MemoImage extends DataClass implements Insertable<MemoImage> {
     String? filePath,
     int? sortOrder,
     DateTime? createdAt,
+    Value<String?> remoteUrl = const Value.absent(),
   }) => MemoImage(
     id: id ?? this.id,
     memoId: memoId ?? this.memoId,
     filePath: filePath ?? this.filePath,
     sortOrder: sortOrder ?? this.sortOrder,
     createdAt: createdAt ?? this.createdAt,
+    remoteUrl: remoteUrl.present ? remoteUrl.value : this.remoteUrl,
   );
   MemoImage copyWithCompanion(MemoImagesCompanion data) {
     return MemoImage(
@@ -3676,6 +3710,7 @@ class MemoImage extends DataClass implements Insertable<MemoImage> {
       filePath: data.filePath.present ? data.filePath.value : this.filePath,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      remoteUrl: data.remoteUrl.present ? data.remoteUrl.value : this.remoteUrl,
     );
   }
 
@@ -3686,13 +3721,15 @@ class MemoImage extends DataClass implements Insertable<MemoImage> {
           ..write('memoId: $memoId, ')
           ..write('filePath: $filePath, ')
           ..write('sortOrder: $sortOrder, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('remoteUrl: $remoteUrl')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, memoId, filePath, sortOrder, createdAt);
+  int get hashCode =>
+      Object.hash(id, memoId, filePath, sortOrder, createdAt, remoteUrl);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -3701,7 +3738,8 @@ class MemoImage extends DataClass implements Insertable<MemoImage> {
           other.memoId == this.memoId &&
           other.filePath == this.filePath &&
           other.sortOrder == this.sortOrder &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.remoteUrl == this.remoteUrl);
 }
 
 class MemoImagesCompanion extends UpdateCompanion<MemoImage> {
@@ -3710,6 +3748,7 @@ class MemoImagesCompanion extends UpdateCompanion<MemoImage> {
   final Value<String> filePath;
   final Value<int> sortOrder;
   final Value<DateTime> createdAt;
+  final Value<String?> remoteUrl;
   final Value<int> rowid;
   const MemoImagesCompanion({
     this.id = const Value.absent(),
@@ -3717,6 +3756,7 @@ class MemoImagesCompanion extends UpdateCompanion<MemoImage> {
     this.filePath = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.remoteUrl = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MemoImagesCompanion.insert({
@@ -3725,6 +3765,7 @@ class MemoImagesCompanion extends UpdateCompanion<MemoImage> {
     required String filePath,
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.remoteUrl = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        memoId = Value(memoId),
@@ -3735,6 +3776,7 @@ class MemoImagesCompanion extends UpdateCompanion<MemoImage> {
     Expression<String>? filePath,
     Expression<int>? sortOrder,
     Expression<DateTime>? createdAt,
+    Expression<String>? remoteUrl,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3743,6 +3785,7 @@ class MemoImagesCompanion extends UpdateCompanion<MemoImage> {
       if (filePath != null) 'file_path': filePath,
       if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
+      if (remoteUrl != null) 'remote_url': remoteUrl,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3753,6 +3796,7 @@ class MemoImagesCompanion extends UpdateCompanion<MemoImage> {
     Value<String>? filePath,
     Value<int>? sortOrder,
     Value<DateTime>? createdAt,
+    Value<String?>? remoteUrl,
     Value<int>? rowid,
   }) {
     return MemoImagesCompanion(
@@ -3761,6 +3805,7 @@ class MemoImagesCompanion extends UpdateCompanion<MemoImage> {
       filePath: filePath ?? this.filePath,
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
+      remoteUrl: remoteUrl ?? this.remoteUrl,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3783,6 +3828,9 @@ class MemoImagesCompanion extends UpdateCompanion<MemoImage> {
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
+    if (remoteUrl.present) {
+      map['remote_url'] = Variable<String>(remoteUrl.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3797,6 +3845,7 @@ class MemoImagesCompanion extends UpdateCompanion<MemoImage> {
           ..write('filePath: $filePath, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
+          ..write('remoteUrl: $remoteUrl, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -7462,6 +7511,7 @@ typedef $$MemoImagesTableCreateCompanionBuilder =
       required String filePath,
       Value<int> sortOrder,
       Value<DateTime> createdAt,
+      Value<String?> remoteUrl,
       Value<int> rowid,
     });
 typedef $$MemoImagesTableUpdateCompanionBuilder =
@@ -7471,6 +7521,7 @@ typedef $$MemoImagesTableUpdateCompanionBuilder =
       Value<String> filePath,
       Value<int> sortOrder,
       Value<DateTime> createdAt,
+      Value<String?> remoteUrl,
       Value<int> rowid,
     });
 
@@ -7523,6 +7574,11 @@ class $$MemoImagesTableFilterComposer
 
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get remoteUrl => $composableBuilder(
+    column: $table.remoteUrl,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7579,6 +7635,11 @@ class $$MemoImagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get remoteUrl => $composableBuilder(
+    column: $table.remoteUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$MemosTableOrderingComposer get memoId {
     final $$MemosTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -7623,6 +7684,9 @@ class $$MemoImagesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get remoteUrl =>
+      $composableBuilder(column: $table.remoteUrl, builder: (column) => column);
 
   $$MemosTableAnnotationComposer get memoId {
     final $$MemosTableAnnotationComposer composer = $composerBuilder(
@@ -7681,6 +7745,7 @@ class $$MemoImagesTableTableManager
                 Value<String> filePath = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
+                Value<String?> remoteUrl = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MemoImagesCompanion(
                 id: id,
@@ -7688,6 +7753,7 @@ class $$MemoImagesTableTableManager
                 filePath: filePath,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
+                remoteUrl: remoteUrl,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -7697,6 +7763,7 @@ class $$MemoImagesTableTableManager
                 required String filePath,
                 Value<int> sortOrder = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
+                Value<String?> remoteUrl = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MemoImagesCompanion.insert(
                 id: id,
@@ -7704,6 +7771,7 @@ class $$MemoImagesTableTableManager
                 filePath: filePath,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
+                remoteUrl: remoteUrl,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

@@ -33,7 +33,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -79,6 +79,10 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
                 "UPDATE tags SET updated_at = CAST(strftime('%s', 'now') AS INTEGER)");
           }
+          if (from < 9) {
+            // Phase 9 画像同期: MemoImages.remoteUrl 追加（nullable なので普通の addColumn で OK）
+            await m.addColumn(memoImages, memoImages.remoteUrl);
+          }
         },
       );
 
@@ -104,6 +108,11 @@ class AppDatabase extends _$AppDatabase {
   /// メモを1件取得
   Future<Memo?> getMemoById(String id) {
     return (select(memos)..where((t) => t.id.equals(id))).getSingleOrNull();
+  }
+
+  /// メモを1件購読（同期受信時のリモート更新を UI で拾うため）
+  Stream<Memo?> watchMemoById(String id) {
+    return (select(memos)..where((t) => t.id.equals(id))).watchSingleOrNull();
   }
 
   /// メモを新規作成
@@ -488,6 +497,11 @@ class AppDatabase extends _$AppDatabase {
       sortOrder: Value(nextOrder),
     );
     await into(memoImages).insert(companion);
+    // Phase 9 画像同期: メモの updatedAt を更新して同期トリガー
+    await (update(memos)..where((t) => t.id.equals(memoId))).write(
+      MemosCompanion(updatedAt: Value(DateTime.now())),
+    );
+    SyncService.scheduleUpload(this, memoId);
     return (await (select(memoImages)..where((t) => t.id.equals(id)))
         .getSingle());
   }
@@ -497,10 +511,16 @@ class AppDatabase extends _$AppDatabase {
     final row = await (select(memoImages)..where((t) => t.id.equals(id)))
         .getSingleOrNull();
     if (row == null) return;
+    final memoId = row.memoId;
     await (delete(memoImages)..where((t) => t.id.equals(id))).go();
     try {
       await ImageStorage.deleteFile(row.filePath);
     } catch (_) {}
+    // Phase 9 画像同期: メモの updatedAt を更新して同期トリガー
+    await (update(memos)..where((t) => t.id.equals(memoId))).write(
+      MemosCompanion(updatedAt: Value(DateTime.now())),
+    );
+    SyncService.scheduleUpload(this, memoId);
   }
 
   /// 指定メモの画像を全件削除（実ファイルも削除）
@@ -516,6 +536,56 @@ class AppDatabase extends _$AppDatabase {
         await ImageStorage.deleteFile(row.filePath);
       } catch (_) {}
     }
+    // Phase 9 画像同期: メモの updatedAt を更新して同期トリガー
+    await (update(memos)..where((t) => t.id.equals(memoId))).write(
+      MemosCompanion(updatedAt: Value(DateTime.now())),
+    );
+    SyncService.scheduleUpload(this, memoId);
+  }
+
+  /// 画像の remoteUrl を更新（Storage アップロード完了後に呼ぶ）
+  Future<void> setMemoImageRemoteUrl(String id, String remoteUrl) async {
+    await (update(memoImages)..where((t) => t.id.equals(id))).write(
+      MemoImagesCompanion(remoteUrl: Value(remoteUrl)),
+    );
+  }
+
+  /// 画像メタを upsert（リモートから受信した画像を反映する用）。
+  /// id があれば update、なければ insert。実ファイルの保存は呼び出し側で別途行う。
+  Future<void> upsertMemoImageFromRemote({
+    required String id,
+    required String memoId,
+    required String filePath,
+    required int sortOrder,
+    required String remoteUrl,
+  }) async {
+    await into(memoImages).insertOnConflictUpdate(
+      MemoImagesCompanion.insert(
+        id: id,
+        memoId: memoId,
+        filePath: filePath,
+        sortOrder: Value(sortOrder),
+        remoteUrl: Value(remoteUrl),
+      ),
+    );
+  }
+
+  /// 画像 ID で1件取得
+  Future<MemoImage?> getMemoImageById(String id) {
+    return (select(memoImages)..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+  }
+
+  /// 画像をローカル DB のみから削除（実ファイルも削除）。
+  /// 同期トリガーは呼ばない（リモート同期由来の削除を反映するため）。
+  Future<void> removeMemoImageLocalOnly(String id) async {
+    final row = await (select(memoImages)..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    if (row == null) return;
+    await (delete(memoImages)..where((t) => t.id.equals(id))).go();
+    try {
+      await ImageStorage.deleteFile(row.filePath);
+    } catch (_) {}
   }
 
   // ========================================
