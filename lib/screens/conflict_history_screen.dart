@@ -94,18 +94,23 @@ class _ConflictTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = conflict.lostTitle.isEmpty ? '(無題)' : conflict.lostTitle;
-    final lostSideLabel =
-        conflict.lostSide == 'local' ? 'この端末側' : '別端末側';
+    // lostSide: 'local'  = この端末で書いた内容が他端末の編集で上書きされた
+    //          'remote' = 他端末で書かれていた内容を、この端末の編集で上書きした
+    final summaryLabel = conflict.lostSide == 'local'
+        ? 'この端末の編集が消えた'
+        : '別端末の編集を上書きした';
+    final summaryColor = conflict.lostSide == 'local'
+        ? Colors.redAccent
+        : Colors.orange;
     return ListTile(
-      leading: const Icon(Icons.history_toggle_off,
-          size: 22, color: Colors.grey),
+      leading: Icon(Icons.history_toggle_off, size: 22, color: summaryColor),
       title: Text(title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
       subtitle: Text(
-        '失われた側: $lostSideLabel  /  ${_fmtDateTime(conflict.recordedAt)}',
-        style: const TextStyle(fontSize: 12),
+        '$summaryLabel  /  ${_fmtDateTime(conflict.recordedAt)}',
+        style: TextStyle(fontSize: 12, color: summaryColor),
       ),
       trailing: const Icon(Icons.chevron_right, size: 20),
       onTap: () {
@@ -238,8 +243,12 @@ class _ConflictDetailScreenState extends ConsumerState<ConflictDetailScreen> {
   }
 
   Widget _buildBody(ConflictHistory c) {
-    final lostSideLabel =
-        c.lostSide == 'local' ? 'この端末側' : '別端末側';
+    // lostSide の意味:
+    //  'local'  = この端末で書いた内容が他端末の編集で消された(=ここに記録の内容が「自分が書いて消えた分」)
+    //  'remote' = 他端末で書かれていた内容を、この端末の編集で上書きした
+    final lostSideLabel = c.lostSide == 'local'
+        ? 'この端末の編集が消えた'
+        : '別端末の編集を上書きした';
     final currentExists = _currentMemo != null;
     return Stack(
       children: [

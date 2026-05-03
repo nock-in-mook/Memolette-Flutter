@@ -214,7 +214,30 @@ class SyncService {
         }
         updated++;
         companions.add(companion);
+      } else if (local.updatedAt.isAfter(remoteUpdated)) {
+        // ローカルが新しい：このダウンロードでは何もしないが、続く uploadAllMemos
+        // でリモートが上書きされる。リモートが直近 conflictWindow 以内 + 内容違い
+        // なら「失われる側 = リモート」として履歴記録する。
+        // これにより同期した側の端末でも「相手の内容を上書きした」を確認できる。
+        final remoteTitle = companion.title.value;
+        final remoteContent = companion.content.value;
+        final hasContentDiff =
+            local.title != remoteTitle || local.content != remoteContent;
+        if (hasContentDiff &&
+            now.difference(remoteUpdated) <= conflictWindow) {
+          conflictRecords.add(_ConflictRecord(
+            memoId: id,
+            lostSide: 'remote',
+            lostTitle: remoteTitle,
+            lostContent: remoteContent,
+            lostUpdatedAt: remoteUpdated,
+            winnerUpdatedAt: local.updatedAt,
+          ));
+          conflicts++;
+        }
+        skipped++;
       } else {
+        // 同 updatedAt: 何もしない
         skipped++;
       }
     }
