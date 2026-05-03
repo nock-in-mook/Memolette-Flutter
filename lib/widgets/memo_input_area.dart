@@ -14,6 +14,7 @@ import '../constants/design_constants.dart';
 import '../constants/memo_bg_colors.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../services/sync_service.dart';
 import '../utils/image_storage.dart';
 import '../utils/keyboard_done_bar.dart';
 import '../utils/responsive.dart';
@@ -744,6 +745,8 @@ class MemoInputAreaState extends ConsumerState<MemoInputArea> {
       title: _titleController.text,
       content: _contentController.text,
     );
+    // Phase A: 編集 debounce アップロード（ログイン済みなら 1.5 秒後に Firestore へ）
+    SyncService.scheduleUpload(db, memoId);
     if (mounted) setState(() {}); // Undo/Redoボタンの状態更新用
   }
 

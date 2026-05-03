@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
@@ -12,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../services/auth_service.dart';
 import '../services/sync_service.dart';
 import '../utils/backup_manager.dart';
 import '../utils/responsive.dart';
@@ -615,6 +618,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _autoSync() {
     final db = ref.read(databaseProvider);
     SyncService.syncOnce(db).catchError((_) => null);
+    // Phase A: ログイン済みならリアルタイム購読も開始（冪等）
+    _startRealtimeIfNeeded();
+  }
+
+  /// 受信通知の連射を debounce するためのタイマーと累計件数。
+  Timer? _remoteChangeNotifyTimer;
+  int _remoteChangePending = 0;
+
+  /// リアルタイム購読を開始（冪等）。受信時はトーストを debounce 表示する。
+  void _startRealtimeIfNeeded() {
+    final db = ref.read(databaseProvider);
+    SyncService.startRealtimeSync(
+      db,
+      onRemoteChange: (count) {
+        if (!mounted) return;
+        _remoteChangePending += count;
+        _remoteChangeNotifyTimer?.cancel();
+        _remoteChangeNotifyTimer =
+            Timer(const Duration(milliseconds: 1500), () {
+          if (!mounted) return;
+          final n = _remoteChangePending;
+          _remoteChangePending = 0;
+          if (n > 0) {
+            showToast(context, '別の端末で${n}件のメモが更新されました');
+          }
+        });
+      },
+    );
   }
 
   @override
@@ -680,6 +711,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     HardwareKeyboard.instance.removeHandler(_handleGlobalKey);
+    _remoteChangeNotifyTimer?.cancel();
+    SyncService.stopRealtimeSync();
     _drawerCtrl.dispose();
     _tabBarScrollController.dispose();
     _memosScrollController.dispose();
@@ -723,6 +756,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Phase A: ログイン状態の変化を監視してリアルタイム同期を起動/停止する
+    ref.listen<AsyncValue<User?>>(authStateProvider, (prev, next) {
+      if (next.value != null) {
+        _startRealtimeIfNeeded();
+      } else {
+        SyncService.stopRealtimeSync();
+      }
+    });
+
     final parentTagsAsync = ref.watch(parentTagsProvider);
     final parentTags = parentTagsAsync.valueOrNull ?? const <Tag>[];
     _tabOrder = _syncTabOrder(parentTags);
