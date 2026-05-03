@@ -2,146 +2,145 @@
 
 ## 現在の状況
 
-- **セッション#37 完了**（2026-05-02 〜 05-03、超長め・27コミット）
+- **セッション#38 完了**（2026-05-03、Phase 9 同期の核心部分を一気に実装）
 - ブランチ: **`main`**
-- Phase 9 同期実装に着手。Step 1〜3 と Step 5a〜5d まで実装。タグ・ToDo・画像同期 / 競合解決 / サブスクは未対応
-- iPad 13 mini SE シミュで動作確認
+- Phase 9 同期: **Step 5e 競合履歴 + Phase A 即時同期 + タグ同期 + ToDo 同期** まで完成
+- 残: **画像同期 / 削除の同期 / Step 4 サブスク**
+- iPhone 13 mini / iPhone SE 3 シミュで実競合・実時同期テスト済み
 
-## #37 サマリ（テーマ別）
+## #38 サマリ（テーマ別）
 
-### 爆速モードのカード本文 BlockEditor 化
-- TextField を BlockEditor に置換、画像インライン表示・追加対応
-- 爆速モード用ツールバー widget 新規（消しゴム / 画像 / Undo / Redo）+ Overlay 表示
-- 「完了」ボタンは KeyboardDoneBar 任せ（accessoryHeight 設定）
-- memo_input_area の `_syncAccessoryHeight` で「自分のフォーカスがない時は触らない」ガード追加（爆速 Overlay と完了ボタンが重なる問題）
-- 画像追加: ライブラリは 5 枚まで複数選択可（pickMultiImage）
-- 消しゴムで画像も削除（DB の deleteAllMemoImages 追加）
+### Step 5e: 競合解決 UI
+- 新テーブル `ConflictHistories`（schemaVersion 6→7）
+- `downloadAllMemos` で「両方が直近6時間以内 + 内容差分」を競合判定 → 履歴記録
+- 競合一覧/詳細画面 (`conflict_history_screen.dart`)、上限 200件、超過分は古いもの自動削除
+- 「現在のメモをこの内容で上書き」復元ボタン（復元前に現在内容も履歴に残す）
+- 設定 → データ保護 → 「競合履歴」エントリから到達
+- 全削除アイコン: `CupertinoIcons.delete_simple` (赤) で他画面と統一
 
-### メモカードの画像サムネを右端固定
-- 本文の長短に依らず常に「タイトル+区切り線直下、右端」に配置
-- 外側 Stack で Positioned 絶対配置（top = `_bodyTopY`）
+### 競合検出の双方向化
+- `downloadAllMemos` で「ローカル勝ち」分岐でもリモートを失われた側として記録
+- 結果、同期した端末で「相手の編集を上書きした」を即時把握できる
+- 一覧表示は **端末非依存**（現在のメモタイトル + 日時のみ）に統一
+- 詳細から lostSide ラベル撤去（タップすれば負けた本文表示）
 
-### 爆速モードカード以外の余白フリック / ToDo 余白タップで unfocus
-- 爆速モード: Expanded 全体を GestureDetector(translucent) で wrap
-- ToDo: 既存 Listener.onPointerDown に primary.unfocus() を統合（Positioned.fill 方式は ListView の hit test に阻まれて動かなかった）
+### Phase A: 即時同期（リアルタイム購読 + debounce アップロード）
+- `SyncService.startRealtimeSync`: users/{uid}/memos / tags / todoLists を `snapshotChanges()` で購読
+- `SyncService.scheduleUpload`: 編集 1.5秒 debounce でメモ単体アップロード
+- 自端末アップロード由来の発火は fingerprint で除外
+- 初回 snapshot の全件 added 通知は抑制（`syncOnce` 既取り込み済みなので）
+- HomeScreen で `authStateProvider` を ref.listen → ログイン状態変化で自動 start/stop
+- リアルタイム受信時のトースト通知は **撤去**（メモ自体が即時反映されるので不要）
 
-### iPad 回転時に編集モードを維持
-- `_HomeScreenState` に `WidgetsBindingObserver` mixin 追加
-- `didChangeMetrics` で size 変化を MediaQuery 更新前に検知 → `_suppressFalseFocus` を 2 フレーム立てる
-- `onFocusChanged` で suppress 中は true→false 上書きを無視
-- `didChangeDependencies` で orientation 変化を検知して refocusContent / refocusTitle
-- `refocusContent` を `_blockEditorKey.currentState?.focusFirst()` に書き換え（_contentFocusNode はダミー化済み）
+### タグ同期 (T1: マスター + T2: メモ-タグ関連)
+- `Tags.updatedAt` カラム追加（schemaVersion 7→8）
+  - SQLite の ALTER TABLE が「NOT NULL + 非const デフォルト」を許さないため、
+    `customStatement` で `DEFAULT 0` 追加 → 既存行を `strftime('%s','now')` で UPDATE
+- `SyncService` にタグ系メソッド一式（uploadAllTags / downloadAllTags / uploadOneTag / scheduleUploadTag）
+- `syncOnce` は **タグ → メモ → ToDo** の順で同期（メモ側のタグ参照が解決される順序）
+- リアルタイム購読 `_realtimeTagsSub` 追加
+- `createTag / updateTag / reorderParentTags / addTagToMemo / removeTagFromMemo` で `scheduleUploadTag` を即時呼び出し
+- メモ doc に `tagIds: [...]` 配列を含める（`_memoToMap` に optional 引数）
+- ダウンロード/リアルタイム受信時に `setTagIdsForMemo` でローカル memo_tags を全置換
+- 未到着タグは skip（タグマスター先行が前提）
 
-### iPad 選択モードバナー位置調整
-- 縦画面 iPad: 中央寄せ + maxWidth 600
-- 横画面 iPad: ルート Stack に Positioned 配置で前面化、left:0 / right: maxWidth/2 で左カラム内に制限、top = viewPadTop + 6
+### ToDo 同期（TodoLists + TodoItems + TodoListTags）
+- 設計: **TodoLists doc に items + tagIds を埋め込む（A 案）**
+  - 1リスト=1ドキュメント、items の孤児化なし
+  - `_todoListToMap(list, items, tagIds)` / `_extractTodoItems(data, listId)`
+  - TodoItemTags（アイテム個別タグ）は今回スコープ外
+- `SyncService.scheduleUploadTodoList(db, listId)`: 内部で `touchTodoListUpdatedAt` → debounce upload
+- リアルタイム購読 `_realtimeTodoListsSub` 追加
+- `database` の補助関数: `setTodoItemsForList` / `setTagIdsForTodoList` / `getTagIdsForTodoList` / `touchTodoListUpdatedAt`
+- 既存 ToDo 関数（`createTodoItem` / `mergeTodoLists` / `createTodoList` / `addTagToTodoList` / `removeTagFromTodoList` / `setTodoListEventDate` / `setTodoListBgColor` / `setTodoItemEventDate`）で `scheduleUploadTodoList` 即時呼び出し
+- UI 側散在箇所も対応:
+  - `todo_list_screen.dart`: アイテム追加/編集/削除/チェック/メモ保存/タイトル保存/全リセット/全削除/並び替え すべて
+  - `home_screen.dart` / `todo_lists_screen.dart`: ピン留め/ロック切替
 
-### ToDo iPad 横画面の左カラム緑背景
-- Stack に StackFit.expand 追加で画面下端まで塗る
+### バグ修正
+- **同名タグ複数で `getSingleOrNull` 例外** (起動時クラッシュ)
+  - `seedDummyBulkMemos` / `seedLongMemos` / `createTag` の同名検索を `get()` に変更し
+    `isNotEmpty` / `first` で扱う
 
-### 多機能ボタン → Icons.more_horiz
-- 27 候補を「多機能アイコンラボ」で比較、Material 標準の more_horiz を採用
-- size 20 → 22（円が無くなった分の比重補正）
+### コミット履歴 (#38 全7本)
+1. `feat(sync): Phase 9 Step 5e 競合履歴 UI 実装`
+2. `feat(sync): 競合検出を双方向化 + 履歴ラベルを意味ベースに`
+3. `feat(sync): Phase A 即時同期（リアルタイム購読 + debounce アップロード）`
+4. `feat(sync): リアルタイム受信トースト表示を撤去`
+5. `feat(conflict): 競合履歴を端末非依存表示 + 200件上限 + 全削除赤色化`
+6. `fix(conflict): 削除アイコンを CupertinoIcons.delete_simple に統一`
+7. `feat(sync): タグ同期 (T1: タグマスター + T2: メモ-タグ関連)`
+8. `fix(migration): tags.updatedAt の追加で SQLite ALTER 制約を customStatement で回避`
+9. `feat(sync): ToDo 同期 (TodoLists + TodoItems + TodoListTags)`
+10. `fix(seed): 同期で同名タグが複数存在する場合 getSingleOrNull が例外を投げるバグ修正`
 
-### データ保護機能（Phase 9 Step 1）
-- `lib/utils/backup_manager.dart` 新規
-  - createSnapshot / createSnapshotIfNeeded（24h 経過時のみ）
-  - listSnapshots / pruneOldSnapshots（最新7個まで保持）
-  - restoreSnapshot（復元前に現在状態も自動 snapshot）
-  - exportToDocumentsRoot（iOS Files App から救出可能）
-- `lib/screens/data_protection_screen.dart` 新規（一覧 / 手動バックアップ / エクスポート / 復元 / 削除）
-- 設定 > データ保護 エントリ追加
-- HomeScreen.initState で `BackupManager.createSnapshotIfNeeded()` を fire-and-forget
-
-### Firebase 連携（Phase 9 Step 2-3）
-- Firebase プロジェクト `memolette-3a68b` 作成
-- flutterfire configure で iOS / Android / Web 3プラットフォーム登録
-- Authentication: Google + Apple 有効化（メール/パスワードは見送り）
-- iOS Info.plist に GoogleSignIn 用の URL Scheme（REVERSED_CLIENT_ID）追加
-- Firestore Database 作成（asia-northeast1、テストモード）
-- pubspec: firebase_core / firebase_auth / cloud_firestore / google_sign_in (v6) /
-  sign_in_with_apple / firebase_ui_auth / firebase_ui_oauth_google / firebase_ui_oauth_apple
-- main.dart で Firebase.initializeApp（失敗時もアプリ続行）
-- `lib/services/auth_service.dart` 新規（authStateProvider, GoogleProvider/AppleProvider）
-- `lib/screens/account_screen.dart` 新規（未ログイン: LoginView / ログイン済み: ユーザー情報+ログアウト）
-
-### Firestore 同期（Phase 9 Step 5a-5d）
-- `lib/services/sync_service.dart` 新規
-  - 5a: `pingFirestore` — users/{uid} に lastPingAt 書き込み読み戻し
-  - 5b: `uploadAllMemos` — ローカル全メモを users/{uid}/memos に batch write（merge=true）
-  - 5c: `downloadAllMemos` — Firestore→ローカル、updatedAt 比較で新しい方を採用、既存は `batch.replace`(UPDATE) / 新規は `batch.insert`
-    - **重要**: `insertOrReplace` は SQLite REPLACE で「DELETE→INSERT」になり、memo_tags が孤児化（タグ全削除）するため必ず分岐する
-  - 5d: `syncOnce` — ダウンロード→アップロード を順次。同時実行ガード `_syncing`
-- HomeScreen の initState postFrame と `didChangeAppLifecycleState(resumed)` で `_autoSync` を fire-and-forget
-- AccountScreen に動作確認用4ボタン（接続テスト / アップロード / ダウンロード / 今すぐ同期）
-
-### データ消失バグ対策（多重ガード）
-1. `downloadAllMemos`: insertOrReplace → 既存 replace(UPDATE)（タグ孤児化防止）
-2. `_onChanged` の空メモ削除: タグ・eventDate・bgColor ガード追加（BlockEditor reload 中の一瞬空でタグ付き削除されないように）
-3. `_onFocusChange` の空メモ削除: 同様ガード追加 + activeMemoId が `widget.editingMemoId ?? _selfCreatedMemoId` を見るように
-4. `loadMemoDirectly`: タグ反映ガード緩和（editingMemoId が null=親未更新でも反映、縮小ビューでタグバッジが表示されない問題）
-5. `purgeEmptyMemos`: タグ・色・eventDate 持ちは候補から除外
-6. `_clearInput`: `_selfCreatedMemoId = null` クリア追加（次の入力で確実に新メモ作成）
-7. `_onChanged`: `widget.editingMemoId ?? _selfCreatedMemoId` で memoId 判定し、自作メモにも updateMemo を走らせる（onMemoCreated 通知後の数フレーム間の入力ロスト防止）
-8. DB 削除系関数（deleteMemo / deleteMemos / purgeEmptyMemos / removeTagFromMemo）に StackTrace 付き print を仕込み（再現時にフローを追える）
-
-### dummy seed 増殖バグ修正
-- `seedDummyBulkMemos` が「同名タグがあっても、タイトル付きメモが count 未満なら補充」していた → メモが何かの理由で減ると毎起動で 70 件まるごと再投入されてダミー増殖
-- 修正: 同名タグがあれば一切 seed しない
-- main.dart の起動 seed をダミー70・長文・画像のみに絞る（仕事/日記等の親タグ・子タグ・タグ履歴は外す）
-
-### 全データ削除（Firestore 連携対応）
-- 既存ボタンが `db.wipeAll` のみだったので、Firestore users/{uid}/memos の batch 削除も含めるよう拡張
-- 削除後はアプリ完全終了→再起動で seed が再実行されて綺麗な初期状態に
-
-## 次のアクション（次セッション #38）
+## 次のアクション（次セッション #39）
 
 ### Phase 9 残タスク
-- [ ] **Step 5e: 競合解決 UI**（最終更新優先 + 競合履歴の閲覧）
-- [ ] **タグ・ToDo・画像の同期**（メモ本体だけしか同期していないため、別デバイスで「タグなし」状態になってしまう）
-- [ ] **削除の同期**（ローカル削除しても Firestore には残るため、再ダウンロードで復活する）
-- [ ] **Step 4: サブスク**（RevenueCat / in_app_purchase）
+- [ ] **画像同期** (タスク#2 残)
+  - `MemoImages` テーブル + Firebase Storage に画像本体
+  - 設計判断: 画像 base64 で Firestore (NG, 1MB制限) vs Storage URL（推奨、無料枠 5GB）
+  - 同期されるのは `MemoImages` メタ情報 + Storage の URL
+  - メモ doc に `imageUrls: [...]` を含めるパターンが自然
+- [ ] **削除の同期** (タスク#3)
+  - ローカル削除 → Firestore も削除（hard delete）or tombstone 方式
+  - hard delete だと「同期前の他端末で復活」が起きる可能性 → tombstone 推奨
+  - Tombstone collection `users/{uid}/deletedMemos/{memoId}` に削除時刻を記録
+  - 各端末は tombstone を読んで該当メモをローカルからも削除
+- [ ] **Step 4: サブスク** (タスク#4)
+  - RevenueCat / in_app_purchase
 
-### 同期で発生中の既知の現象
-- 「ダミー70-069」 のタイトルを編集 → スイッチャーOFF → 再起動 で1度メモが消える事象を観測（タグも外れて「すべて」フォルダにも出ない、ただし Firestore には残ってて再同期で復活）
-- 多重ガード追加で再現しなくなったが、タイミング依存の競合状態が他にも潜んでいる可能性あり
-- 削除系関数のログ仕込みは残してあるので、再現時はフローを追跡可能
+### 既知の現象（運用上の注意）
+- **両端末で独立 seed → 同名タグ・メモが別 id で重複作成**
+  - createTag 重複防止は同端末内のみ。別端末から同名タグが流入 → 重複で並ぶ
+  - 「全データ削除（Firestore も）→ 片端末だけ起動 → 他端末起動」でクリーンに同期される
+  - リリース時は seed を入れない方針なので非問題
+- リアルタイム受信時、別端末からの新規メモは「タグなし」で来ることがある（タグマスター未到着のタイミング）
+  - 自動的に少し後で再同期されてタグ付くケースも、付かないケースもある
+  - 暫定対処: 同期相手のタグマスター先行 + setTagIdsForMemo の skip ガード
 
-### 残タスク（ROADMAP「備忘」より）
+### 残タスク（ROADMAP「備忘」より、引き継ぎ）
 - データ保護画面のダイアログ文言検討（バックアップ作成成功時 / Documents エクスポート成功時 / 復元前の確認 / 復元後の再起動案内）
-- Firestore セキュリティルールを「テストモード」から本番ルールに書き換える（30日以内、Phase 9 同期実装と並行）
-- データ保護画面の「復元」改修: 一覧から直タップではなく、「復元」ボタンを置いて押した先でバックアップ一覧→選択→確認ダイアログ、のワンクッション構成に
+- Firestore セキュリティルールを「テストモード」から本番ルールに書き換え（30日以内）
+- データ保護画面の「復元」改修: ワンクッション化
 
 ### 実機検証の積み残し
-- 13 mini シミュは起動したまま（pipe: `/tmp/flutter_pipe_13`）
-- iPad Pro 12.9 シミュも起動可（pipe: `/tmp/flutter_pipe_ipad`）。この session 中は kill 済み
-- iPhone SE 3 シミュ（pipe: `/tmp/flutter_pipe_se`）。同期検証用に起動した
-- 15 Pro Max / iPad は wireless 接続が前回不安定で実機未確認
+- 13 mini シミュ起動済み（pipe: `/tmp/flutter_pipe_13`）
+- iPhone SE 3 シミュ起動済み（pipe: `/tmp/flutter_pipe_se`）
+- iPad / 15 Pro Max wireless 接続不安定
 
 ## 技術メモ
 
-### Firebase プロジェクト情報
-- プロジェクト ID: `memolette-3a68b`
-- iOS Bundle: `com.memolette.memolette`
-- Auth プロバイダ: Google + Apple（テストモード SecurityRules、30日間オープン）
-- Firestore リージョン: asia-northeast1（東京）
+### Phase A 即時同期のフロー
+1. 編集 → `db.updateMemo()` (memos テーブル更新)
+2. `_onChanged()` 内で `SyncService.scheduleUpload(db, memoId)` 呼び出し
+3. 1.5秒 debounce → `uploadOneMemo` 実行
+4. `_registerSelfUpload(memoId, updatedAt)` でフィンガープリント登録（30秒キャッシュ）
+5. 別端末: `_realtimeMemosSub` の listener で受信
+6. 自端末フィルタチェック → 一致なら skip、しなければローカル DB に upsert + tagIds 反映
 
-### iOS Sign-In セットアップ手順
-1. flutterfire configure で `lib/firebase_options.dart` 自動生成
-2. iOS の場合は xcodeproj gem 必要 → `gem install --user-install xcodeproj`
-3. ios/Runner/Info.plist に CFBundleURLTypes で REVERSED_CLIENT_ID を追加
-4. pod install で Firebase pods (40件くらい)
+### タグ同期の順序
+- `syncOnce`: **download(タグ) → upload(タグ) → download(メモ) → upload(メモ) → download(ToDo) → upload(ToDo)**
+- リアルタイムは並列起動（tags listener / memos listener / todoLists listener）
+- メモ doc の tagIds 反映時、ローカルにタグマスターが無ければ skip
+  - 通常はタグマスター同期が先に走るので問題ないが、タイミング依存
+  - 暫定: `setTagIdsForMemo` の `knownIds` チェックで対応
 
-### SQLite REPLACE の罠
-- `Batch.insert(table, companion, mode: InsertMode.insertOrReplace)` は内部的に
-  REPLACE で「既存行 DELETE → INSERT」になる。ここで子テーブル（memo_tags 等）の
-  外部キーが ON DELETE CASCADE でないと孤児化（タグが全部外れる）する
-- 既存は `batch.replace(table, companion)` (UPDATE)、新規は `batch.insert` に
-  分岐する。`localById.containsKey(id)` で判定
+### ToDo 同期の設計判断
+- **TodoLists doc に items + tagIds 埋め込み** (A 案採用)
+- 利点: 1リスト=1ドキュメント、孤児化なし、操作単位が認知単位と一致
+- 欠点: 1MB 制限（数百項目まで OK、数千項目で破綻）
+- 現実的な ToDo 規模（数十項目）には十分
 
-### 起動時 dummy seed のガード設計
-- 既存タグの存在チェックだけで判断。「件数比較で補充」 はバグの温床（メモが減ると再投入される）
-- main.dart で seed を絞る方針（タグ・履歴は手動投入に）
+### SQLite ALTER TABLE 制約の罠
+- drift の `m.addColumn` は `currentDateAndTime` のような非const デフォルトを使うと
+  `Cannot add a column with non-constant default` で失敗
+- 対処: `customStatement` で `DEFAULT 0` で NOT NULL 追加 → `UPDATE` で初期値セット
+
+### Firestore コスト見積（Phase A 導入後）
+- 1ユーザー1日メモ100回更新 → 月 ~3000 書き込み
+- 無料枠: 5万書き込み/日。圧倒的に余裕
+- 同期上限の懸念は今のところなし（タグ・ToDo 含めても安全圏）
 
 ### シミュ / 実機 ID
 - iPhone SE 3rd iOS26: `47003836-6426-4AB1-90FC-C5E73DA251C1`
@@ -153,6 +152,7 @@
 
 ### Mac で `py` コマンドはない
 - グローバル CLAUDE.md の Python 実行ルールは Windows 用。Mac では `python3` で代用
+- 例: `python3 "/Users/nock_re/...マイドライブ/_claude-sync/transcript_export.py" --latest`
 
 ## 関連メモ（自動メモリ）
 
