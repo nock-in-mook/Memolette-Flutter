@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,7 @@ import '../db/database.dart';
 import '../providers/database_provider.dart';
 import '../utils/toast.dart';
 import '../widgets/confirm_delete_dialog.dart';
+import '../widgets/frosted_alert_dialog.dart';
 import 'font_lab_screen.dart';
 import 'font_weight_lab_screen.dart';
 import 'icon_lab_screen.dart';
@@ -186,6 +189,52 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _wipeAllData(BuildContext context, WidgetRef ref) async {
+    final ok = await showConfirmDeleteDialog(
+      context: context,
+      title: '全データ削除',
+      message: 'ローカル DB の全メモ・タグ・ToDo を削除し、'
+          'Firestore の同期済みメモも削除します。\n'
+          'バックアップは残るので、必要なら「データ保護」から復元できます。\n'
+          '削除後はアプリを完全終了→再起動してください（seed が再実行されます）。',
+      confirmLabel: '全削除',
+    );
+    if (!ok || !context.mounted) return;
+    final db = ref.read(databaseProvider);
+    // 1. Firestore のメモを全削除（ログイン時のみ）
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        final col = FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('memos');
+        final snap = await col.get();
+        // batch delete (500 件ずつ)
+        const chunkSize = 400;
+        for (var i = 0; i < snap.docs.length; i += chunkSize) {
+          final end = (i + chunkSize).clamp(0, snap.docs.length);
+          final batch = FirebaseFirestore.instance.batch();
+          for (var j = i; j < end; j++) {
+            batch.delete(snap.docs[j].reference);
+          }
+          await batch.commit();
+        }
+      }
+    } catch (_) {
+      // Firestore 失敗してもローカルは消す
+    }
+    // 2. ローカル DB を空に
+    await db.wipeAll();
+    if (!context.mounted) return;
+    await showFrostedAlert(
+      context: context,
+      title: '削除完了',
+      message: 'ローカル + Firestore を空にしました。\n'
+          'アプリを完全終了して再起動すると、seed が走って綺麗な状態になります。',
     );
   }
 
@@ -675,22 +724,6 @@ class SettingsScreen extends ConsumerWidget {
 
     if (!context.mounted) return;
     showToast(context, 'A(5階層) と B を作成しました');
-  }
-
-  Future<void> _wipeAllData(BuildContext context, WidgetRef ref) async {
-    final ok = await showConfirmDeleteDialog(
-      context: context,
-      title: '全データ削除',
-      message: '全てのメモとタグを削除します。よろしいですか？',
-      confirmLabel: '削除する',
-    );
-    if (!ok) return;
-
-    final db = ref.read(databaseProvider);
-    await db.wipeAll();
-
-    if (!context.mounted) return;
-    showToast(context, '全データを削除しました');
   }
 }
 
