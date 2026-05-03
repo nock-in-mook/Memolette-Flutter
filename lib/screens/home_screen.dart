@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -622,30 +621,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     _startRealtimeIfNeeded();
   }
 
-  /// 受信通知の連射を debounce するためのタイマーと累計件数。
-  Timer? _remoteChangeNotifyTimer;
-  int _remoteChangePending = 0;
-
-  /// リアルタイム購読を開始（冪等）。受信時はトーストを debounce 表示する。
+  /// リアルタイム購読を開始（冪等）。
+  /// 受信時の通知は出さない（メモ自体が即時に画面に反映されるので不要）。
   void _startRealtimeIfNeeded() {
     final db = ref.read(databaseProvider);
-    SyncService.startRealtimeSync(
-      db,
-      onRemoteChange: (count) {
-        if (!mounted) return;
-        _remoteChangePending += count;
-        _remoteChangeNotifyTimer?.cancel();
-        _remoteChangeNotifyTimer =
-            Timer(const Duration(milliseconds: 1500), () {
-          if (!mounted) return;
-          final n = _remoteChangePending;
-          _remoteChangePending = 0;
-          if (n > 0) {
-            showToast(context, '別の端末で${n}件のメモが更新されました');
-          }
-        });
-      },
-    );
+    SyncService.startRealtimeSync(db);
   }
 
   @override
@@ -711,7 +691,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     HardwareKeyboard.instance.removeHandler(_handleGlobalKey);
-    _remoteChangeNotifyTimer?.cancel();
     SyncService.stopRealtimeSync();
     _drawerCtrl.dispose();
     _tabBarScrollController.dispose();
