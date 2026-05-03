@@ -2,107 +2,104 @@
 
 ## 現在の状況
 
-- **セッション#38 完了**（2026-05-03、Phase 9 同期の核心部分を一気に実装）
+- **セッション#39 完了**(2026-05-04、Phase 9 画像同期と関連 UX 改善を実装)
 - ブランチ: **`main`**
-- Phase 9 同期: **Step 5e 競合履歴 + Phase A 即時同期 + タグ同期 + ToDo 同期** まで完成
-- 残: **画像同期 / 削除の同期 / Step 4 サブスク**
-- iPhone 13 mini / iPhone SE 3 シミュで実競合・実時同期テスト済み
+- Phase 9 同期: **画像同期** まで完成（メモ・タグ・ToDo・画像 すべて双方向リアルタイム同期）
+- Firebase: **Blaze プラン化済み**（請求先アカウント名「Memolette」を新規作成、予算 ¥750/月で予算アラート設定済み）
+- 残: **画像削除の同期テスト / メモ削除の同期 / Step 4 サブスク**
 
-## #38 サマリ（テーマ別）
+## #39 サマリ（テーマ別）
 
-### Step 5e: 競合解決 UI
-- 新テーブル `ConflictHistories`（schemaVersion 6→7）
-- `downloadAllMemos` で「両方が直近6時間以内 + 内容差分」を競合判定 → 履歴記録
-- 競合一覧/詳細画面 (`conflict_history_screen.dart`)、上限 200件、超過分は古いもの自動削除
-- 「現在のメモをこの内容で上書き」復元ボタン（復元前に現在内容も履歴に残す）
-- 設定 → データ保護 → 「競合履歴」エントリから到達
-- 全削除アイコン: `CupertinoIcons.delete_simple` (赤) で他画面と統一
+### Firebase Storage 有効化
+- Blaze プランへアップグレード（プロジェクト用に独立した「Memolette」Cloud 請求先アカウント新規作成）
+- 予算アラート ¥750/月、メール通知 50%/90%/100%
+- Storage バケット作成（`gs://memolette-3a68b.firebasestorage.app`、料金不要のロケーション US-EAST1、テストモード 30日）
+- pubspec.yaml に `firebase_storage: ^13.0.0` 追加
 
-### 競合検出の双方向化
-- `downloadAllMemos` で「ローカル勝ち」分岐でもリモートを失われた側として記録
-- 結果、同期した端末で「相手の編集を上書きした」を即時把握できる
-- 一覧表示は **端末非依存**（現在のメモタイトル + 日時のみ）に統一
-- 詳細から lostSide ラベル撤去（タップすれば負けた本文表示）
+### 画像同期 (Phase 9 残タスク)
+- `MemoImages` テーブルに `remoteUrl` (text, nullable) 追加（schemaVersion 8→9）
+  - ALTER で nullable なので普通の `m.addColumn` で OK（前回の `tags.updatedAt` のような罠なし）
+- メモ doc に `images: [{id, url, sortOrder}, ...]` 配列を埋め込む設計
+- Storage パス: `users/{uid}/memo_images/{imageId}.jpg`（imageId はメモ画像 DB の id と一致）
 
-### Phase A: 即時同期（リアルタイム購読 + debounce アップロード）
-- `SyncService.startRealtimeSync`: users/{uid}/memos / tags / todoLists を `snapshotChanges()` で購読
-- `SyncService.scheduleUpload`: 編集 1.5秒 debounce でメモ単体アップロード
-- 自端末アップロード由来の発火は fingerprint で除外
-- 初回 snapshot の全件 added 通知は抑制（`syncOnce` 既取り込み済みなので）
-- HomeScreen で `authStateProvider` を ref.listen → ログイン状態変化で自動 start/stop
-- リアルタイム受信時のトースト通知は **撤去**（メモ自体が即時反映されるので不要）
+#### `SyncService` に追加した処理
+- `_imageToMap` / `_extractImages` / `_RemoteImageMeta`
+- `_uploadOneImage`: 画像本体を Storage に上げて URL を MemoImages.remoteUrl に保存
+- `_ensureMemoImagesUploaded`: 指定メモの未アップ画像を全部上げて最新 List<MemoImage> を返す
+- `_syncImagesFromRemote(memoId, remoteImages)`: 受信メタに合わせてローカルを差分同期
+  - リモートのみ → Storage から `getData()` で DL → `ImageStorage.saveBytes` → DB upsert
+  - ローカルのみ → `removeMemoImageLocalOnly` で実ファイル + DB から消す
+  - 両方ある → sortOrder / url 違いがあれば upsert
+- `_memoToMap` に `images` パラメータ追加。`uploadOneMemo` / `uploadAllMemos` で images 配列含めて書き込み
+- `downloadAllMemos` / リアルタイム購読の memos で `_extractImages` + `_syncImagesFromRemote` 呼び出し
 
-### タグ同期 (T1: マスター + T2: メモ-タグ関連)
-- `Tags.updatedAt` カラム追加（schemaVersion 7→8）
-  - SQLite の ALTER TABLE が「NOT NULL + 非const デフォルト」を許さないため、
-    `customStatement` で `DEFAULT 0` 追加 → 既存行を `strftime('%s','now')` で UPDATE
-- `SyncService` にタグ系メソッド一式（uploadAllTags / downloadAllTags / uploadOneTag / scheduleUploadTag）
-- `syncOnce` は **タグ → メモ → ToDo** の順で同期（メモ側のタグ参照が解決される順序）
-- リアルタイム購読 `_realtimeTagsSub` 追加
-- `createTag / updateTag / reorderParentTags / addTagToMemo / removeTagFromMemo` で `scheduleUploadTag` を即時呼び出し
-- メモ doc に `tagIds: [...]` 配列を含める（`_memoToMap` に optional 引数）
-- ダウンロード/リアルタイム受信時に `setTagIdsForMemo` でローカル memo_tags を全置換
-- 未到着タグは skip（タグマスター先行が前提）
+#### `database` 補助関数
+- `addMemoImage` / `deleteMemoImage` / `deleteAllMemoImages` 内で `memos.updatedAt` 更新 + `SyncService.scheduleUpload` 即時呼び出し
+- `setMemoImageRemoteUrl(id, url)`: アップロード完了後の URL 反映
+- `upsertMemoImageFromRemote(...)`: リモート受信用の upsert（id があれば update、なければ insert）
+- `removeMemoImageLocalOnly(id)`: 同期受信由来の削除でリモート再 trigger しない版
+- `watchMemoById(id)`: メモ単体の購読用 stream（memo_input_area が同期反映に使う）
 
-### ToDo 同期（TodoLists + TodoItems + TodoListTags）
-- 設計: **TodoLists doc に items + tagIds を埋め込む（A 案）**
-  - 1リスト=1ドキュメント、items の孤児化なし
-  - `_todoListToMap(list, items, tagIds)` / `_extractTodoItems(data, listId)`
-  - TodoItemTags（アイテム個別タグ）は今回スコープ外
-- `SyncService.scheduleUploadTodoList(db, listId)`: 内部で `touchTodoListUpdatedAt` → debounce upload
-- リアルタイム購読 `_realtimeTodoListsSub` 追加
-- `database` の補助関数: `setTodoItemsForList` / `setTagIdsForTodoList` / `getTagIdsForTodoList` / `touchTodoListUpdatedAt`
-- 既存 ToDo 関数（`createTodoItem` / `mergeTodoLists` / `createTodoList` / `addTagToTodoList` / `removeTagFromTodoList` / `setTodoListEventDate` / `setTodoListBgColor` / `setTodoItemEventDate`）で `scheduleUploadTodoList` 即時呼び出し
-- UI 側散在箇所も対応:
-  - `todo_list_screen.dart`: アイテム追加/編集/削除/チェック/メモ保存/タイトル保存/全リセット/全削除/並び替え すべて
-  - `home_screen.dart` / `todo_lists_screen.dart`: ピン留め/ロック切替
+### 編集中メモへの同期反映 (UI 側)
+画像同期だけでは「メモを開きっぱなしの相手端末で content が古いまま」になるので、
+入力画面側のリアクティブ化が必要だった。
 
-### バグ修正
-- **同名タグ複数で `getSingleOrNull` 例外** (起動時クラッシュ)
-  - `seedDummyBulkMemos` / `seedLongMemos` / `createTag` の同名検索を `get()` に変更し
-    `isNotEmpty` / `first` で扱う
+- **`memo_input_area` に `watchMemoById` 購読**
+  - 受信時に `_contentController.text` / `_titleController.text` を `_applyMemoData` で反映
+  - 自端末の更新由来は値一致で skip → リモート更新だけ反映
+  - フォーカスチェックは外した（自分の更新で値同じなのでループしない、競合は競合履歴で対応）
+- **`block_editor` に `watchMemoImages` 購読**
+  - 画像セット変化（DL 後追い等）を検知して再構築
+  - 再構築時は `db.getMemoById(memoId)` で **DB の最新 content** を使う
+    - `_serialize()` を使うと block_editor の現状（古いマーカー列）になり新規画像が末尾に集まる
+  - `_initialized` 前は無視（初回 listener で `_blocks` 空のうちに発火 → initialContent 消失バグ防止）
+  - `_resubscribeToImagesIfNeeded` を `_initAsync` 完了後に呼ぶ
+  - `_suppressImagesWatch` フラグ: 自分の `addMemoImage` / `deleteMemoImage` 中は購読を一時停止
+    （DB insert が `_blocks` 反映より先に listener 発火して末尾追加 / 重複削除を起こすため）
 
-### コミット履歴 (#38 全7本)
-1. `feat(sync): Phase 9 Step 5e 競合履歴 UI 実装`
-2. `feat(sync): 競合検出を双方向化 + 履歴ラベルを意味ベースに`
-3. `feat(sync): Phase A 即時同期（リアルタイム購読 + debounce アップロード）`
-4. `feat(sync): リアルタイム受信トースト表示を撤去`
-5. `feat(conflict): 競合履歴を端末非依存表示 + 200件上限 + 全削除赤色化`
-6. `fix(conflict): 削除アイコンを CupertinoIcons.delete_simple に統一`
-7. `feat(sync): タグ同期 (T1: タグマスター + T2: メモ-タグ関連)`
-8. `fix(migration): tags.updatedAt の追加で SQLite ALTER 制約を customStatement で回避`
-9. `feat(sync): ToDo 同期 (TodoLists + TodoItems + TodoListTags)`
-10. `fix(seed): 同期で同名タグが複数存在する場合 getSingleOrNull が例外を投げるバグ修正`
+### `block_editor` の細かい UX 改善
+- **画像挿入時の改行吸収**
+  - 「か / 空行 / さ」の空行頭で挿入すると「か / 空行 / 画像 / 空行 / さ」になる問題
+  - 画像ブロック自体が padding で1行分の空きを持つので、挿入位置直前の `\n` と直後の `\n` を1つずつ削る
+- **画像 ×ボタン**
+  - 編集モード時のみ表示（`!widget.readOnly` でガード）
+  - ヒット領域拡大（外見 24px、padding `(8,4,8,8)` で 36×40px 相当）
+  - 上方向は 4px に抑える（直上の TextBlock 末尾と干渉しない）
+- **画像削除後のフォーカス復帰**
+  - `_removeImageBlock` でマージ後の TextBlock にフォーカス + カーソル復帰
+  - 画像があった位置にカーソルが戻り編集モード継続（キーボード閉じない）
 
-## 次のアクション（次セッション #39）
+### 詰まりポイント / 教訓
+- `flutter run` のビルドキャッシュ（dill）が古いまま起動するケースあり
+  - 症状: 修正済みの seedDummyBulkMemos でクラッシュ → 行番号が古いソース版
+  - 対処: `rm -rf build/ .dart_tool/build` + シミュアプリ uninstall + flutter run 再起動
+- `watchMemoImages` の listener 発火タイミングは drift の trigger ベースで非同期
+  - addMemoImage の戻り値受け取り前に listener が走るので、ローカル状態と DB に乖離が出る
+  - フラグ管理 + `_initialized` ガードで対応
+- リスナー再構築は `_serialize()`（自身の現状）ではなく **`memo.content`（DB の真実）** を使う
+
+### コミット履歴 (#39)
+1. `feat(sync): Phase 9 画像同期 (Firebase Storage + memo doc に images 配列)`
+2. `feat(block_editor): 同期受信時の再構築 + UX 改善`
+3. `docs(roadmap): サブスク プラン設計と画像 UX アイデア追記`
+
+## 次のアクション（次セッション #40）
 
 ### Phase 9 残タスク
-- [ ] **画像同期** (タスク#2 残)
-  - `MemoImages` テーブル + Firebase Storage に画像本体
-  - 設計判断: 画像 base64 で Firestore (NG, 1MB制限) vs Storage URL（推奨、無料枠 5GB）
-  - 同期されるのは `MemoImages` メタ情報 + Storage の URL
-  - メモ doc に `imageUrls: [...]` を含めるパターンが自然
-- [ ] **削除の同期** (タスク#3)
-  - ローカル削除 → Firestore も削除（hard delete）or tombstone 方式
-  - hard delete だと「同期前の他端末で復活」が起きる可能性 → tombstone 推奨
-  - Tombstone collection `users/{uid}/deletedMemos/{memoId}` に削除時刻を記録
-  - 各端末は tombstone を読んで該当メモをローカルからも削除
-- [ ] **Step 4: サブスク** (タスク#4)
-  - RevenueCat / in_app_purchase
+- [ ] **画像削除の同期テスト**（実機で双方向動作確認）
+- [ ] **メモ削除の同期**（tombstone 方式 / `users/{uid}/deletedMemos/{memoId}`）
+- [ ] **Step 4: サブスク** (RevenueCat or in_app_purchase)
+  - プラン設計 ROADMAP に記録済み: 無料(同期なし) / お試し1ヶ月(同期可・100枚) / Pro 月500円(7000枚) / Premium 月1500円(7万枚)
+  - 容量カウント: Firestore に metadata 記録、アプリで「あと○MB」表示
 
-### 既知の現象（運用上の注意）
-- **両端末で独立 seed → 同名タグ・メモが別 id で重複作成**
-  - createTag 重複防止は同端末内のみ。別端末から同名タグが流入 → 重複で並ぶ
-  - 「全データ削除（Firestore も）→ 片端末だけ起動 → 他端末起動」でクリーンに同期される
-  - リリース時は seed を入れない方針なので非問題
-- リアルタイム受信時、別端末からの新規メモは「タグなし」で来ることがある（タグマスター未到着のタイミング）
-  - 自動的に少し後で再同期されてタグ付くケースも、付かないケースもある
-  - 暫定対処: 同期相手のタグマスター先行 + setTagIdsForMemo の skip ガード
+### 既知の事象
+- 両端末で独立 seed → 同名タグ・メモが別 id で重複作成（リリース時は seed しないので非問題）
+- リアルタイム購読の memo doc 受信が画像 DL より先に走るケース → block_editor の画像 watch が後追いで再構築（実装済み）
 
-### 残タスク（ROADMAP「備忘」より、引き継ぎ）
-- データ保護画面のダイアログ文言検討（バックアップ作成成功時 / Documents エクスポート成功時 / 復元前の確認 / 復元後の再起動案内）
-- Firestore セキュリティルールを「テストモード」から本番ルールに書き換え（30日以内）
-- データ保護画面の「復元」改修: ワンクッション化
+### 残タスク（ROADMAP「備忘」より）
+- データ保護画面のダイアログ文言検討
+- Firestore セキュリティルールを本番ルールに書き換え（30日以内、テストモード残期間注意）
+- データ保護画面の「復元」ワンクッション化
 
 ### 実機検証の積み残し
 - 13 mini シミュ起動済み（pipe: `/tmp/flutter_pipe_13`）
@@ -111,36 +108,41 @@
 
 ## 技術メモ
 
-### Phase A 即時同期のフロー
-1. 編集 → `db.updateMemo()` (memos テーブル更新)
-2. `_onChanged()` 内で `SyncService.scheduleUpload(db, memoId)` 呼び出し
-3. 1.5秒 debounce → `uploadOneMemo` 実行
-4. `_registerSelfUpload(memoId, updatedAt)` でフィンガープリント登録（30秒キャッシュ）
-5. 別端末: `_realtimeMemosSub` の listener で受信
-6. 自端末フィルタチェック → 一致なら skip、しなければローカル DB に upsert + tagIds 反映
+### 画像同期のフロー（送信側）
+1. ユーザーが画像挿入 → `addMemoImage` で MemoImages レコード作成、`memos.updatedAt` 更新、`SyncService.scheduleUpload(memoId)`
+2. 1.5秒 debounce → `uploadOneMemo`
+   - `_ensureMemoImagesUploaded(memoId)` で remoteUrl == null の画像を Storage に上げて URL を DB に保存
+   - 最新 List<MemoImage> 取得
+   - `_memoToMap(memo, tagIds, images)` で memo doc 構築
+   - `_registerSelfUpload(memoId, updatedAt)` で fingerprint 登録（30秒キャッシュ）
+   - Firestore `users/{uid}/memos/{memoId}` に書き込み
 
-### タグ同期の順序
-- `syncOnce`: **download(タグ) → upload(タグ) → download(メモ) → upload(メモ) → download(ToDo) → upload(ToDo)**
-- リアルタイムは並列起動（tags listener / memos listener / todoLists listener）
-- メモ doc の tagIds 反映時、ローカルにタグマスターが無ければ skip
-  - 通常はタグマスター同期が先に走るので問題ないが、タイミング依存
-  - 暫定: `setTagIdsForMemo` の `knownIds` チェックで対応
+### 画像同期のフロー（受信側）
+1. `_realtimeMemosSub` の listener が memo doc を受信
+2. 自端末 fingerprint と一致なら skip
+3. ローカル DB の memos を update（content にマーカー含む最新版）
+4. `_syncImagesFromRemote(memoId, remoteImages)` で画像差分同期
+   - 未取得画像 → Storage `refFromURL` + `getData(20MB上限)` → `ImageStorage.saveBytes` → `upsertMemoImageFromRemote`
+   - ローカル余剰画像 → `removeMemoImageLocalOnly`
+5. memo_input_area の `watchMemoById` が発火 → `_applyMemoData` → `_contentController.text` 更新
+6. block_editor の `didUpdateWidget` で `initialContent` 変化検知 → `replaceContent` → `_loadBlocksFromContent`
+7. `_loadBlocksFromContent` がマーカーから ImageBlock を構築（DB に画像あり前提）
+8. 画像 DL 後追いの場合 → block_editor の `watchMemoImages` が発火 → DB から最新 content 取得 → 再構築
 
-### ToDo 同期の設計判断
-- **TodoLists doc に items + tagIds 埋め込み** (A 案採用)
-- 利点: 1リスト=1ドキュメント、孤児化なし、操作単位が認知単位と一致
-- 欠点: 1MB 制限（数百項目まで OK、数千項目で破綻）
-- 現実的な ToDo 規模（数十項目）には十分
+### Storage コスト試算（再掲）
+- 1ユーザー画像100枚 = 約15MB
+- 5GB Free Tier 内なら無料、340ユーザー相当
+- 無料ユーザーは同期不可（Phase 4 サブスク導入後）→ 課金者だけ Storage 使うので暴走リスク極小
 
-### SQLite ALTER TABLE 制約の罠
-- drift の `m.addColumn` は `currentDateAndTime` のような非const デフォルトを使うと
-  `Cannot add a column with non-constant default` で失敗
-- 対処: `customStatement` で `DEFAULT 0` で NOT NULL 追加 → `UPDATE` で初期値セット
+### Firestore コスト
+- 1ユーザー約 $0.10/月 (Blaze)、Spark の無料枠でも数百ユーザーまでは問題なし
 
-### Firestore コスト見積（Phase A 導入後）
-- 1ユーザー1日メモ100回更新 → 月 ~3000 書き込み
-- 無料枠: 5万書き込み/日。圧倒的に余裕
-- 同期上限の懸念は今のところなし（タグ・ToDo 含めても安全圏）
+### Firebase Console 設定状況
+- プロジェクト: `memolette-3a68b`
+- 請求先: 「Memolette」(Cloud 請求先アカウント、独立、クレカ既存)
+- Storage バケット: `gs://memolette-3a68b.firebasestorage.app` (US-EAST1, Standard)
+- 予算アラート: ¥750/月、メール通知有効
+- セキュリティルール: テストモード（30日後に本番ルール書換え必要）
 
 ### シミュ / 実機 ID
 - iPhone SE 3rd iOS26: `47003836-6426-4AB1-90FC-C5E73DA251C1`
@@ -152,7 +154,6 @@
 
 ### Mac で `py` コマンドはない
 - グローバル CLAUDE.md の Python 実行ルールは Windows 用。Mac では `python3` で代用
-- 例: `python3 "/Users/nock_re/...マイドライブ/_claude-sync/transcript_export.py" --latest`
 
 ## 関連メモ（自動メモリ）
 
