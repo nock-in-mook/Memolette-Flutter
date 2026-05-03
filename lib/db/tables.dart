@@ -143,3 +143,21 @@ class MemoImages extends Table {
   @override
   Set<Column> get primaryKey => {id};
 }
+
+// ========================================
+// 競合履歴テーブル（Phase 9 Step 5e）
+// 同期で「上書きされて失われた側」の内容を保存する。
+// lostSide: 'local'  = リモートが勝ってローカルが上書きされた
+//           'remote' = ローカルが勝ってリモートが上書きされた
+// memo 本体（title / content）のみ保存。タグ/画像/ToDo は対象外。
+// ========================================
+class ConflictHistories extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get memoId => text()();
+  TextColumn get lostSide => text()();
+  TextColumn get lostTitle => text().withDefault(const Constant(''))();
+  TextColumn get lostContent => text().withDefault(const Constant(''))();
+  DateTimeColumn get lostUpdatedAt => dateTime()();
+  DateTimeColumn get winnerUpdatedAt => dateTime()();
+  DateTimeColumn get recordedAt => dateTime().withDefault(currentDateAndTime)();
+}

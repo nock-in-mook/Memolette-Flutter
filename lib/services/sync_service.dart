@@ -142,10 +142,16 @@ class SyncService {
     );
   }
 
+  /// 競合判定の時間しきい値（Step 5e）。
+  /// ローカル・リモート両方がこの時間以内に更新されていた場合に競合扱い。
+  static const Duration conflictWindow = Duration(hours: 6);
+
   /// Step 5c: Firestore からメモをダウンロードしてローカル DB に upsert
   /// 同 id がある場合は updatedAt 比較で「リモートの方が新しい」ときのみ上書き。
   /// ローカルにあって Firestore にないメモは触らない（削除は別 Step で扱う）。
-  /// 戻り値: { 'inserted': N, 'updated': M, 'skipped': K, 'invalid': J }
+  /// Step 5e: 上書きで失われるローカル内容が直近 [conflictWindow] 以内に
+  /// 編集されていた場合、conflict_histories テーブルに記録する。
+  /// 戻り値: { 'inserted': N, 'updated': M, 'skipped': K, 'invalid': J, 'conflicts': C }
   static Future<Map<String, int>> downloadAllMemos(AppDatabase db) async {
     final userRef = _userDocRef();
     if (userRef == null) {
@@ -153,7 +159,13 @@ class SyncService {
     }
     final snapshot = await userRef.collection('memos').get();
     if (snapshot.docs.isEmpty) {
-      return {'inserted': 0, 'updated': 0, 'skipped': 0, 'invalid': 0};
+      return {
+        'inserted': 0,
+        'updated': 0,
+        'skipped': 0,
+        'invalid': 0,
+        'conflicts': 0,
+      };
     }
     // ローカル既存メモを id → updatedAt の Map に
     final localMemos = await db.select(db.memos).get();
@@ -163,7 +175,10 @@ class SyncService {
     var updated = 0;
     var skipped = 0;
     var invalid = 0;
+    var conflicts = 0;
     final companions = <MemosCompanion>[];
+    final conflictRecords = <_ConflictRecord>[];
+    final now = DateTime.now();
     for (final doc in snapshot.docs) {
       final companion = _mapToMemoCompanion(doc.data());
       if (companion == null) {
@@ -177,6 +192,26 @@ class SyncService {
         inserted++;
         companions.add(companion);
       } else if (remoteUpdated.isAfter(local.updatedAt)) {
+        // 競合判定: ローカルが直近 conflictWindow 以内に編集されていて、
+        // かつ title / content の中身が異なる場合のみ「失われる側」として記録。
+        // updatedAt だけ違うがタイトル/本文が同じ場合は単なる先行更新の取り込みなので
+        // 競合扱いしない（履歴ノイズを避ける）。
+        final remoteTitle = companion.title.value;
+        final remoteContent = companion.content.value;
+        final hasContentDiff =
+            local.title != remoteTitle || local.content != remoteContent;
+        if (hasContentDiff &&
+            now.difference(local.updatedAt) <= conflictWindow) {
+          conflictRecords.add(_ConflictRecord(
+            memoId: id,
+            lostSide: 'local',
+            lostTitle: local.title,
+            lostContent: local.content,
+            lostUpdatedAt: local.updatedAt,
+            winnerUpdatedAt: remoteUpdated,
+          ));
+          conflicts++;
+        }
         updated++;
         companions.add(companion);
       } else {
@@ -200,6 +235,24 @@ class SyncService {
         }
       });
     }
+    if (conflictRecords.isNotEmpty) {
+      // 競合履歴を batch insert
+      await db.batch((batch) {
+        for (final r in conflictRecords) {
+          batch.insert(
+            db.conflictHistories,
+            ConflictHistoriesCompanion.insert(
+              memoId: r.memoId,
+              lostSide: r.lostSide,
+              lostTitle: drift.Value(r.lostTitle),
+              lostContent: drift.Value(r.lostContent),
+              lostUpdatedAt: r.lostUpdatedAt,
+              winnerUpdatedAt: r.winnerUpdatedAt,
+            ),
+          );
+        }
+      });
+    }
     await userRef.set({
       'lastDownloadAt': FieldValue.serverTimestamp(),
       'lastDownloadCount': inserted + updated,
@@ -210,6 +263,7 @@ class SyncService {
       'updated': updated,
       'skipped': skipped,
       'invalid': invalid,
+      'conflicts': conflicts,
     };
   }
 
@@ -235,4 +289,23 @@ class SyncService {
       _syncing = false;
     }
   }
+}
+
+/// 競合検出時に一時保持する内部レコード（batch insert 用）
+class _ConflictRecord {
+  final String memoId;
+  final String lostSide;
+  final String lostTitle;
+  final String lostContent;
+  final DateTime lostUpdatedAt;
+  final DateTime winnerUpdatedAt;
+
+  const _ConflictRecord({
+    required this.memoId,
+    required this.lostSide,
+    required this.lostTitle,
+    required this.lostContent,
+    required this.lostUpdatedAt,
+    required this.winnerUpdatedAt,
+  });
 }

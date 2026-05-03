@@ -3757,6 +3757,519 @@ class MemoImagesCompanion extends UpdateCompanion<MemoImage> {
   }
 }
 
+class $ConflictHistoriesTable extends ConflictHistories
+    with TableInfo<$ConflictHistoriesTable, ConflictHistory> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ConflictHistoriesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _memoIdMeta = const VerificationMeta('memoId');
+  @override
+  late final GeneratedColumn<String> memoId = GeneratedColumn<String>(
+    'memo_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lostSideMeta = const VerificationMeta(
+    'lostSide',
+  );
+  @override
+  late final GeneratedColumn<String> lostSide = GeneratedColumn<String>(
+    'lost_side',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lostTitleMeta = const VerificationMeta(
+    'lostTitle',
+  );
+  @override
+  late final GeneratedColumn<String> lostTitle = GeneratedColumn<String>(
+    'lost_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _lostContentMeta = const VerificationMeta(
+    'lostContent',
+  );
+  @override
+  late final GeneratedColumn<String> lostContent = GeneratedColumn<String>(
+    'lost_content',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _lostUpdatedAtMeta = const VerificationMeta(
+    'lostUpdatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> lostUpdatedAt =
+      GeneratedColumn<DateTime>(
+        'lost_updated_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _winnerUpdatedAtMeta = const VerificationMeta(
+    'winnerUpdatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> winnerUpdatedAt =
+      GeneratedColumn<DateTime>(
+        'winner_updated_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _recordedAtMeta = const VerificationMeta(
+    'recordedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> recordedAt = GeneratedColumn<DateTime>(
+    'recorded_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    memoId,
+    lostSide,
+    lostTitle,
+    lostContent,
+    lostUpdatedAt,
+    winnerUpdatedAt,
+    recordedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'conflict_histories';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ConflictHistory> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('memo_id')) {
+      context.handle(
+        _memoIdMeta,
+        memoId.isAcceptableOrUnknown(data['memo_id']!, _memoIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_memoIdMeta);
+    }
+    if (data.containsKey('lost_side')) {
+      context.handle(
+        _lostSideMeta,
+        lostSide.isAcceptableOrUnknown(data['lost_side']!, _lostSideMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_lostSideMeta);
+    }
+    if (data.containsKey('lost_title')) {
+      context.handle(
+        _lostTitleMeta,
+        lostTitle.isAcceptableOrUnknown(data['lost_title']!, _lostTitleMeta),
+      );
+    }
+    if (data.containsKey('lost_content')) {
+      context.handle(
+        _lostContentMeta,
+        lostContent.isAcceptableOrUnknown(
+          data['lost_content']!,
+          _lostContentMeta,
+        ),
+      );
+    }
+    if (data.containsKey('lost_updated_at')) {
+      context.handle(
+        _lostUpdatedAtMeta,
+        lostUpdatedAt.isAcceptableOrUnknown(
+          data['lost_updated_at']!,
+          _lostUpdatedAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_lostUpdatedAtMeta);
+    }
+    if (data.containsKey('winner_updated_at')) {
+      context.handle(
+        _winnerUpdatedAtMeta,
+        winnerUpdatedAt.isAcceptableOrUnknown(
+          data['winner_updated_at']!,
+          _winnerUpdatedAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_winnerUpdatedAtMeta);
+    }
+    if (data.containsKey('recorded_at')) {
+      context.handle(
+        _recordedAtMeta,
+        recordedAt.isAcceptableOrUnknown(data['recorded_at']!, _recordedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ConflictHistory map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ConflictHistory(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      memoId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}memo_id'],
+      )!,
+      lostSide: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}lost_side'],
+      )!,
+      lostTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}lost_title'],
+      )!,
+      lostContent: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}lost_content'],
+      )!,
+      lostUpdatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}lost_updated_at'],
+      )!,
+      winnerUpdatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}winner_updated_at'],
+      )!,
+      recordedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}recorded_at'],
+      )!,
+    );
+  }
+
+  @override
+  $ConflictHistoriesTable createAlias(String alias) {
+    return $ConflictHistoriesTable(attachedDatabase, alias);
+  }
+}
+
+class ConflictHistory extends DataClass implements Insertable<ConflictHistory> {
+  final int id;
+  final String memoId;
+  final String lostSide;
+  final String lostTitle;
+  final String lostContent;
+  final DateTime lostUpdatedAt;
+  final DateTime winnerUpdatedAt;
+  final DateTime recordedAt;
+  const ConflictHistory({
+    required this.id,
+    required this.memoId,
+    required this.lostSide,
+    required this.lostTitle,
+    required this.lostContent,
+    required this.lostUpdatedAt,
+    required this.winnerUpdatedAt,
+    required this.recordedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['memo_id'] = Variable<String>(memoId);
+    map['lost_side'] = Variable<String>(lostSide);
+    map['lost_title'] = Variable<String>(lostTitle);
+    map['lost_content'] = Variable<String>(lostContent);
+    map['lost_updated_at'] = Variable<DateTime>(lostUpdatedAt);
+    map['winner_updated_at'] = Variable<DateTime>(winnerUpdatedAt);
+    map['recorded_at'] = Variable<DateTime>(recordedAt);
+    return map;
+  }
+
+  ConflictHistoriesCompanion toCompanion(bool nullToAbsent) {
+    return ConflictHistoriesCompanion(
+      id: Value(id),
+      memoId: Value(memoId),
+      lostSide: Value(lostSide),
+      lostTitle: Value(lostTitle),
+      lostContent: Value(lostContent),
+      lostUpdatedAt: Value(lostUpdatedAt),
+      winnerUpdatedAt: Value(winnerUpdatedAt),
+      recordedAt: Value(recordedAt),
+    );
+  }
+
+  factory ConflictHistory.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ConflictHistory(
+      id: serializer.fromJson<int>(json['id']),
+      memoId: serializer.fromJson<String>(json['memoId']),
+      lostSide: serializer.fromJson<String>(json['lostSide']),
+      lostTitle: serializer.fromJson<String>(json['lostTitle']),
+      lostContent: serializer.fromJson<String>(json['lostContent']),
+      lostUpdatedAt: serializer.fromJson<DateTime>(json['lostUpdatedAt']),
+      winnerUpdatedAt: serializer.fromJson<DateTime>(json['winnerUpdatedAt']),
+      recordedAt: serializer.fromJson<DateTime>(json['recordedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'memoId': serializer.toJson<String>(memoId),
+      'lostSide': serializer.toJson<String>(lostSide),
+      'lostTitle': serializer.toJson<String>(lostTitle),
+      'lostContent': serializer.toJson<String>(lostContent),
+      'lostUpdatedAt': serializer.toJson<DateTime>(lostUpdatedAt),
+      'winnerUpdatedAt': serializer.toJson<DateTime>(winnerUpdatedAt),
+      'recordedAt': serializer.toJson<DateTime>(recordedAt),
+    };
+  }
+
+  ConflictHistory copyWith({
+    int? id,
+    String? memoId,
+    String? lostSide,
+    String? lostTitle,
+    String? lostContent,
+    DateTime? lostUpdatedAt,
+    DateTime? winnerUpdatedAt,
+    DateTime? recordedAt,
+  }) => ConflictHistory(
+    id: id ?? this.id,
+    memoId: memoId ?? this.memoId,
+    lostSide: lostSide ?? this.lostSide,
+    lostTitle: lostTitle ?? this.lostTitle,
+    lostContent: lostContent ?? this.lostContent,
+    lostUpdatedAt: lostUpdatedAt ?? this.lostUpdatedAt,
+    winnerUpdatedAt: winnerUpdatedAt ?? this.winnerUpdatedAt,
+    recordedAt: recordedAt ?? this.recordedAt,
+  );
+  ConflictHistory copyWithCompanion(ConflictHistoriesCompanion data) {
+    return ConflictHistory(
+      id: data.id.present ? data.id.value : this.id,
+      memoId: data.memoId.present ? data.memoId.value : this.memoId,
+      lostSide: data.lostSide.present ? data.lostSide.value : this.lostSide,
+      lostTitle: data.lostTitle.present ? data.lostTitle.value : this.lostTitle,
+      lostContent: data.lostContent.present
+          ? data.lostContent.value
+          : this.lostContent,
+      lostUpdatedAt: data.lostUpdatedAt.present
+          ? data.lostUpdatedAt.value
+          : this.lostUpdatedAt,
+      winnerUpdatedAt: data.winnerUpdatedAt.present
+          ? data.winnerUpdatedAt.value
+          : this.winnerUpdatedAt,
+      recordedAt: data.recordedAt.present
+          ? data.recordedAt.value
+          : this.recordedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ConflictHistory(')
+          ..write('id: $id, ')
+          ..write('memoId: $memoId, ')
+          ..write('lostSide: $lostSide, ')
+          ..write('lostTitle: $lostTitle, ')
+          ..write('lostContent: $lostContent, ')
+          ..write('lostUpdatedAt: $lostUpdatedAt, ')
+          ..write('winnerUpdatedAt: $winnerUpdatedAt, ')
+          ..write('recordedAt: $recordedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    memoId,
+    lostSide,
+    lostTitle,
+    lostContent,
+    lostUpdatedAt,
+    winnerUpdatedAt,
+    recordedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ConflictHistory &&
+          other.id == this.id &&
+          other.memoId == this.memoId &&
+          other.lostSide == this.lostSide &&
+          other.lostTitle == this.lostTitle &&
+          other.lostContent == this.lostContent &&
+          other.lostUpdatedAt == this.lostUpdatedAt &&
+          other.winnerUpdatedAt == this.winnerUpdatedAt &&
+          other.recordedAt == this.recordedAt);
+}
+
+class ConflictHistoriesCompanion extends UpdateCompanion<ConflictHistory> {
+  final Value<int> id;
+  final Value<String> memoId;
+  final Value<String> lostSide;
+  final Value<String> lostTitle;
+  final Value<String> lostContent;
+  final Value<DateTime> lostUpdatedAt;
+  final Value<DateTime> winnerUpdatedAt;
+  final Value<DateTime> recordedAt;
+  const ConflictHistoriesCompanion({
+    this.id = const Value.absent(),
+    this.memoId = const Value.absent(),
+    this.lostSide = const Value.absent(),
+    this.lostTitle = const Value.absent(),
+    this.lostContent = const Value.absent(),
+    this.lostUpdatedAt = const Value.absent(),
+    this.winnerUpdatedAt = const Value.absent(),
+    this.recordedAt = const Value.absent(),
+  });
+  ConflictHistoriesCompanion.insert({
+    this.id = const Value.absent(),
+    required String memoId,
+    required String lostSide,
+    this.lostTitle = const Value.absent(),
+    this.lostContent = const Value.absent(),
+    required DateTime lostUpdatedAt,
+    required DateTime winnerUpdatedAt,
+    this.recordedAt = const Value.absent(),
+  }) : memoId = Value(memoId),
+       lostSide = Value(lostSide),
+       lostUpdatedAt = Value(lostUpdatedAt),
+       winnerUpdatedAt = Value(winnerUpdatedAt);
+  static Insertable<ConflictHistory> custom({
+    Expression<int>? id,
+    Expression<String>? memoId,
+    Expression<String>? lostSide,
+    Expression<String>? lostTitle,
+    Expression<String>? lostContent,
+    Expression<DateTime>? lostUpdatedAt,
+    Expression<DateTime>? winnerUpdatedAt,
+    Expression<DateTime>? recordedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (memoId != null) 'memo_id': memoId,
+      if (lostSide != null) 'lost_side': lostSide,
+      if (lostTitle != null) 'lost_title': lostTitle,
+      if (lostContent != null) 'lost_content': lostContent,
+      if (lostUpdatedAt != null) 'lost_updated_at': lostUpdatedAt,
+      if (winnerUpdatedAt != null) 'winner_updated_at': winnerUpdatedAt,
+      if (recordedAt != null) 'recorded_at': recordedAt,
+    });
+  }
+
+  ConflictHistoriesCompanion copyWith({
+    Value<int>? id,
+    Value<String>? memoId,
+    Value<String>? lostSide,
+    Value<String>? lostTitle,
+    Value<String>? lostContent,
+    Value<DateTime>? lostUpdatedAt,
+    Value<DateTime>? winnerUpdatedAt,
+    Value<DateTime>? recordedAt,
+  }) {
+    return ConflictHistoriesCompanion(
+      id: id ?? this.id,
+      memoId: memoId ?? this.memoId,
+      lostSide: lostSide ?? this.lostSide,
+      lostTitle: lostTitle ?? this.lostTitle,
+      lostContent: lostContent ?? this.lostContent,
+      lostUpdatedAt: lostUpdatedAt ?? this.lostUpdatedAt,
+      winnerUpdatedAt: winnerUpdatedAt ?? this.winnerUpdatedAt,
+      recordedAt: recordedAt ?? this.recordedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (memoId.present) {
+      map['memo_id'] = Variable<String>(memoId.value);
+    }
+    if (lostSide.present) {
+      map['lost_side'] = Variable<String>(lostSide.value);
+    }
+    if (lostTitle.present) {
+      map['lost_title'] = Variable<String>(lostTitle.value);
+    }
+    if (lostContent.present) {
+      map['lost_content'] = Variable<String>(lostContent.value);
+    }
+    if (lostUpdatedAt.present) {
+      map['lost_updated_at'] = Variable<DateTime>(lostUpdatedAt.value);
+    }
+    if (winnerUpdatedAt.present) {
+      map['winner_updated_at'] = Variable<DateTime>(winnerUpdatedAt.value);
+    }
+    if (recordedAt.present) {
+      map['recorded_at'] = Variable<DateTime>(recordedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ConflictHistoriesCompanion(')
+          ..write('id: $id, ')
+          ..write('memoId: $memoId, ')
+          ..write('lostSide: $lostSide, ')
+          ..write('lostTitle: $lostTitle, ')
+          ..write('lostContent: $lostContent, ')
+          ..write('lostUpdatedAt: $lostUpdatedAt, ')
+          ..write('winnerUpdatedAt: $winnerUpdatedAt, ')
+          ..write('recordedAt: $recordedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3769,6 +4282,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $TodoItemTagsTable todoItemTags = $TodoItemTagsTable(this);
   late final $TodoListTagsTable todoListTags = $TodoListTagsTable(this);
   late final $MemoImagesTable memoImages = $MemoImagesTable(this);
+  late final $ConflictHistoriesTable conflictHistories =
+      $ConflictHistoriesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3783,6 +4298,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     todoItemTags,
     todoListTags,
     memoImages,
+    conflictHistories,
   ];
 }
 
@@ -7192,6 +7708,274 @@ typedef $$MemoImagesTableProcessedTableManager =
       MemoImage,
       PrefetchHooks Function({bool memoId})
     >;
+typedef $$ConflictHistoriesTableCreateCompanionBuilder =
+    ConflictHistoriesCompanion Function({
+      Value<int> id,
+      required String memoId,
+      required String lostSide,
+      Value<String> lostTitle,
+      Value<String> lostContent,
+      required DateTime lostUpdatedAt,
+      required DateTime winnerUpdatedAt,
+      Value<DateTime> recordedAt,
+    });
+typedef $$ConflictHistoriesTableUpdateCompanionBuilder =
+    ConflictHistoriesCompanion Function({
+      Value<int> id,
+      Value<String> memoId,
+      Value<String> lostSide,
+      Value<String> lostTitle,
+      Value<String> lostContent,
+      Value<DateTime> lostUpdatedAt,
+      Value<DateTime> winnerUpdatedAt,
+      Value<DateTime> recordedAt,
+    });
+
+class $$ConflictHistoriesTableFilterComposer
+    extends Composer<_$AppDatabase, $ConflictHistoriesTable> {
+  $$ConflictHistoriesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get memoId => $composableBuilder(
+    column: $table.memoId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lostSide => $composableBuilder(
+    column: $table.lostSide,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lostTitle => $composableBuilder(
+    column: $table.lostTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lostContent => $composableBuilder(
+    column: $table.lostContent,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lostUpdatedAt => $composableBuilder(
+    column: $table.lostUpdatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get winnerUpdatedAt => $composableBuilder(
+    column: $table.winnerUpdatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get recordedAt => $composableBuilder(
+    column: $table.recordedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ConflictHistoriesTableOrderingComposer
+    extends Composer<_$AppDatabase, $ConflictHistoriesTable> {
+  $$ConflictHistoriesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get memoId => $composableBuilder(
+    column: $table.memoId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lostSide => $composableBuilder(
+    column: $table.lostSide,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lostTitle => $composableBuilder(
+    column: $table.lostTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lostContent => $composableBuilder(
+    column: $table.lostContent,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get lostUpdatedAt => $composableBuilder(
+    column: $table.lostUpdatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get winnerUpdatedAt => $composableBuilder(
+    column: $table.winnerUpdatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get recordedAt => $composableBuilder(
+    column: $table.recordedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ConflictHistoriesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ConflictHistoriesTable> {
+  $$ConflictHistoriesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get memoId =>
+      $composableBuilder(column: $table.memoId, builder: (column) => column);
+
+  GeneratedColumn<String> get lostSide =>
+      $composableBuilder(column: $table.lostSide, builder: (column) => column);
+
+  GeneratedColumn<String> get lostTitle =>
+      $composableBuilder(column: $table.lostTitle, builder: (column) => column);
+
+  GeneratedColumn<String> get lostContent => $composableBuilder(
+    column: $table.lostContent,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get lostUpdatedAt => $composableBuilder(
+    column: $table.lostUpdatedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get winnerUpdatedAt => $composableBuilder(
+    column: $table.winnerUpdatedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get recordedAt => $composableBuilder(
+    column: $table.recordedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$ConflictHistoriesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ConflictHistoriesTable,
+          ConflictHistory,
+          $$ConflictHistoriesTableFilterComposer,
+          $$ConflictHistoriesTableOrderingComposer,
+          $$ConflictHistoriesTableAnnotationComposer,
+          $$ConflictHistoriesTableCreateCompanionBuilder,
+          $$ConflictHistoriesTableUpdateCompanionBuilder,
+          (
+            ConflictHistory,
+            BaseReferences<
+              _$AppDatabase,
+              $ConflictHistoriesTable,
+              ConflictHistory
+            >,
+          ),
+          ConflictHistory,
+          PrefetchHooks Function()
+        > {
+  $$ConflictHistoriesTableTableManager(
+    _$AppDatabase db,
+    $ConflictHistoriesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ConflictHistoriesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ConflictHistoriesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ConflictHistoriesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> memoId = const Value.absent(),
+                Value<String> lostSide = const Value.absent(),
+                Value<String> lostTitle = const Value.absent(),
+                Value<String> lostContent = const Value.absent(),
+                Value<DateTime> lostUpdatedAt = const Value.absent(),
+                Value<DateTime> winnerUpdatedAt = const Value.absent(),
+                Value<DateTime> recordedAt = const Value.absent(),
+              }) => ConflictHistoriesCompanion(
+                id: id,
+                memoId: memoId,
+                lostSide: lostSide,
+                lostTitle: lostTitle,
+                lostContent: lostContent,
+                lostUpdatedAt: lostUpdatedAt,
+                winnerUpdatedAt: winnerUpdatedAt,
+                recordedAt: recordedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String memoId,
+                required String lostSide,
+                Value<String> lostTitle = const Value.absent(),
+                Value<String> lostContent = const Value.absent(),
+                required DateTime lostUpdatedAt,
+                required DateTime winnerUpdatedAt,
+                Value<DateTime> recordedAt = const Value.absent(),
+              }) => ConflictHistoriesCompanion.insert(
+                id: id,
+                memoId: memoId,
+                lostSide: lostSide,
+                lostTitle: lostTitle,
+                lostContent: lostContent,
+                lostUpdatedAt: lostUpdatedAt,
+                winnerUpdatedAt: winnerUpdatedAt,
+                recordedAt: recordedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ConflictHistoriesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ConflictHistoriesTable,
+      ConflictHistory,
+      $$ConflictHistoriesTableFilterComposer,
+      $$ConflictHistoriesTableOrderingComposer,
+      $$ConflictHistoriesTableAnnotationComposer,
+      $$ConflictHistoriesTableCreateCompanionBuilder,
+      $$ConflictHistoriesTableUpdateCompanionBuilder,
+      (
+        ConflictHistory,
+        BaseReferences<_$AppDatabase, $ConflictHistoriesTable, ConflictHistory>,
+      ),
+      ConflictHistory,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -7213,4 +7997,6 @@ class $AppDatabaseManager {
       $$TodoListTagsTableTableManager(_db, _db.todoListTags);
   $$MemoImagesTableTableManager get memoImages =>
       $$MemoImagesTableTableManager(_db, _db.memoImages);
+  $$ConflictHistoriesTableTableManager get conflictHistories =>
+      $$ConflictHistoriesTableTableManager(_db, _db.conflictHistories);
 }

@@ -23,6 +23,7 @@ const _uuid = Uuid();
   TodoItemTags,
   TodoListTags,
   MemoImages,
+  ConflictHistories,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
@@ -31,7 +32,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -61,6 +62,10 @@ class AppDatabase extends _$AppDatabase {
           if (from < 6) {
             // TodoLists カード背景色（メモと同じ MemoBgColors パレット使用）
             await m.addColumn(todoLists, todoLists.bgColorIndex);
+          }
+          if (from < 7) {
+            // Phase 9 Step 5e: 競合履歴テーブル
+            await m.createTable(conflictHistories);
           }
         },
       );
@@ -1364,7 +1369,59 @@ class AppDatabase extends _$AppDatabase {
       await delete(todoItems).go();
       await delete(todoLists).go();
       await delete(tagHistories).go();
+      await delete(conflictHistories).go();
     });
+  }
+
+  // ========================================
+  // 競合履歴 CRUD（Phase 9 Step 5e）
+  // ========================================
+
+  /// 競合履歴を1件記録する
+  Future<void> recordConflict({
+    required String memoId,
+    required String lostSide, // 'local' or 'remote'
+    required String lostTitle,
+    required String lostContent,
+    required DateTime lostUpdatedAt,
+    required DateTime winnerUpdatedAt,
+  }) async {
+    await into(conflictHistories).insert(
+      ConflictHistoriesCompanion.insert(
+        memoId: memoId,
+        lostSide: lostSide,
+        lostTitle: Value(lostTitle),
+        lostContent: Value(lostContent),
+        lostUpdatedAt: lostUpdatedAt,
+        winnerUpdatedAt: winnerUpdatedAt,
+      ),
+    );
+  }
+
+  /// 競合履歴を新しい順に流す
+  Stream<List<ConflictHistory>> watchAllConflicts() {
+    return (select(conflictHistories)
+          ..orderBy([
+            (t) => OrderingTerm(
+                expression: t.recordedAt, mode: OrderingMode.desc),
+          ]))
+        .watch();
+  }
+
+  /// 競合履歴を1件取得
+  Future<ConflictHistory?> getConflictById(int id) {
+    return (select(conflictHistories)..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+  }
+
+  /// 競合履歴を全削除
+  Future<void> deleteAllConflicts() async {
+    await delete(conflictHistories).go();
+  }
+
+  /// 競合履歴を1件削除
+  Future<void> deleteConflict(int id) async {
+    await (delete(conflictHistories)..where((t) => t.id.equals(id))).go();
   }
 }
 

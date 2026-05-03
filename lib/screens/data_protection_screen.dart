@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import '../utils/backup_manager.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/frosted_alert_dialog.dart';
+import 'conflict_history_screen.dart';
 
 /// データ保護画面: バックアップ管理 + 手動エクスポート + 復元 UI。
 /// Phase 9 同期に先立つセーフティネット。
@@ -159,6 +160,21 @@ class _DataProtectionScreenState extends State<DataProtectionScreen> {
                 title: const Text('Documents にエクスポート'),
                 subtitle: const Text('iOS Files / Android ファイラーから取り出せる場所にコピー'),
                 onTap: _busy ? null : _onExport,
+              ),
+              const Divider(height: 24),
+              const _SectionHeader('同期'),
+              ListTile(
+                leading: const Icon(Icons.merge_type),
+                title: const Text('競合履歴'),
+                subtitle: const Text('別端末との同期で上書きされた内容を確認・復元'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: _busy
+                    ? null
+                    : () {
+                        Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => const ConflictHistoryScreen(),
+                        ));
+                      },
               ),
               const Divider(height: 24),
               const _SectionHeader('自動バックアップ（タップで復元 / 長押しで削除）'),

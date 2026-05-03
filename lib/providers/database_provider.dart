@@ -222,3 +222,9 @@ final todoItemsForDayProvider =
   final db = ref.watch(databaseProvider);
   return db.watchTodoItemsForDay(day);
 });
+
+/// 競合履歴一覧（recordedAt 降順）— Phase 9 Step 5e
+final allConflictsProvider = StreamProvider<List<ConflictHistory>>((ref) {
+  final db = ref.watch(databaseProvider);
+  return db.watchAllConflicts();
+});
