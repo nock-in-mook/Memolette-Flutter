@@ -39,10 +39,10 @@ void main() async {
   }
   // Documents パスを温めて以降の Image.file FutureBuilder を同期化
   await ImageStorage.warmUp();
-  // ダミータグ挿入（タグ0件のときだけ）
+  // 起動時 seed: ダミー70・長文・画像のみに絞る（仕事/日記等のサンプルタグは
+  // 検証ノイズになるので入れない）。設定画面の「ダミーデータ投入」から手動で
+  // 入れたいときだけ追加できる。
   final db = AppDatabase();
-  await db.seedDummyTags();
-  await db.seedDummyTagHistory();
   await db.seedDummyLongMemos();
   await db.seedDummyBulkMemos(tagName: 'ダミー70', count: 70);
   await _seedDummyImageMemosIfNeeded(db);
