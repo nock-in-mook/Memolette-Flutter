@@ -166,7 +166,8 @@ class _DataProtectionScreenState extends State<DataProtectionScreen> {
               ListTile(
                 leading: const Icon(Icons.merge_type),
                 title: const Text('競合履歴'),
-                subtitle: const Text('別端末との同期で上書きされた内容を確認・復元'),
+                subtitle: const Text(
+                    '別端末との同期で上書きされた内容を確認・復元（最新200件まで保存）'),
                 trailing: const Icon(Icons.chevron_right, size: 20),
                 onTap: _busy
                     ? null

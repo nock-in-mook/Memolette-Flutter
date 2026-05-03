@@ -8,12 +8,15 @@ import '../widgets/frosted_alert_dialog.dart';
 
 /// 同期で「上書きされて失われた側」の内容を一覧する画面（Phase 9 Step 5e）。
 /// 詳細から「現在のメモをこの内容で復元」できる。
+/// 履歴は最大 [AppDatabase.conflictHistoryMaxCount] 件まで保持。
 class ConflictHistoryScreen extends ConsumerWidget {
   const ConflictHistoryScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final asyncConflicts = ref.watch(allConflictsProvider);
+    final memos = ref.watch(allMemosProvider).valueOrNull ?? const <Memo>[];
+    final memoTitleById = {for (final m in memos) m.id: m.title};
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -23,7 +26,7 @@ class ConflictHistoryScreen extends ConsumerWidget {
         elevation: 0.5,
         actions: [
           IconButton(
-            icon: const Icon(Icons.delete_sweep_outlined),
+            icon: const Icon(Icons.delete_sweep_outlined, color: Colors.red),
             tooltip: '全削除',
             onPressed: () => _onDeleteAll(context, ref),
           ),
@@ -50,7 +53,7 @@ class ConflictHistoryScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '別の端末で同じメモを同時に編集して同期したとき、'
+                      '別の端末で同じメモを同時に編集したとき、'
                       '上書きされた方の内容がここに記録されます。',
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -66,7 +69,11 @@ class ConflictHistoryScreen extends ConsumerWidget {
             separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, i) {
               final c = conflicts[i];
-              return _ConflictTile(conflict: c);
+              return _ConflictTile(
+                conflict: c,
+                winnerTitle: memoTitleById[c.memoId],
+                memoExists: memoTitleById.containsKey(c.memoId),
+              );
             },
           );
         },
@@ -89,28 +96,36 @@ class ConflictHistoryScreen extends ConsumerWidget {
 
 class _ConflictTile extends StatelessWidget {
   final ConflictHistory conflict;
-  const _ConflictTile({required this.conflict});
+  final String? winnerTitle; // 現在のメモタイトル（勝者）
+  final bool memoExists;
+  const _ConflictTile({
+    required this.conflict,
+    required this.winnerTitle,
+    required this.memoExists,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final title = conflict.lostTitle.isEmpty ? '(無題)' : conflict.lostTitle;
-    // lostSide: 'local'  = この端末で書いた内容が他端末の編集で上書きされた
-    //          'remote' = 他端末で書かれていた内容を、この端末の編集で上書きした
-    final summaryLabel = conflict.lostSide == 'local'
-        ? 'この端末の編集が消えた'
-        : '別端末の編集を上書きした';
-    final summaryColor = conflict.lostSide == 'local'
-        ? Colors.redAccent
-        : Colors.orange;
+    // 一覧の表示タイトルは「現在のメモタイトル(=勝者)」を出す。
+    // すべての端末で同じ表示になるよう、lostSide に依存した表記はしない。
+    final String title;
+    if (!memoExists) {
+      title = '(削除済みメモ)';
+    } else if (winnerTitle == null || winnerTitle!.isEmpty) {
+      title = '(無題)';
+    } else {
+      title = winnerTitle!;
+    }
     return ListTile(
-      leading: Icon(Icons.history_toggle_off, size: 22, color: summaryColor),
+      leading:
+          const Icon(Icons.history_toggle_off, size: 22, color: Colors.grey),
       title: Text(title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
       subtitle: Text(
-        '$summaryLabel  /  ${_fmtDateTime(conflict.recordedAt)}',
-        style: TextStyle(fontSize: 12, color: summaryColor),
+        _fmtDateTime(conflict.recordedAt),
+        style: const TextStyle(fontSize: 12, color: Colors.grey),
       ),
       trailing: const Icon(Icons.chevron_right, size: 20),
       onTap: () {
@@ -243,24 +258,17 @@ class _ConflictDetailScreenState extends ConsumerState<ConflictDetailScreen> {
   }
 
   Widget _buildBody(ConflictHistory c) {
-    // lostSide の意味:
-    //  'local'  = この端末で書いた内容が他端末の編集で消された(=ここに記録の内容が「自分が書いて消えた分」)
-    //  'remote' = 他端末で書かれていた内容を、この端末の編集で上書きした
-    final lostSideLabel = c.lostSide == 'local'
-        ? 'この端末の編集が消えた'
-        : '別端末の編集を上書きした';
     final currentExists = _currentMemo != null;
     return Stack(
       children: [
         ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: [
-            _MetaRow(label: '失われた側', value: lostSideLabel),
             _MetaRow(
                 label: '失われた更新日時',
                 value: _fmtDateTime(c.lostUpdatedAt)),
             _MetaRow(
-                label: '勝者の更新日時',
+                label: '勝った更新日時',
                 value: _fmtDateTime(c.winnerUpdatedAt)),
             _MetaRow(
                 label: '記録日時', value: _fmtDateTime(c.recordedAt)),

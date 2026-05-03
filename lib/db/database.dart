@@ -1377,7 +1377,10 @@ class AppDatabase extends _$AppDatabase {
   // 競合履歴 CRUD（Phase 9 Step 5e）
   // ========================================
 
-  /// 競合履歴を1件記録する
+  /// 競合履歴の保持上限件数（古いものから自動削除）
+  static const int conflictHistoryMaxCount = 200;
+
+  /// 競合履歴を1件記録する。記録後、上限を超えていれば古いものから自動削除。
   Future<void> recordConflict({
     required String memoId,
     required String lostSide, // 'local' or 'remote'
@@ -1396,6 +1399,23 @@ class AppDatabase extends _$AppDatabase {
         winnerUpdatedAt: winnerUpdatedAt,
       ),
     );
+    await pruneOldConflicts(conflictHistoryMaxCount);
+  }
+
+  /// 競合履歴が [keepCount] を超えていれば古い順に削除する。
+  /// batch insert 経由で一括追加した直後にも呼ぶ想定。
+  Future<void> pruneOldConflicts(int keepCount) async {
+    final all = await (select(conflictHistories)
+          ..orderBy([
+            (t) => OrderingTerm(
+                expression: t.recordedAt, mode: OrderingMode.desc),
+            (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
+          ]))
+        .get();
+    if (all.length <= keepCount) return;
+    final toDeleteIds = all.skip(keepCount).map((c) => c.id).toList();
+    await (delete(conflictHistories)..where((t) => t.id.isIn(toDeleteIds)))
+        .go();
   }
 
   /// 競合履歴を新しい順に流す

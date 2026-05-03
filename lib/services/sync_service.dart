@@ -278,6 +278,7 @@ class SyncService {
           );
         }
       });
+      await db.pruneOldConflicts(AppDatabase.conflictHistoryMaxCount);
     }
     await userRef.set({
       'lastDownloadAt': FieldValue.serverTimestamp(),
@@ -461,6 +462,7 @@ class SyncService {
             );
           }
         });
+        await db.pruneOldConflicts(AppDatabase.conflictHistoryMaxCount);
       }
       if (appliedFromRemote > 0 &&
           !isFirstSnapshot &&
