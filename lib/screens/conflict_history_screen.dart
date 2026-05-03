@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -26,7 +27,7 @@ class ConflictHistoryScreen extends ConsumerWidget {
         elevation: 0.5,
         actions: [
           IconButton(
-            icon: const Icon(Icons.delete_sweep_outlined, color: Colors.red),
+            icon: const Icon(CupertinoIcons.delete_simple, color: Colors.red),
             tooltip: '全削除',
             onPressed: () => _onDeleteAll(context, ref),
           ),
@@ -307,7 +308,7 @@ class _ConflictDetailScreenState extends ConsumerState<ConflictDetailScreen> {
               width: double.infinity,
               child: TextButton.icon(
                 onPressed: _busy ? null : _onDelete,
-                icon: const Icon(Icons.delete_outline,
+                icon: const Icon(CupertinoIcons.delete_simple,
                     color: Colors.redAccent),
                 label: const Text('この履歴を削除',
                     style: TextStyle(color: Colors.redAccent)),
