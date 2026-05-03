@@ -3,8 +3,11 @@ import 'package:firebase_ui_auth/firebase_ui_auth.dart' as fui;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/database_provider.dart';
 import '../services/auth_service.dart';
+import '../services/sync_service.dart';
 import '../widgets/confirm_delete_dialog.dart';
+import '../widgets/frosted_alert_dialog.dart';
 
 /// アカウント画面: ログイン状態 + ログイン / ログアウト UI
 /// 同期 (Phase 9) を ON にするにはここでログインが必要
@@ -25,8 +28,9 @@ class AccountScreen extends ConsumerWidget {
       body: authState.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('エラー: $e')),
-        data: (user) =>
-            user == null ? _buildSignedOut(context) : _buildSignedIn(context, user),
+        data: (user) => user == null
+            ? _buildSignedOut(context)
+            : _buildSignedIn(context, ref, user),
       ),
     );
   }
@@ -57,7 +61,7 @@ class AccountScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildSignedIn(BuildContext context, User user) {
+  Widget _buildSignedIn(BuildContext context, WidgetRef ref, User user) {
     final providerIds =
         user.providerData.map((e) => e.providerId).toList(growable: false);
     return ListView(
@@ -114,6 +118,81 @@ class AccountScreen extends ConsumerWidget {
           title: const Text('UID'),
           subtitle: Text(user.uid,
               style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
+        ),
+        ListTile(
+          leading: const Icon(Icons.cloud_upload_outlined),
+          title: const Text('Firestore 接続テスト'),
+          subtitle: const Text('users/{uid} に lastPingAt を書き込んで読み戻す'),
+          onTap: () async {
+            try {
+              final ts = await SyncService.pingFirestore();
+              if (!context.mounted) return;
+              await showFrostedAlert(
+                context: context,
+                title: '接続成功',
+                message: 'サーバ時刻: ${ts?.toLocal() ?? "(取得失敗)"}',
+              );
+            } catch (e) {
+              if (!context.mounted) return;
+              await showFrostedAlert(
+                context: context,
+                title: '接続失敗',
+                message: e.toString(),
+              );
+            }
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.cloud_sync_outlined),
+          title: const Text('メモを Firestore にアップロード（一方向）'),
+          subtitle: const Text('Step 5b: ローカルの全メモをサーバへ書き込み'),
+          onTap: () async {
+            try {
+              final db = ref.read(databaseProvider);
+              final count = await SyncService.uploadAllMemos(db);
+              if (!context.mounted) return;
+              await showFrostedAlert(
+                context: context,
+                title: 'アップロード完了',
+                message: '$count 件をサーバに書き込みました',
+              );
+            } catch (e) {
+              if (!context.mounted) return;
+              await showFrostedAlert(
+                context: context,
+                title: 'アップロード失敗',
+                message: e.toString(),
+              );
+            }
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.cloud_download_outlined),
+          title: const Text('メモを Firestore からダウンロード（一方向）'),
+          subtitle: const Text(
+              'Step 5c: 同 id は updatedAt 比較で新しい方を採用、ローカルだけのものはそのまま残す'),
+          onTap: () async {
+            try {
+              final db = ref.read(databaseProvider);
+              final result = await SyncService.downloadAllMemos(db);
+              if (!context.mounted) return;
+              await showFrostedAlert(
+                context: context,
+                title: 'ダウンロード完了',
+                message: '新規: ${result['inserted']} 件\n'
+                    '更新: ${result['updated']} 件\n'
+                    'スキップ（ローカルが新しい）: ${result['skipped']} 件\n'
+                    '不正: ${result['invalid']} 件',
+              );
+            } catch (e) {
+              if (!context.mounted) return;
+              await showFrostedAlert(
+                context: context,
+                title: 'ダウンロード失敗',
+                message: e.toString(),
+              );
+            }
+          },
         ),
         const Divider(height: 24),
         Padding(

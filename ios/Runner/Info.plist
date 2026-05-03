@@ -72,5 +72,17 @@
 	<string>メモに画像を添付するためにフォトライブラリへのアクセスを許可してください。</string>
 	<key>NSCameraUsageDescription</key>
 	<string>メモに写真を撮って添付するためにカメラへのアクセスを許可してください。</string>
+	<!-- Google Sign-In 用の URL Scheme（GoogleService-Info.plist の REVERSED_CLIENT_ID と一致） -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.837461181268-c9hrn63m73rsvmpmd9e2r1rpihd6d9q3</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
