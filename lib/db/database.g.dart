@@ -846,6 +846,18 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, Tag> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -855,6 +867,7 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, Tag> {
     parentTagId,
     sortOrder,
     isSystem,
+    updatedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -912,6 +925,12 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, Tag> {
         isSystem.isAcceptableOrUnknown(data['is_system']!, _isSystemMeta),
       );
     }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
     return context;
   }
 
@@ -949,6 +968,10 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, Tag> {
         DriftSqlType.bool,
         data['${effectivePrefix}is_system'],
       )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
     );
   }
 
@@ -966,6 +989,7 @@ class Tag extends DataClass implements Insertable<Tag> {
   final String? parentTagId;
   final int sortOrder;
   final bool isSystem;
+  final DateTime updatedAt;
   const Tag({
     required this.id,
     required this.name,
@@ -974,6 +998,7 @@ class Tag extends DataClass implements Insertable<Tag> {
     this.parentTagId,
     required this.sortOrder,
     required this.isSystem,
+    required this.updatedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -987,6 +1012,7 @@ class Tag extends DataClass implements Insertable<Tag> {
     }
     map['sort_order'] = Variable<int>(sortOrder);
     map['is_system'] = Variable<bool>(isSystem);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
   }
 
@@ -1001,6 +1027,7 @@ class Tag extends DataClass implements Insertable<Tag> {
           : Value(parentTagId),
       sortOrder: Value(sortOrder),
       isSystem: Value(isSystem),
+      updatedAt: Value(updatedAt),
     );
   }
 
@@ -1017,6 +1044,7 @@ class Tag extends DataClass implements Insertable<Tag> {
       parentTagId: serializer.fromJson<String?>(json['parentTagId']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       isSystem: serializer.fromJson<bool>(json['isSystem']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
   }
   @override
@@ -1030,6 +1058,7 @@ class Tag extends DataClass implements Insertable<Tag> {
       'parentTagId': serializer.toJson<String?>(parentTagId),
       'sortOrder': serializer.toJson<int>(sortOrder),
       'isSystem': serializer.toJson<bool>(isSystem),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
   }
 
@@ -1041,6 +1070,7 @@ class Tag extends DataClass implements Insertable<Tag> {
     Value<String?> parentTagId = const Value.absent(),
     int? sortOrder,
     bool? isSystem,
+    DateTime? updatedAt,
   }) => Tag(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -1049,6 +1079,7 @@ class Tag extends DataClass implements Insertable<Tag> {
     parentTagId: parentTagId.present ? parentTagId.value : this.parentTagId,
     sortOrder: sortOrder ?? this.sortOrder,
     isSystem: isSystem ?? this.isSystem,
+    updatedAt: updatedAt ?? this.updatedAt,
   );
   Tag copyWithCompanion(TagsCompanion data) {
     return Tag(
@@ -1063,6 +1094,7 @@ class Tag extends DataClass implements Insertable<Tag> {
           : this.parentTagId,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       isSystem: data.isSystem.present ? data.isSystem.value : this.isSystem,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
   }
 
@@ -1075,7 +1107,8 @@ class Tag extends DataClass implements Insertable<Tag> {
           ..write('gridSize: $gridSize, ')
           ..write('parentTagId: $parentTagId, ')
           ..write('sortOrder: $sortOrder, ')
-          ..write('isSystem: $isSystem')
+          ..write('isSystem: $isSystem, ')
+          ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
   }
@@ -1089,6 +1122,7 @@ class Tag extends DataClass implements Insertable<Tag> {
     parentTagId,
     sortOrder,
     isSystem,
+    updatedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -1100,7 +1134,8 @@ class Tag extends DataClass implements Insertable<Tag> {
           other.gridSize == this.gridSize &&
           other.parentTagId == this.parentTagId &&
           other.sortOrder == this.sortOrder &&
-          other.isSystem == this.isSystem);
+          other.isSystem == this.isSystem &&
+          other.updatedAt == this.updatedAt);
 }
 
 class TagsCompanion extends UpdateCompanion<Tag> {
@@ -1111,6 +1146,7 @@ class TagsCompanion extends UpdateCompanion<Tag> {
   final Value<String?> parentTagId;
   final Value<int> sortOrder;
   final Value<bool> isSystem;
+  final Value<DateTime> updatedAt;
   final Value<int> rowid;
   const TagsCompanion({
     this.id = const Value.absent(),
@@ -1120,6 +1156,7 @@ class TagsCompanion extends UpdateCompanion<Tag> {
     this.parentTagId = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.isSystem = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TagsCompanion.insert({
@@ -1130,6 +1167,7 @@ class TagsCompanion extends UpdateCompanion<Tag> {
     this.parentTagId = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.isSystem = const Value.absent(),
+    this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id);
   static Insertable<Tag> custom({
@@ -1140,6 +1178,7 @@ class TagsCompanion extends UpdateCompanion<Tag> {
     Expression<String>? parentTagId,
     Expression<int>? sortOrder,
     Expression<bool>? isSystem,
+    Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1150,6 +1189,7 @@ class TagsCompanion extends UpdateCompanion<Tag> {
       if (parentTagId != null) 'parent_tag_id': parentTagId,
       if (sortOrder != null) 'sort_order': sortOrder,
       if (isSystem != null) 'is_system': isSystem,
+      if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1162,6 +1202,7 @@ class TagsCompanion extends UpdateCompanion<Tag> {
     Value<String?>? parentTagId,
     Value<int>? sortOrder,
     Value<bool>? isSystem,
+    Value<DateTime>? updatedAt,
     Value<int>? rowid,
   }) {
     return TagsCompanion(
@@ -1172,6 +1213,7 @@ class TagsCompanion extends UpdateCompanion<Tag> {
       parentTagId: parentTagId ?? this.parentTagId,
       sortOrder: sortOrder ?? this.sortOrder,
       isSystem: isSystem ?? this.isSystem,
+      updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1200,6 +1242,9 @@ class TagsCompanion extends UpdateCompanion<Tag> {
     if (isSystem.present) {
       map['is_system'] = Variable<bool>(isSystem.value);
     }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1216,6 +1261,7 @@ class TagsCompanion extends UpdateCompanion<Tag> {
           ..write('parentTagId: $parentTagId, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('isSystem: $isSystem, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4857,6 +4903,7 @@ typedef $$TagsTableCreateCompanionBuilder =
       Value<String?> parentTagId,
       Value<int> sortOrder,
       Value<bool> isSystem,
+      Value<DateTime> updatedAt,
       Value<int> rowid,
     });
 typedef $$TagsTableUpdateCompanionBuilder =
@@ -4868,6 +4915,7 @@ typedef $$TagsTableUpdateCompanionBuilder =
       Value<String?> parentTagId,
       Value<int> sortOrder,
       Value<bool> isSystem,
+      Value<DateTime> updatedAt,
       Value<int> rowid,
     });
 
@@ -4971,6 +5019,11 @@ class $$TagsTableFilterComposer extends Composer<_$AppDatabase, $TagsTable> {
 
   ColumnFilters<bool> get isSystem => $composableBuilder(
     column: $table.isSystem,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5092,6 +5145,11 @@ class $$TagsTableOrderingComposer extends Composer<_$AppDatabase, $TagsTable> {
     column: $table.isSystem,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TagsTableAnnotationComposer
@@ -5127,6 +5185,9 @@ class $$TagsTableAnnotationComposer
 
   GeneratedColumn<bool> get isSystem =>
       $composableBuilder(column: $table.isSystem, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
 
   Expression<T> memoTagsRefs<T extends Object>(
     Expression<T> Function($$MemoTagsTableAnnotationComposer a) f,
@@ -5243,6 +5304,7 @@ class $$TagsTableTableManager
                 Value<String?> parentTagId = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 Value<bool> isSystem = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TagsCompanion(
                 id: id,
@@ -5252,6 +5314,7 @@ class $$TagsTableTableManager
                 parentTagId: parentTagId,
                 sortOrder: sortOrder,
                 isSystem: isSystem,
+                updatedAt: updatedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -5263,6 +5326,7 @@ class $$TagsTableTableManager
                 Value<String?> parentTagId = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 Value<bool> isSystem = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TagsCompanion.insert(
                 id: id,
@@ -5272,6 +5336,7 @@ class $$TagsTableTableManager
                 parentTagId: parentTagId,
                 sortOrder: sortOrder,
                 isSystem: isSystem,
+                updatedAt: updatedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

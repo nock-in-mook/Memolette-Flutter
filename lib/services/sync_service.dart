@@ -57,7 +57,8 @@ class SyncService {
 
   /// Memo を Firestore へ書く Map に変換
   /// DateTime は Firestore Timestamp 経由でサーバ側に保存する
-  static Map<String, dynamic> _memoToMap(Memo m) {
+  /// [tagIds] を渡すと memo doc に tagIds 配列を含めて同期する（Phase 9 タグ同期 T2）
+  static Map<String, dynamic> _memoToMap(Memo m, {List<String>? tagIds}) {
     return {
       'id': m.id,
       'title': m.title,
@@ -73,9 +74,19 @@ class SyncService {
       if (m.lastViewedAt != null)
         'lastViewedAt': Timestamp.fromDate(m.lastViewedAt!),
       if (m.eventDate != null) 'eventDate': Timestamp.fromDate(m.eventDate!),
+      if (tagIds != null) 'tagIds': tagIds,
       // 同期用メタ
       'syncedAt': FieldValue.serverTimestamp(),
     };
+  }
+
+  /// Firestore Map から tagIds 配列を取り出す（無ければ null）。
+  /// null と空配列を区別する: null=「タグ情報なし、ローカルを触らない」、
+  /// 空配列=「タグなしで明示」（→ ローカルの memoTags も空にする）。
+  static List<String>? _extractTagIds(Map<String, dynamic> data) {
+    final raw = data['tagIds'];
+    if (raw is! List) return null;
+    return raw.whereType<String>().toList();
   }
 
   /// Step 5b: ローカル DB の全メモを Firestore へアップロード（one-way）
@@ -89,6 +100,13 @@ class SyncService {
     }
     final memos = await db.select(db.memos).get();
     if (memos.isEmpty) return 0;
+    // メモ-タグ関連を一括取得して memoId → [tagId] の Map に
+    // (Phase 9 タグ同期 T2: memo doc に tagIds 配列を含める)
+    final allMemoTags = await db.select(db.memoTags).get();
+    final tagsByMemoId = <String, List<String>>{};
+    for (final mt in allMemoTags) {
+      tagsByMemoId.putIfAbsent(mt.memoId, () => []).add(mt.tagId);
+    }
     // batch write: 1 batch あたり最大 500 件まで
     const chunkSize = 400;
     var written = 0;
@@ -97,7 +115,8 @@ class SyncService {
       final batch = _firestore.batch();
       for (final m in memos.sublist(start, end)) {
         final ref = userRef.collection('memos').doc(m.id);
-        batch.set(ref, _memoToMap(m), SetOptions(merge: true));
+        final tagIds = tagsByMemoId[m.id] ?? const <String>[];
+        batch.set(ref, _memoToMap(m, tagIds: tagIds), SetOptions(merge: true));
         // リアルタイム購読の自端末発火フィルタ用
         _registerSelfUpload(m.id, m.updatedAt);
       }
@@ -180,20 +199,25 @@ class SyncService {
     var invalid = 0;
     var conflicts = 0;
     final companions = <MemosCompanion>[];
+    // memoId → tagIds: batch 完了後に setTagIdsForMemo で反映する
+    final tagIdsByMemoId = <String, List<String>>{};
     final conflictRecords = <_ConflictRecord>[];
     final now = DateTime.now();
     for (final doc in snapshot.docs) {
-      final companion = _mapToMemoCompanion(doc.data());
+      final data = doc.data();
+      final companion = _mapToMemoCompanion(data);
       if (companion == null) {
         invalid++;
         continue;
       }
       final id = companion.id.value;
       final remoteUpdated = companion.updatedAt.value;
+      final remoteTagIds = _extractTagIds(data);
       final local = localById[id];
       if (local == null) {
         inserted++;
         companions.add(companion);
+        if (remoteTagIds != null) tagIdsByMemoId[id] = remoteTagIds;
       } else if (remoteUpdated.isAfter(local.updatedAt)) {
         // 競合判定: ローカルが直近 conflictWindow 以内に編集されていて、
         // かつ title / content の中身が異なる場合のみ「失われる側」として記録。
@@ -217,6 +241,7 @@ class SyncService {
         }
         updated++;
         companions.add(companion);
+        if (remoteTagIds != null) tagIdsByMemoId[id] = remoteTagIds;
       } else if (local.updatedAt.isAfter(remoteUpdated)) {
         // ローカルが新しい：このダウンロードでは何もしないが、続く uploadAllMemos
         // でリモートが上書きされる。リモートが直近 conflictWindow 以内 + 内容違い
@@ -261,6 +286,10 @@ class SyncService {
         }
       });
     }
+    // タグ関連反映（受信した tagIds 配列でローカルの memoTags を全置換）
+    for (final entry in tagIdsByMemoId.entries) {
+      await db.setTagIdsForMemo(entry.key, entry.value);
+    }
     if (conflictRecords.isNotEmpty) {
       // 競合履歴を batch insert
       await db.batch((batch) {
@@ -294,6 +323,163 @@ class SyncService {
     };
   }
 
+  // ========================================
+  // タグ同期 (Phase 9 タグ系 Step T1)
+  // ========================================
+
+  /// Tag を Firestore Map に変換
+  static Map<String, dynamic> _tagToMap(Tag t) {
+    return {
+      'id': t.id,
+      'name': t.name,
+      'colorIndex': t.colorIndex,
+      'gridSize': t.gridSize,
+      'parentTagId': t.parentTagId,
+      'sortOrder': t.sortOrder,
+      'isSystem': t.isSystem,
+      'updatedAt': Timestamp.fromDate(t.updatedAt),
+      'syncedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  /// Firestore Map → TagsCompanion
+  static TagsCompanion? _mapToTagCompanion(Map<String, dynamic> data) {
+    final id = data['id'];
+    if (id is! String || id.isEmpty) return null;
+    DateTime? readDate(dynamic v) =>
+        v is Timestamp ? v.toDate() : null;
+    final updatedAt = readDate(data['updatedAt']) ?? DateTime.now();
+    return TagsCompanion(
+      id: drift.Value(id),
+      name: drift.Value((data['name'] as String?) ?? ''),
+      colorIndex: drift.Value((data['colorIndex'] as num?)?.toInt() ?? 1),
+      gridSize: drift.Value((data['gridSize'] as num?)?.toInt() ?? 2),
+      parentTagId: drift.Value(data['parentTagId'] as String?),
+      sortOrder: drift.Value((data['sortOrder'] as num?)?.toInt() ?? 0),
+      isSystem: drift.Value((data['isSystem'] as bool?) ?? false),
+      updatedAt: drift.Value(updatedAt),
+    );
+  }
+
+  /// 全タグを Firestore へ batch upload
+  static Future<int> uploadAllTags(AppDatabase db) async {
+    final userRef = _userDocRef();
+    if (userRef == null) return 0;
+    final allTags = await db.select(db.tags).get();
+    if (allTags.isEmpty) return 0;
+    const chunkSize = 400;
+    var written = 0;
+    for (var start = 0; start < allTags.length; start += chunkSize) {
+      final end = (start + chunkSize).clamp(0, allTags.length);
+      final batch = _firestore.batch();
+      for (final t in allTags.sublist(start, end)) {
+        final ref = userRef.collection('tags').doc(t.id);
+        batch.set(ref, _tagToMap(t), SetOptions(merge: true));
+        _registerSelfTagUpload(t.id, t.updatedAt);
+      }
+      await batch.commit();
+      written += end - start;
+    }
+    return written;
+  }
+
+  /// Firestore からタグを download → updatedAt 比較で upsert
+  /// （競合履歴は記録しない。タグ編集の競合は実用上問題なし）
+  static Future<Map<String, int>> downloadAllTags(AppDatabase db) async {
+    final userRef = _userDocRef();
+    if (userRef == null) {
+      return {'inserted': 0, 'updated': 0, 'skipped': 0, 'invalid': 0};
+    }
+    final snap = await userRef.collection('tags').get();
+    if (snap.docs.isEmpty) {
+      return {'inserted': 0, 'updated': 0, 'skipped': 0, 'invalid': 0};
+    }
+    final localTags = await db.select(db.tags).get();
+    final localById = {for (final t in localTags) t.id: t};
+    var inserted = 0, updated = 0, skipped = 0, invalid = 0;
+    final companions = <TagsCompanion>[];
+    for (final doc in snap.docs) {
+      final c = _mapToTagCompanion(doc.data());
+      if (c == null) {
+        invalid++;
+        continue;
+      }
+      final id = c.id.value;
+      final remoteUpdated = c.updatedAt.value;
+      final local = localById[id];
+      if (local == null) {
+        inserted++;
+        companions.add(c);
+      } else if (remoteUpdated.isAfter(local.updatedAt)) {
+        updated++;
+        companions.add(c);
+      } else {
+        skipped++;
+      }
+    }
+    if (companions.isNotEmpty) {
+      await db.batch((batch) {
+        for (final c in companions) {
+          if (localById.containsKey(c.id.value)) {
+            batch.replace(db.tags, c);
+          } else {
+            batch.insert(db.tags, c);
+          }
+        }
+      });
+    }
+    return {
+      'inserted': inserted,
+      'updated': updated,
+      'skipped': skipped,
+      'invalid': invalid,
+    };
+  }
+
+  /// 1タグだけアップロード
+  static Future<void> uploadOneTag(AppDatabase db, String tagId) async {
+    final ref = _userDocRef();
+    if (ref == null) return;
+    final tag = await db.getTagById(tagId);
+    if (tag == null) return;
+    _registerSelfTagUpload(tagId, tag.updatedAt);
+    await ref
+        .collection('tags')
+        .doc(tagId)
+        .set(_tagToMap(tag), SetOptions(merge: true));
+  }
+
+  /// タグ編集 debounce 用
+  static Timer? _tagUploadDebounceTimer;
+  static final Set<String> _pendingTagUploadIds = {};
+
+  static void scheduleUploadTag(AppDatabase db, String tagId) {
+    if (FirebaseAuth.instance.currentUser == null) return;
+    _pendingTagUploadIds.add(tagId);
+    _tagUploadDebounceTimer?.cancel();
+    _tagUploadDebounceTimer = Timer(uploadDebounceDelay, () async {
+      final ids = _pendingTagUploadIds.toList();
+      _pendingTagUploadIds.clear();
+      for (final id in ids) {
+        try {
+          await uploadOneTag(db, id);
+        } catch (_) {}
+      }
+    });
+  }
+
+  /// 自端末タグアップロードのフィンガープリント
+  static final Set<String> _selfTagUploadFingerprints = {};
+  static String _tagFingerprint(String id, DateTime updatedAt) =>
+      'tag|$id|${updatedAt.toIso8601String()}';
+  static void _registerSelfTagUpload(String id, DateTime updatedAt) {
+    final fp = _tagFingerprint(id, updatedAt);
+    _selfTagUploadFingerprints.add(fp);
+    Timer(const Duration(seconds: 30), () {
+      _selfTagUploadFingerprints.remove(fp);
+    });
+  }
+
   /// 同時実行ガード。 syncOnce が 2 重に走らないようにする。
   static bool _syncing = false;
 
@@ -306,11 +492,17 @@ class SyncService {
     if (FirebaseAuth.instance.currentUser == null) return null;
     _syncing = true;
     try {
+      // タグを先にダウンロード/アップロード（メモのタグ関連が壊れないように）
+      final tagDl = await downloadAllTags(db);
+      final tagUp = await uploadAllTags(db);
       final dl = await downloadAllMemos(db);
       final upCount = await uploadAllMemos(db);
       return {
         ...dl,
         'uploaded': upCount,
+        'tagsInserted': tagDl['inserted'] ?? 0,
+        'tagsUpdated': tagDl['updated'] ?? 0,
+        'tagsUploaded': tagUp,
       };
     } finally {
       _syncing = false;
@@ -323,17 +515,19 @@ class SyncService {
 
   /// 1メモだけ Firestore に書き込む（編集 debounce 後に呼ばれる）
   /// Firestore の docId はメモ id と同じ（merge=true で部分更新）
+  /// memo doc には現在のタグ ID リストも tagIds 配列として含める。
   static Future<void> uploadOneMemo(AppDatabase db, String memoId) async {
     final ref = _userDocRef();
     if (ref == null) return;
     final memo = await db.getMemoById(memoId);
     if (memo == null) return;
+    final tagIds = await db.getTagIdsForMemo(memoId);
     // リアルタイム購読が「自端末発火」を無視するためのフィンガープリント登録
     _registerSelfUpload(memoId, memo.updatedAt);
     await ref
         .collection('memos')
         .doc(memoId)
-        .set(_memoToMap(memo), SetOptions(merge: true));
+        .set(_memoToMap(memo, tagIds: tagIds), SetOptions(merge: true));
   }
 
   /// 編集 debounce 用：最後の入力から [uploadDebounceDelay] 経過後にまとめて
@@ -360,9 +554,11 @@ class SyncService {
     });
   }
 
-  /// リアルタイム購読中の subscription（1つだけ走る）
+  /// リアルタイム購読中の subscription（memos / tags をそれぞれ）
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
-      _realtimeSub;
+      _realtimeMemosSub;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+      _realtimeTagsSub;
 
   /// 直近の自端末アップロードを記録して「自分のアップロードによるリスナー発火」を
   /// 受信時に無視するためのセット（メモ id + updatedAt 文字列）。
@@ -382,17 +578,55 @@ class SyncService {
     AppDatabase db, {
     void Function(int changedCount)? onRemoteChange,
   }) async {
-    if (_realtimeSub != null) return;
+    if (_realtimeMemosSub != null) return;
     final ref = _userDocRef();
     if (ref == null) return;
+    // タグ購読（最終更新優先で upsert、競合履歴は記録しない）
+    _realtimeTagsSub =
+        ref.collection('tags').snapshots().listen((snap) async {
+      if (snap.docChanges.isEmpty) return;
+      final localTags = await db.select(db.tags).get();
+      final localById = {for (final t in localTags) t.id: t};
+      final companions = <TagsCompanion>[];
+      for (final ch in snap.docChanges) {
+        if (ch.type == DocumentChangeType.removed) continue;
+        final data = ch.doc.data();
+        if (data == null) continue;
+        final c = _mapToTagCompanion(data);
+        if (c == null) continue;
+        final id = c.id.value;
+        final remoteUpdated = c.updatedAt.value;
+        if (_selfTagUploadFingerprints
+            .contains(_tagFingerprint(id, remoteUpdated))) {
+          continue;
+        }
+        final local = localById[id];
+        if (local == null || remoteUpdated.isAfter(local.updatedAt)) {
+          companions.add(c);
+        }
+      }
+      if (companions.isNotEmpty) {
+        await db.batch((batch) {
+          for (final c in companions) {
+            if (localById.containsKey(c.id.value)) {
+              batch.replace(db.tags, c);
+            } else {
+              batch.insert(db.tags, c);
+            }
+          }
+        });
+      }
+    }, onError: (_) {});
     // 初回 snapshot は「全件 added」で来るため、通知は抑制してデータ取り込みのみ。
     // 既に syncOnce で取り込み済みのデータはローカル比較で skip される想定。
     var isFirstSnapshot = true;
-    _realtimeSub = ref.collection('memos').snapshots().listen((snap) async {
+    _realtimeMemosSub =
+        ref.collection('memos').snapshots().listen((snap) async {
       if (snap.docChanges.isEmpty) return;
       final localMemos = await db.select(db.memos).get();
       final localById = {for (final m in localMemos) m.id: m};
       final companions = <MemosCompanion>[];
+      final tagIdsByMemoId = <String, List<String>>{};
       final conflictRecords = <_ConflictRecord>[];
       final now = DateTime.now();
       var appliedFromRemote = 0;
@@ -404,6 +638,7 @@ class SyncService {
         if (companion == null) continue;
         final id = companion.id.value;
         final remoteUpdated = companion.updatedAt.value;
+        final remoteTagIds = _extractTagIds(data);
         // 自端末がアップロードしたばかりの内容なら無視
         if (_selfUploadFingerprints
             .contains(_fingerprint(id, remoteUpdated))) {
@@ -412,6 +647,7 @@ class SyncService {
         final local = localById[id];
         if (local == null) {
           companions.add(companion);
+          if (remoteTagIds != null) tagIdsByMemoId[id] = remoteTagIds;
           appliedFromRemote++;
         } else if (remoteUpdated.isAfter(local.updatedAt)) {
           final remoteTitle = companion.title.value;
@@ -430,6 +666,7 @@ class SyncService {
             ));
           }
           companions.add(companion);
+          if (remoteTagIds != null) tagIdsByMemoId[id] = remoteTagIds;
           appliedFromRemote++;
         }
         // ローカルが新しい場合は何もしない（次の自分側アップロードで上書き）
@@ -445,6 +682,10 @@ class SyncService {
             }
           }
         });
+      }
+      // タグ関連反映
+      for (final entry in tagIdsByMemoId.entries) {
+        await db.setTagIdsForMemo(entry.key, entry.value);
       }
       if (conflictRecords.isNotEmpty) {
         await db.batch((batch) {
@@ -477,12 +718,18 @@ class SyncService {
 
   /// リアルタイム購読を停止する（ログアウト・dispose 時に呼ぶ）
   static Future<void> stopRealtimeSync() async {
-    await _realtimeSub?.cancel();
-    _realtimeSub = null;
+    await _realtimeMemosSub?.cancel();
+    _realtimeMemosSub = null;
+    await _realtimeTagsSub?.cancel();
+    _realtimeTagsSub = null;
     _uploadDebounceTimer?.cancel();
     _uploadDebounceTimer = null;
     _pendingUploadIds.clear();
     _selfUploadFingerprints.clear();
+    _tagUploadDebounceTimer?.cancel();
+    _tagUploadDebounceTimer = null;
+    _pendingTagUploadIds.clear();
+    _selfTagUploadFingerprints.clear();
   }
 
   /// アップロード時に「自端末発火フィルタ」用のフィンガープリントを登録しておく。

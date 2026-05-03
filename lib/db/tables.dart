@@ -38,6 +38,8 @@ class Tags extends Table {
   TextColumn get parentTagId => text().nullable()();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   BoolColumn get isSystem => boolean().withDefault(const Constant(false))();
+  // 同期で「最終更新優先」を判定するための更新時刻（Phase 9 タグ同期）
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 
   @override
   Set<Column> get primaryKey => {id};

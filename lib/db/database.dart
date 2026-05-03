@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
+import '../services/sync_service.dart';
 import '../utils/image_storage.dart';
 import 'tables.dart';
 
@@ -32,7 +33,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -66,6 +67,10 @@ class AppDatabase extends _$AppDatabase {
           if (from < 7) {
             // Phase 9 Step 5e: 競合履歴テーブル
             await m.createTable(conflictHistories);
+          }
+          if (from < 8) {
+            // Phase 9 タグ同期: Tags.updatedAt 追加
+            await m.addColumn(tags, tags.updatedAt);
           }
         },
       );
@@ -554,6 +559,7 @@ class AppDatabase extends _$AppDatabase {
     final id = _uuid.v4();
     // 末尾にsortOrderを設定
     final maxSort = await _maxTagSortOrder(parentTagId);
+    final now = DateTime.now();
     final companion = TagsCompanion.insert(
       id: id,
       name: Value(name),
@@ -561,8 +567,11 @@ class AppDatabase extends _$AppDatabase {
       parentTagId: Value(parentTagId),
       isSystem: Value(isSystem),
       sortOrder: Value(maxSort + 1),
+      updatedAt: Value(now),
     );
     await into(tags).insert(companion);
+    // Phase 9 タグ同期: 即時アップロード(debounce)
+    SyncService.scheduleUploadTag(this, id);
     return (await getTagById(id))!;
   }
 
@@ -574,8 +583,8 @@ class AppDatabase extends _$AppDatabase {
     int? gridSize,
     String? parentTagId,
     int? sortOrder,
-  }) {
-    return (update(tags)..where((t) => t.id.equals(id))).write(
+  }) async {
+    await (update(tags)..where((t) => t.id.equals(id))).write(
       TagsCompanion(
         name: name != null ? Value(name) : const Value.absent(),
         colorIndex:
@@ -585,8 +594,10 @@ class AppDatabase extends _$AppDatabase {
             parentTagId != null ? Value(parentTagId) : const Value.absent(),
         sortOrder:
             sortOrder != null ? Value(sortOrder) : const Value.absent(),
+        updatedAt: Value(DateTime.now()),
       ),
     );
+    SyncService.scheduleUploadTag(this, id);
   }
 
   /// タグと、そのタグに紐づくメモも一緒に削除
@@ -612,12 +623,19 @@ class AppDatabase extends _$AppDatabase {
 
   /// 親タグの並び替え（IDリストの新しい順序で sortOrder を再採番）
   Future<void> reorderParentTags(List<String> orderedIds) async {
+    final now = DateTime.now();
     await transaction(() async {
       for (var i = 0; i < orderedIds.length; i++) {
         await (update(tags)..where((t) => t.id.equals(orderedIds[i])))
-            .write(TagsCompanion(sortOrder: Value(i)));
+            .write(TagsCompanion(
+          sortOrder: Value(i),
+          updatedAt: Value(now),
+        ));
       }
     });
+    for (final id in orderedIds) {
+      SyncService.scheduleUploadTag(this, id);
+    }
   }
 
   /// タグを削除（紐づく中間テーブルも削除）
@@ -711,20 +729,56 @@ class AppDatabase extends _$AppDatabase {
   // メモ ↔ タグ リレーション
   // ========================================
 
-  /// メモにタグを付ける
-  Future<void> addTagToMemo(String memoId, String tagId) {
-    return into(memoTags).insert(
+  /// メモにタグを付ける（メモ側の updatedAt も更新して同期対象にする）
+  Future<void> addTagToMemo(String memoId, String tagId) async {
+    await into(memoTags).insert(
       MemoTagsCompanion.insert(memoId: memoId, tagId: tagId),
       mode: InsertMode.insertOrIgnore,
     );
+    await (update(memos)..where((t) => t.id.equals(memoId))).write(
+      MemosCompanion(updatedAt: Value(DateTime.now())),
+    );
+    // Phase 9 タグ同期 T2: memo doc に tagIds を含めて即時アップロード
+    SyncService.scheduleUpload(this, memoId);
   }
 
-  /// メモからタグを外す
-  Future<void> removeTagFromMemo(String memoId, String tagId) {
-    print('[DB-DELETE] removeTagFromMemo memoId=$memoId tagId=$tagId\n${StackTrace.current}');
-    return (delete(memoTags)
+  /// メモからタグを外す（メモ側の updatedAt も更新して同期対象にする）
+  Future<void> removeTagFromMemo(String memoId, String tagId) async {
+    print(
+        '[DB-DELETE] removeTagFromMemo memoId=$memoId tagId=$tagId\n${StackTrace.current}');
+    await (delete(memoTags)
           ..where((t) => t.memoId.equals(memoId) & t.tagId.equals(tagId)))
         .go();
+    await (update(memos)..where((t) => t.id.equals(memoId))).write(
+      MemosCompanion(updatedAt: Value(DateTime.now())),
+    );
+    SyncService.scheduleUpload(this, memoId);
+  }
+
+  /// メモに紐づくタグ ID リストを取得（同期で memo doc に含める用）
+  Future<List<String>> getTagIdsForMemo(String memoId) async {
+    final rows = await (select(memoTags)
+          ..where((t) => t.memoId.equals(memoId)))
+        .get();
+    return rows.map((r) => r.tagId).toList();
+  }
+
+  /// 指定タグ ID リストでメモのタグ関連を全置換（同期受信時に使う）。
+  /// 存在しないタグ ID は skip（タグマスター同期が先に流れることが前提だが、
+  /// タイミングによっては未到着のことがある）。
+  Future<void> setTagIdsForMemo(String memoId, List<String> tagIds) async {
+    final existingTags = await select(tags).get();
+    final knownIds = existingTags.map((t) => t.id).toSet();
+    await transaction(() async {
+      await (delete(memoTags)..where((t) => t.memoId.equals(memoId))).go();
+      for (final tagId in tagIds) {
+        if (!knownIds.contains(tagId)) continue; // 未到着タグは skip
+        await into(memoTags).insert(
+          MemoTagsCompanion.insert(memoId: memoId, tagId: tagId),
+          mode: InsertMode.insertOrIgnore,
+        );
+      }
+    });
   }
 
   /// メモに紐づくタグを取得
