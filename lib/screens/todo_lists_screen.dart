@@ -8,6 +8,7 @@ import 'package:drift/drift.dart' hide Column;
 import '../constants/memo_bg_colors.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../services/sync_service.dart';
 import '../utils/responsive.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
@@ -1411,6 +1412,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
           isPinned: Value(!list.isPinned),
           updatedAt: Value(DateTime.now()),
         ));
+        SyncService.scheduleUploadTodoList(db, list.id);
         break;
       case 'bgColor':
         if (!mounted) return;
@@ -1429,6 +1431,7 @@ class _TodoListsScreenState extends ConsumerState<TodoListsScreen> {
           isLocked: Value(!list.isLocked),
           updatedAt: Value(DateTime.now()),
         ));
+        SyncService.scheduleUploadTodoList(db, list.id);
         if (mounted) {
           showToast(context,
               wasLocked ? 'ロックを解除しました' : 'リストをロックしました');

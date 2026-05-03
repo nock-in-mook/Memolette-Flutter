@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import '../constants/design_constants.dart';
 import '../db/database.dart';
 import '../providers/database_provider.dart';
+import '../services/sync_service.dart';
 import '../utils/safe_dialog.dart';
 import '../utils/text_menu_dismisser.dart';
 import '../widgets/confirm_delete_dialog.dart';
@@ -453,6 +454,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           parentId: Value(parentId),
           sortOrder: Value(existing.length),
         ));
+    SyncService.scheduleUploadTodoList(db, widget.listId);
     if (!mounted) return;
     // 親を展開状態にする（子が見えるように）
     if (parentId != null) {
@@ -490,6 +492,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
           updatedAt: Value(DateTime.now()),
         ));
       }
+      SyncService.scheduleUploadTodoList(db, widget.listId);
       if (!mounted) return;
       setState(() {
         // commit 対象 id が現在の編集中 id と同じ場合のみ null にする。
@@ -534,6 +537,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       isDone: Value(!item.isDone),
       updatedAt: Value(DateTime.now()),
     ));
+    SyncService.scheduleUploadTodoList(db, widget.listId);
   }
 
   void _toggleMemo(TodoItem item) {
@@ -574,6 +578,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       memo: Value(trimmed.isEmpty ? null : trimmed),
       updatedAt: Value(DateTime.now()),
     ));
+    SyncService.scheduleUploadTodoList(db, widget.listId);
     if (!mounted) return;
     // 「保存対象のアイテム」が編集/閲覧中だった場合だけ解除する。
     // 別のメモを開く操作経由で dispose → _saveMemo が呼ばれた場合に
@@ -630,6 +635,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
       title: Value(text),
       updatedAt: Value(DateTime.now()),
     ));
+    SyncService.scheduleUploadTodoList(db, widget.listId);
     setState(() => _isEditingTitle = false);
   }
 
@@ -642,6 +648,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         updatedAt: Value(DateTime.now()),
       ));
     }
+    SyncService.scheduleUploadTodoList(db, widget.listId);
   }
 
   // ========================================
@@ -676,6 +683,8 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     for (final id in toDelete) {
       await _deleteItemRecursive(id, allItems);
     }
+    SyncService.scheduleUploadTodoList(
+        ref.read(databaseProvider), widget.listId);
     setState(() {
       _isSelectMode = false;
       _selectedItems.clear();
@@ -755,6 +764,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
     await (db.delete(db.todoItems)
           ..where((t) => t.listId.equals(widget.listId)))
         .go();
+    SyncService.scheduleUploadTodoList(db, widget.listId);
     setState(() {
       _expandedItems.clear();
       _memoEditingItemId = null;
@@ -2469,6 +2479,7 @@ class _TodoListScreenState extends ConsumerState<TodoListScreen> {
         ));
       }
     }
+    SyncService.scheduleUploadTodoList(db, widget.listId);
   }
 
   Widget _buildItemRow(

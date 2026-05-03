@@ -480,6 +480,273 @@ class SyncService {
     });
   }
 
+  // ========================================
+  // ToDo 同期 (Phase 9 ToDo 系)
+  // 設計: TodoLists doc に items + tagIds を埋め込む(A 案)。
+  //       1リスト=1ドキュメントで完結し、items の孤児化が発生しない。
+  //       TodoItemTags(アイテム個別タグ)は今回スコープ外。
+  // ========================================
+
+  /// TodoList を Firestore Map に変換（items + tagIds を内包）
+  static Map<String, dynamic> _todoListToMap(
+    TodoList list,
+    List<TodoItem> items, {
+    List<String>? tagIds,
+  }) {
+    return {
+      'id': list.id,
+      'title': list.title,
+      'isPinned': list.isPinned,
+      'isLocked': list.isLocked,
+      'manualSortOrder': list.manualSortOrder,
+      'isMerged': list.isMerged,
+      'bgColorIndex': list.bgColorIndex,
+      'createdAt': Timestamp.fromDate(list.createdAt),
+      'updatedAt': Timestamp.fromDate(list.updatedAt),
+      if (list.eventDate != null)
+        'eventDate': Timestamp.fromDate(list.eventDate!),
+      if (tagIds != null) 'tagIds': tagIds,
+      'items': items.map(_todoItemToMap).toList(),
+      'syncedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  static Map<String, dynamic> _todoItemToMap(TodoItem it) {
+    return {
+      'id': it.id,
+      'title': it.title,
+      'isDone': it.isDone,
+      'parentId': it.parentId,
+      'sortOrder': it.sortOrder,
+      'createdAt': Timestamp.fromDate(it.createdAt),
+      'updatedAt': Timestamp.fromDate(it.updatedAt),
+      if (it.eventDate != null)
+        'eventDate': Timestamp.fromDate(it.eventDate!),
+      if (it.memo != null) 'memo': it.memo,
+    };
+  }
+
+  static TodoListsCompanion? _mapToTodoListCompanion(
+      Map<String, dynamic> data) {
+    final id = data['id'];
+    if (id is! String || id.isEmpty) return null;
+    DateTime? readDate(dynamic v) =>
+        v is Timestamp ? v.toDate() : null;
+    final createdAt = readDate(data['createdAt']);
+    final updatedAt = readDate(data['updatedAt']);
+    if (createdAt == null || updatedAt == null) return null;
+    return TodoListsCompanion(
+      id: drift.Value(id),
+      title: drift.Value((data['title'] as String?) ?? ''),
+      isPinned: drift.Value((data['isPinned'] as bool?) ?? false),
+      isLocked: drift.Value((data['isLocked'] as bool?) ?? false),
+      manualSortOrder:
+          drift.Value((data['manualSortOrder'] as num?)?.toInt() ?? 0),
+      isMerged: drift.Value((data['isMerged'] as bool?) ?? false),
+      bgColorIndex:
+          drift.Value((data['bgColorIndex'] as num?)?.toInt() ?? 0),
+      createdAt: drift.Value(createdAt),
+      updatedAt: drift.Value(updatedAt),
+      eventDate: drift.Value(readDate(data['eventDate'])),
+    );
+  }
+
+  static List<TodoItemsCompanion> _extractTodoItems(
+      Map<String, dynamic> data, String listId) {
+    final raw = data['items'];
+    if (raw is! List) return const [];
+    final out = <TodoItemsCompanion>[];
+    DateTime? readDate(dynamic v) =>
+        v is Timestamp ? v.toDate() : null;
+    for (final entry in raw) {
+      if (entry is! Map) continue;
+      final id = entry['id'];
+      if (id is! String || id.isEmpty) continue;
+      final createdAt = readDate(entry['createdAt']) ?? DateTime.now();
+      final updatedAt = readDate(entry['updatedAt']) ?? createdAt;
+      out.add(TodoItemsCompanion(
+        id: drift.Value(id),
+        listId: drift.Value(listId),
+        title: drift.Value((entry['title'] as String?) ?? ''),
+        isDone: drift.Value((entry['isDone'] as bool?) ?? false),
+        parentId: drift.Value(entry['parentId'] as String?),
+        sortOrder: drift.Value((entry['sortOrder'] as num?)?.toInt() ?? 0),
+        createdAt: drift.Value(createdAt),
+        updatedAt: drift.Value(updatedAt),
+        eventDate: drift.Value(readDate(entry['eventDate'])),
+        memo: drift.Value(entry['memo'] as String?),
+      ));
+    }
+    return out;
+  }
+
+  /// 全 TodoList を Firestore へ batch upload (items + tagIds 含む)
+  static Future<int> uploadAllTodoLists(AppDatabase db) async {
+    final userRef = _userDocRef();
+    if (userRef == null) return 0;
+    final lists = await db.select(db.todoLists).get();
+    if (lists.isEmpty) return 0;
+    // items / tagIds を一括取得
+    final allItems = await db.select(db.todoItems).get();
+    final itemsByListId = <String, List<TodoItem>>{};
+    for (final it in allItems) {
+      itemsByListId.putIfAbsent(it.listId, () => []).add(it);
+    }
+    final allListTags = await db.select(db.todoListTags).get();
+    final tagsByListId = <String, List<String>>{};
+    for (final lt in allListTags) {
+      tagsByListId.putIfAbsent(lt.todoListId, () => []).add(lt.tagId);
+    }
+    const chunkSize = 400;
+    var written = 0;
+    for (var start = 0; start < lists.length; start += chunkSize) {
+      final end = (start + chunkSize).clamp(0, lists.length);
+      final batch = _firestore.batch();
+      for (final list in lists.sublist(start, end)) {
+        final ref = userRef.collection('todoLists').doc(list.id);
+        final items = itemsByListId[list.id] ?? const <TodoItem>[];
+        final tagIds = tagsByListId[list.id] ?? const <String>[];
+        batch.set(
+          ref,
+          _todoListToMap(list, items, tagIds: tagIds),
+          SetOptions(merge: true),
+        );
+        _registerSelfTodoListUpload(list.id, list.updatedAt);
+      }
+      await batch.commit();
+      written += end - start;
+    }
+    return written;
+  }
+
+  /// Firestore から TodoList をダウンロード → updatedAt 比較で upsert
+  static Future<Map<String, int>> downloadAllTodoLists(AppDatabase db) async {
+    final userRef = _userDocRef();
+    if (userRef == null) {
+      return {'inserted': 0, 'updated': 0, 'skipped': 0, 'invalid': 0};
+    }
+    final snap = await userRef.collection('todoLists').get();
+    if (snap.docs.isEmpty) {
+      return {'inserted': 0, 'updated': 0, 'skipped': 0, 'invalid': 0};
+    }
+    final localLists = await db.select(db.todoLists).get();
+    final localById = {for (final l in localLists) l.id: l};
+    var inserted = 0, updated = 0, skipped = 0, invalid = 0;
+    final listCompanions = <TodoListsCompanion>[];
+    final itemsByListId = <String, List<TodoItemsCompanion>>{};
+    final tagIdsByListId = <String, List<String>>{};
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      final c = _mapToTodoListCompanion(data);
+      if (c == null) {
+        invalid++;
+        continue;
+      }
+      final id = c.id.value;
+      final remoteUpdated = c.updatedAt.value;
+      final local = localById[id];
+      if (local == null) {
+        inserted++;
+        listCompanions.add(c);
+        itemsByListId[id] = _extractTodoItems(data, id);
+        final tagIds = _extractTagIds(data);
+        if (tagIds != null) tagIdsByListId[id] = tagIds;
+      } else if (remoteUpdated.isAfter(local.updatedAt)) {
+        updated++;
+        listCompanions.add(c);
+        itemsByListId[id] = _extractTodoItems(data, id);
+        final tagIds = _extractTagIds(data);
+        if (tagIds != null) tagIdsByListId[id] = tagIds;
+      } else {
+        skipped++;
+      }
+    }
+    if (listCompanions.isNotEmpty) {
+      await db.batch((batch) {
+        for (final c in listCompanions) {
+          if (localById.containsKey(c.id.value)) {
+            batch.replace(db.todoLists, c);
+          } else {
+            batch.insert(db.todoLists, c);
+          }
+        }
+      });
+    }
+    // items 反映: 各リストの items を全置換
+    for (final entry in itemsByListId.entries) {
+      await db.setTodoItemsForList(entry.key, entry.value);
+    }
+    // タグ関連反映
+    for (final entry in tagIdsByListId.entries) {
+      await db.setTagIdsForTodoList(entry.key, entry.value);
+    }
+    return {
+      'inserted': inserted,
+      'updated': updated,
+      'skipped': skipped,
+      'invalid': invalid,
+    };
+  }
+
+  /// 1 TodoList だけ Firestore に書き込む (items / tagIds 含む)
+  /// updatedAt は最新の DB 値を使う（呼び出し前にローカルで now 更新済みの想定）
+  static Future<void> uploadOneTodoList(
+      AppDatabase db, String listId) async {
+    final ref = _userDocRef();
+    if (ref == null) return;
+    final list = await (db.select(db.todoLists)
+          ..where((t) => t.id.equals(listId)))
+        .getSingleOrNull();
+    if (list == null) return;
+    final items = await (db.select(db.todoItems)
+          ..where((t) => t.listId.equals(listId))
+          ..orderBy([(t) => drift.OrderingTerm.asc(t.sortOrder)]))
+        .get();
+    final tagIds = await db.getTagIdsForTodoList(listId);
+    _registerSelfTodoListUpload(listId, list.updatedAt);
+    await ref
+        .collection('todoLists')
+        .doc(listId)
+        .set(
+          _todoListToMap(list, items, tagIds: tagIds),
+          SetOptions(merge: true),
+        );
+  }
+
+  /// ToDo 編集 debounce 用
+  static Timer? _todoListUploadDebounceTimer;
+  static final Set<String> _pendingTodoListUploadIds = {};
+
+  /// list の updatedAt を now に更新してから debounce アップロード
+  static void scheduleUploadTodoList(AppDatabase db, String listId) {
+    if (FirebaseAuth.instance.currentUser == null) return;
+    // 即座に updatedAt を now に更新（次のダウンロードでローカル優先になるよう）
+    db.touchTodoListUpdatedAt(listId);
+    _pendingTodoListUploadIds.add(listId);
+    _todoListUploadDebounceTimer?.cancel();
+    _todoListUploadDebounceTimer = Timer(uploadDebounceDelay, () async {
+      final ids = _pendingTodoListUploadIds.toList();
+      _pendingTodoListUploadIds.clear();
+      for (final id in ids) {
+        try {
+          await uploadOneTodoList(db, id);
+        } catch (_) {}
+      }
+    });
+  }
+
+  /// 自端末 TodoList アップロードのフィンガープリント
+  static final Set<String> _selfTodoListUploadFingerprints = {};
+  static String _todoListFingerprint(String id, DateTime updatedAt) =>
+      'todoList|$id|${updatedAt.toIso8601String()}';
+  static void _registerSelfTodoListUpload(String id, DateTime updatedAt) {
+    final fp = _todoListFingerprint(id, updatedAt);
+    _selfTodoListUploadFingerprints.add(fp);
+    Timer(const Duration(seconds: 30), () {
+      _selfTodoListUploadFingerprints.remove(fp);
+    });
+  }
+
   /// 同時実行ガード。 syncOnce が 2 重に走らないようにする。
   static bool _syncing = false;
 
@@ -492,17 +759,22 @@ class SyncService {
     if (FirebaseAuth.instance.currentUser == null) return null;
     _syncing = true;
     try {
-      // タグを先にダウンロード/アップロード（メモのタグ関連が壊れないように）
+      // タグを先にダウンロード/アップロード（メモ・ToDoのタグ関連が壊れないように）
       final tagDl = await downloadAllTags(db);
       final tagUp = await uploadAllTags(db);
       final dl = await downloadAllMemos(db);
       final upCount = await uploadAllMemos(db);
+      final todoDl = await downloadAllTodoLists(db);
+      final todoUp = await uploadAllTodoLists(db);
       return {
         ...dl,
         'uploaded': upCount,
         'tagsInserted': tagDl['inserted'] ?? 0,
         'tagsUpdated': tagDl['updated'] ?? 0,
         'tagsUploaded': tagUp,
+        'todoListsInserted': todoDl['inserted'] ?? 0,
+        'todoListsUpdated': todoDl['updated'] ?? 0,
+        'todoListsUploaded': todoUp,
       };
     } finally {
       _syncing = false;
@@ -554,11 +826,13 @@ class SyncService {
     });
   }
 
-  /// リアルタイム購読中の subscription（memos / tags をそれぞれ）
+  /// リアルタイム購読中の subscription（memos / tags / todoLists）
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
       _realtimeMemosSub;
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
       _realtimeTagsSub;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+      _realtimeTodoListsSub;
 
   /// 直近の自端末アップロードを記録して「自分のアップロードによるリスナー発火」を
   /// 受信時に無視するためのセット（メモ id + updatedAt 文字列）。
@@ -581,6 +855,54 @@ class SyncService {
     if (_realtimeMemosSub != null) return;
     final ref = _userDocRef();
     if (ref == null) return;
+    // TodoLists 購読
+    _realtimeTodoListsSub =
+        ref.collection('todoLists').snapshots().listen((snap) async {
+      if (snap.docChanges.isEmpty) return;
+      final localLists = await db.select(db.todoLists).get();
+      final localById = {for (final l in localLists) l.id: l};
+      final listCompanions = <TodoListsCompanion>[];
+      final itemsByListId = <String, List<TodoItemsCompanion>>{};
+      final tagIdsByListId = <String, List<String>>{};
+      for (final ch in snap.docChanges) {
+        if (ch.type == DocumentChangeType.removed) continue;
+        final data = ch.doc.data();
+        if (data == null) continue;
+        final c = _mapToTodoListCompanion(data);
+        if (c == null) continue;
+        final id = c.id.value;
+        final remoteUpdated = c.updatedAt.value;
+        if (_selfTodoListUploadFingerprints
+            .contains(_todoListFingerprint(id, remoteUpdated))) {
+          continue;
+        }
+        final local = localById[id];
+        if (local == null || remoteUpdated.isAfter(local.updatedAt)) {
+          listCompanions.add(c);
+          itemsByListId[id] = _extractTodoItems(data, id);
+          final tagIds = _extractTagIds(data);
+          if (tagIds != null) tagIdsByListId[id] = tagIds;
+        }
+      }
+      if (listCompanions.isNotEmpty) {
+        await db.batch((batch) {
+          for (final c in listCompanions) {
+            if (localById.containsKey(c.id.value)) {
+              batch.replace(db.todoLists, c);
+            } else {
+              batch.insert(db.todoLists, c);
+            }
+          }
+        });
+      }
+      for (final entry in itemsByListId.entries) {
+        await db.setTodoItemsForList(entry.key, entry.value);
+      }
+      for (final entry in tagIdsByListId.entries) {
+        await db.setTagIdsForTodoList(entry.key, entry.value);
+      }
+    }, onError: (_) {});
+
     // タグ購読（最終更新優先で upsert、競合履歴は記録しない）
     _realtimeTagsSub =
         ref.collection('tags').snapshots().listen((snap) async {
@@ -722,6 +1044,8 @@ class SyncService {
     _realtimeMemosSub = null;
     await _realtimeTagsSub?.cancel();
     _realtimeTagsSub = null;
+    await _realtimeTodoListsSub?.cancel();
+    _realtimeTodoListsSub = null;
     _uploadDebounceTimer?.cancel();
     _uploadDebounceTimer = null;
     _pendingUploadIds.clear();
@@ -730,6 +1054,10 @@ class SyncService {
     _tagUploadDebounceTimer = null;
     _pendingTagUploadIds.clear();
     _selfTagUploadFingerprints.clear();
+    _todoListUploadDebounceTimer?.cancel();
+    _todoListUploadDebounceTimer = null;
+    _pendingTodoListUploadIds.clear();
+    _selfTodoListUploadFingerprints.clear();
   }
 
   /// アップロード時に「自端末発火フィルタ」用のフィンガープリントを登録しておく。

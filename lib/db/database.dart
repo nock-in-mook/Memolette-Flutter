@@ -152,6 +152,7 @@ class AppDatabase extends _$AppDatabase {
       eventDate: Value(eventDate),
     );
     await into(todoItems).insert(companion);
+    SyncService.scheduleUploadTodoList(this, listId);
     return (await (select(todoItems)..where((t) => t.id.equals(id)))
         .getSingle());
   }
@@ -168,7 +169,9 @@ class AppDatabase extends _$AppDatabase {
     required String newTitle,
   }) async {
     final newList = await createTodoList(title: newTitle, isMerged: true);
-
+    // 結合は items 大量挿入後にまとめてアップロードしたいので、
+    // createTodoList が呼ぶ scheduleUpload は走らせず、最後にもう一度呼ぶ。
+    // (scheduleUpload は debounce なので連続呼び出しは1回に集約される)
     var rootSortOrder = 0;
     for (final sourceId in sourceListIds) {
       final source = await (select(todoLists)
@@ -222,6 +225,7 @@ class AppDatabase extends _$AppDatabase {
         queue.addAll(items.where((i) => i.parentId == item.id));
       }
     }
+    SyncService.scheduleUploadTodoList(this, newList.id);
     return newList;
   }
 
@@ -242,6 +246,7 @@ class AppDatabase extends _$AppDatabase {
       eventDate: Value(eventDate),
     );
     await into(todoLists).insert(companion);
+    SyncService.scheduleUploadTodoList(this, id);
     return (await (select(todoLists)..where((t) => t.id.equals(id)))
         .getSingle());
   }
@@ -770,6 +775,73 @@ class AppDatabase extends _$AppDatabase {
     return rows.map((r) => r.tagId).toList();
   }
 
+  /// TodoList に紐づくタグ ID リストを取得（同期用）
+  Future<List<String>> getTagIdsForTodoList(String listId) async {
+    final rows = await (select(todoListTags)
+          ..where((t) => t.todoListId.equals(listId)))
+        .get();
+    return rows.map((r) => r.tagId).toList();
+  }
+
+  /// TodoList の updatedAt を now に更新（編集の同期トリガー用）
+  Future<void> touchTodoListUpdatedAt(String listId) async {
+    await (update(todoLists)..where((t) => t.id.equals(listId))).write(
+      TodoListsCompanion(updatedAt: Value(DateTime.now())),
+    );
+  }
+
+  /// TodoList の items を companion リストで全置換（同期受信時に使う）。
+  /// items が空配列なら全削除。
+  /// item の参照タグ(TodoItemTags)は touch しない（今回スコープ外）。
+  Future<void> setTodoItemsForList(
+    String listId,
+    List<TodoItemsCompanion> items,
+  ) async {
+    await transaction(() async {
+      // 既存アイテムの id を取得（後で「消えたアイテム」のタグ関連も整理する）
+      final existing = await (select(todoItems)
+            ..where((t) => t.listId.equals(listId)))
+          .get();
+      final existingIds = existing.map((e) => e.id).toSet();
+      final incomingIds = items.map((c) => c.id.value).toSet();
+      final removedIds = existingIds.difference(incomingIds);
+      // 「消えたアイテム」のタグ関連を削除
+      if (removedIds.isNotEmpty) {
+        await (delete(todoItemTags)..where((t) => t.todoItemId.isIn(removedIds)))
+            .go();
+        await (delete(todoItems)..where((t) => t.id.isIn(removedIds))).go();
+      }
+      // 新規 / 更新を上書き
+      for (final c in items) {
+        final id = c.id.value;
+        if (existingIds.contains(id)) {
+          await (update(todoItems)..where((t) => t.id.equals(id))).write(c);
+        } else {
+          await into(todoItems).insert(c);
+        }
+      }
+    });
+  }
+
+  /// TodoList のタグ関連を tagIds で全置換（同期受信時に使う）。
+  /// 未到着タグは skip。
+  Future<void> setTagIdsForTodoList(
+      String listId, List<String> tagIds) async {
+    final existingTags = await select(tags).get();
+    final knownIds = existingTags.map((t) => t.id).toSet();
+    await transaction(() async {
+      await (delete(todoListTags)..where((t) => t.todoListId.equals(listId)))
+          .go();
+      for (final tagId in tagIds) {
+        if (!knownIds.contains(tagId)) continue;
+        await into(todoListTags).insert(
+          TodoListTagsCompanion.insert(todoListId: listId, tagId: tagId),
+          mode: InsertMode.insertOrIgnore,
+        );
+      }
+    });
+  }
+
   /// 指定タグ ID リストでメモのタグ関連を全置換（同期受信時に使う）。
   /// 存在しないタグ ID は skip（タグマスター同期が先に流れることが前提だが、
   /// タイミングによっては未到着のことがある）。
@@ -838,19 +910,21 @@ class AppDatabase extends _$AppDatabase {
   // ========================================
 
   /// ToDoリストにタグを付ける
-  Future<void> addTagToTodoList(String todoListId, String tagId) {
-    return into(todoListTags).insert(
+  Future<void> addTagToTodoList(String todoListId, String tagId) async {
+    await into(todoListTags).insert(
       TodoListTagsCompanion.insert(todoListId: todoListId, tagId: tagId),
       mode: InsertMode.insertOrIgnore,
     );
+    SyncService.scheduleUploadTodoList(this, todoListId);
   }
 
   /// ToDoリストからタグを外す
-  Future<void> removeTagFromTodoList(String todoListId, String tagId) {
-    return (delete(todoListTags)
+  Future<void> removeTagFromTodoList(String todoListId, String tagId) async {
+    await (delete(todoListTags)
           ..where((t) =>
               t.todoListId.equals(todoListId) & t.tagId.equals(tagId)))
         .go();
+    SyncService.scheduleUploadTodoList(this, todoListId);
   }
 
   /// ToDoリストに紐づくタグを取得
@@ -1006,33 +1080,40 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// ToDoリストのカレンダー紐付け日を設定（null でクリア）
-  Future<void> setTodoListEventDate(String id, DateTime? eventDate) {
-    return (update(todoLists)..where((t) => t.id.equals(id))).write(
+  Future<void> setTodoListEventDate(String id, DateTime? eventDate) async {
+    await (update(todoLists)..where((t) => t.id.equals(id))).write(
       TodoListsCompanion(
         eventDate: Value(eventDate),
         updatedAt: Value(DateTime.now()),
       ),
     );
+    SyncService.scheduleUploadTodoList(this, id);
   }
 
   /// ToDoリストの背景色を設定（0=色なし、1-31=MemoBgColors パレット）
-  Future<void> setTodoListBgColor(String id, int bgColorIndex) {
-    return (update(todoLists)..where((t) => t.id.equals(id))).write(
+  Future<void> setTodoListBgColor(String id, int bgColorIndex) async {
+    await (update(todoLists)..where((t) => t.id.equals(id))).write(
       TodoListsCompanion(
         bgColorIndex: Value(bgColorIndex),
         updatedAt: Value(DateTime.now()),
       ),
     );
+    SyncService.scheduleUploadTodoList(this, id);
   }
 
   /// ToDoアイテムのカレンダー紐付け日を設定（null でクリア）
-  Future<void> setTodoItemEventDate(String id, DateTime? eventDate) {
-    return (update(todoItems)..where((t) => t.id.equals(id))).write(
+  Future<void> setTodoItemEventDate(String id, DateTime? eventDate) async {
+    await (update(todoItems)..where((t) => t.id.equals(id))).write(
       TodoItemsCompanion(
         eventDate: Value(eventDate),
         updatedAt: Value(DateTime.now()),
       ),
     );
+    final item = await (select(todoItems)..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    if (item != null) {
+      SyncService.scheduleUploadTodoList(this, item.listId);
+    }
   }
 
   /// 指定範囲 [start, end) で eventDate を持つアイテムの日別件数を返す。

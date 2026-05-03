@@ -4829,6 +4829,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           isPinned: Value(!list.isPinned),
           updatedAt: Value(DateTime.now()),
         ));
+        SyncService.scheduleUploadTodoList(db, list.id);
         break;
       case 'bgColor':
         if (!mounted) return;
@@ -4848,6 +4849,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           isLocked: Value(!list.isLocked),
           updatedAt: Value(DateTime.now()),
         ));
+        SyncService.scheduleUploadTodoList(db, list.id);
         if (mounted) {
           showToast(context,
               wasLocked ? 'ロックを解除しました' : 'リストをロックしました');
